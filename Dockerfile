@@ -9,12 +9,17 @@ RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 
 FROM node:${NODE_VERSION} AS build
 WORKDIR /app
+# M5: NEXT_PUBLIC_* is INLINED into the client bundle at `next build` and CANNOT be overridden at
+# runtime. Pass the real public origin as a build ARG (compose/CI supply it) so serverActions
+# allowedOrigins resolves to the deployed domain instead of the localhost fallback.
+ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 # SKIP_ENV_VALIDATION: build context carries no secrets; env is validated at runtime/boot instead.
 # The DATABASE_URL / BETTER_AUTH_* values here are BUILD-ONLY placeholders: Next 16 evaluates
 # server modules (e.g. /api/auth/[...all] -> @/db) during page-data collection, and src/db/index.ts
 # throws if DATABASE_URL is unset. No connection is made at build time, and the runtime stage below
 # sets NO secrets — real values are injected at runtime by compose/Coolify.
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production SKIP_ENV_VALIDATION=1 \
+    NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
     DATABASE_URL=postgres://build:build@localhost:5432/build \
     BETTER_AUTH_SECRET=build-time-placeholder-secret-not-used-at-runtime \
     BETTER_AUTH_URL=http://localhost:3000

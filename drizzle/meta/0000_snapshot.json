@@ -1,5 +1,5 @@
 {
-  "id": "07b2aa36-1500-46a4-a130-147254ab213a",
+  "id": "5a0de6cd-9d0d-4c2a-b7e9-e6c46f9b038e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -569,6 +569,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"enrollment\".\"status\" = 'active'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1082,7 +1083,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fk_attendance_student": {
@@ -1097,7 +1098,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -1240,6 +1241,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_grade_tenant_section": {
+          "name": "idx_grade_tenant_section",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1255,7 +1277,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fk_grade_lesson": {
@@ -1270,7 +1292,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fk_grade_section": {
@@ -1285,7 +1307,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -1402,6 +1424,27 @@
             },
             {
               "expression": "student_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_note_tenant_section": {
+          "name": "idx_note_tenant_section",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "section_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1597,7 +1640,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -1704,6 +1747,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "idx_payment_tenant_credit": {
+          "name": "idx_payment_tenant_credit",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "credit_package_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -1719,7 +1783,7 @@
             "tenant_id",
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         },
         "fk_payment_credit": {
@@ -1837,6 +1901,27 @@
             },
             {
               "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_reschedule_tenant_lesson": {
+          "name": "idx_reschedule_tenant_lesson",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lesson_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
