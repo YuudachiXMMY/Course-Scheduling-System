@@ -187,7 +187,7 @@
 |---|-------|-------------|--------|----------|---------|----------|
 | 1 | Foundation & Deploy | 可部署、鉴权、多租户就绪的骨架（Next.js + Postgres + Drizzle + Better Auth + 核心 schema + Coolify/HK VPS） | complete | - | - | [plan](../plans/completed/phase-1-foundation-deploy.plan.md) · [report](../reports/phase-1-foundation-deploy-report.md) |
 | 2 | Core Scheduling + Conflict（MVP 核心） | 学生/课程/课节 CRUD、重复课、响应式日历、**自动冲突检测**、出勤/笔记 | complete | - | 1 | [plan](../plans/completed/phase-2-core-scheduling-conflict.plan.md) · [report](../reports/phase-2-core-scheduling-conflict-report.md) |
-| 3 | Calendar Publish (one-way) + PWA | 只读 .ics/webcal 订阅源（Apple+Google）+ 可安装 PWA | in-progress | with 4 | 2 | [plan](../plans/phase-3-calendar-publish-pwa.plan.md) |
+| 3 | Calendar Publish (one-way) + PWA | 只读 .ics/webcal 订阅源（Apple+Google）+ 可安装 PWA | complete | with 4 | 2 | [plan](../plans/completed/phase-3-calendar-publish-pwa.plan.md) · [report](../reports/phase-3-calendar-publish-pwa-report.md) |
 | 4 | Parent Sharing & Export（WeChat-first） | 微信 PNG + 只读分享页 + .ics；小班批量、按家长切分 | pending | with 3 | 2 | - |
 | 5 | Progress Reports | @react-pdf PDF + Claude 起草（教师审核门禁）+ 小班批量 | pending | with 6 | 2, 4 | - |
 | 6 | Claude MCP Connector | mcp-handler Streamable HTTP，任务型 tools，静态 bearer，draft-and-confirm | pending | with 5 | 2 | - |
