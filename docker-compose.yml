@@ -5,15 +5,18 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      # M2: no default — refuse to boot with a trivial/blank password (fails `docker compose up` early).
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-course_scheduling}
     ports:
-      # Host port is overridable (default 5432); intra-compose services still use postgres:5432.
-      - "${POSTGRES_HOST_PORT:-5432}:5432"
+      # M2: bind to loopback only — never expose Postgres to the LAN/internet. Intra-compose services
+      # still reach it over the compose network at postgres:5432 (no host port needed for the app).
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-course_scheduling}"]
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-course_scheduling}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -24,19 +27,21 @@ services:
       target: runtime
       args:
         NODE_VERSION: 24.21.0-alpine
+        # M5: NEXT_PUBLIC_APP_URL is baked in at build time — supply the real public origin here.
+        NEXT_PUBLIC_APP_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-course_scheduling}
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-course_scheduling}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
       NEXT_PUBLIC_APP_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
     ports:
-      - "3000:3000"
+      - '3000:3000'
   test:
-    profiles: ["test"]
+    profiles: ['test']
     build:
       context: .
       dockerfile: Dockerfile
@@ -45,8 +50,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-course_scheduling}
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-course_scheduling}
       NODE_ENV: test
-    command: ["sh", "-c", "node dist/migrate.mjs && npm run test"]
+    command: ['sh', '-c', 'node dist/migrate.mjs && npm run test']
 volumes:
   pgdata: {}

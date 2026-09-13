@@ -33,23 +33,26 @@ export const grade = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    // H1: grades are academic records with retention value — block hard deletes of a referenced
+    // student / lesson / section. Archive the parent instead of deleting it.
     foreignKey({
       columns: [t.tenantId, t.studentId],
       foreignColumns: [student.tenantId, student.id],
       name: 'fk_grade_student',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     foreignKey({
       columns: [t.tenantId, t.lessonId],
       foreignColumns: [lesson.tenantId, lesson.id],
       name: 'fk_grade_lesson',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     foreignKey({
       columns: [t.tenantId, t.sectionId],
       foreignColumns: [classSection.tenantId, classSection.id],
       name: 'fk_grade_section',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     index('idx_grade_tenant_student').on(t.tenantId, t.studentId),
     index('idx_grade_tenant_lesson').on(t.tenantId, t.lessonId),
+    index('idx_grade_tenant_section').on(t.tenantId, t.sectionId), // M7: covers fk_grade_section
     check('ck_grade_target', sql`${t.lessonId} is not null or ${t.sectionId} is not null`),
   ],
 )

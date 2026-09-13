@@ -54,6 +54,8 @@ jobs:
           target: runtime
           load: true
           tags: app:prod
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

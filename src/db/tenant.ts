@@ -7,6 +7,10 @@ import type { AuthContext } from '@/auth/context'
 type TenantTable = PgTable & { id: PgColumn; tenantId: PgColumn }
 
 // tenantId comes ONLY from the verified AuthContext — never from request params/body.
+//
+// M1: this wrapper is the ONLY sanctioned path to tenant-scoped data. There is no RLS backstop yet
+// (see docs/adr/0001-tenant-isolation-rls.md) — a raw db.select().from(tenantTable) elsewhere would
+// silently cross tenants. Do not bypass forTenant() for tenant tables.
 export function forTenant(ctx: AuthContext) {
   const scope = (t: TenantTable) => eq(t.tenantId, ctx.tenantId)
   return {

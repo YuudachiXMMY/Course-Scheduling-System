@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, index, uniqueIndex, foreignKey } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { primaryId, tenantId, createdAt, updatedAt } from './_helpers'
 import { enrollmentStatus } from './enums'
 import { student } from './student'
@@ -20,7 +21,11 @@ export const enrollment = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('uq_enrollment_student_section').on(t.tenantId, t.studentId, t.sectionId),
+    // M6: only ONE *active* enrollment per (student, section). Partial index lets a student who
+    // dropped ('dropped'/'completed') re-enroll in the same section without erasing drop history.
+    uniqueIndex('uq_enrollment_student_section')
+      .on(t.tenantId, t.studentId, t.sectionId)
+      .where(sql`${t.status} = 'active'`),
     foreignKey({
       columns: [t.tenantId, t.studentId],
       foreignColumns: [student.tenantId, student.id],

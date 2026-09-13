@@ -37,5 +37,6 @@ export const note = pgTable(
     }).onDelete('cascade'),
     index('idx_note_tenant_lesson').on(t.tenantId, t.lessonId),
     index('idx_note_tenant_student').on(t.tenantId, t.studentId),
+    index('idx_note_tenant_section').on(t.tenantId, t.sectionId), // M7: covers fk_note_section
   ],
 )
