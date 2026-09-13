@@ -185,7 +185,7 @@
 
 | # | Phase | Description | Status | Parallel | Depends | PRP Plan |
 |---|-------|-------------|--------|----------|---------|----------|
-| 1 | Foundation & Deploy | 可部署、鉴权、多租户就绪的骨架（Next.js + Postgres + Drizzle + Better Auth + 核心 schema + Coolify/HK VPS） | pending | - | - | - |
+| 1 | Foundation & Deploy | 可部署、鉴权、多租户就绪的骨架（Next.js + Postgres + Drizzle + Better Auth + 核心 schema + Coolify/HK VPS） | in-progress | - | - | [phase-1-foundation-deploy.plan.md](../plans/phase-1-foundation-deploy.plan.md) |
 | 2 | Core Scheduling + Conflict（MVP 核心） | 学生/课程/课节 CRUD、重复课、响应式日历、**自动冲突检测**、出勤/笔记 | pending | - | 1 | - |
 | 3 | Calendar Publish (one-way) + PWA | 只读 .ics/webcal 订阅源（Apple+Google）+ 可安装 PWA | pending | with 4 | 2 | - |
 | 4 | Parent Sharing & Export（WeChat-first） | 微信 PNG + 只读分享页 + .ics；小班批量、按家长切分 | pending | with 3 | 2 | - |
