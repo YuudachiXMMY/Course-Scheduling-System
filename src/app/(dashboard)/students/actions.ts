@@ -7,6 +7,8 @@ import { requirePermission } from '@/auth/authorize'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 
+export type Student = typeof student.$inferSelect
+
 // M3: server actions are a public boundary — validate/normalize every field before it hits the DB.
 const createStudentSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空').max(100),
@@ -29,8 +31,43 @@ export async function createStudent(input: CreateStudentInput) {
   return row
 }
 
-export async function listStudents() {
+export async function listStudents(): Promise<Student[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['list'] })
-  return forTenant(ctx).select(student) // only THIS tenant's rows
+  return (await forTenant(ctx).select(student)) as Student[] // only THIS tenant's rows
+}
+
+export async function getStudent(id: string): Promise<Student | null> {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { student: ['read'] })
+  return (await forTenant(ctx).findById(student, id)) as Student | null
+}
+
+const updateStudentSchema = z.object({
+  name: z.string().trim().min(1, '姓名不能为空').max(100),
+  parentWechat: z.string().trim().max(100).optional(),
+  schoolGrade: z.string().trim().max(50).optional(),
+})
+export type UpdateStudentInput = z.input<typeof updateStudentSchema>
+
+export async function updateStudent(id: string, input: UpdateStudentInput) {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { student: ['update'] })
+  const data = updateStudentSchema.parse(input)
+  const [row] = await forTenant(ctx).update(student, id, {
+    name: data.name,
+    parentWechat: data.parentWechat,
+    schoolGrade: data.schoolGrade,
+  })
+  revalidatePath('/dashboard/students')
+  return row
+}
+
+// Soft-delete only: attendance/grade FKs are onDelete('restrict') — a hard delete would throw.
+export async function archiveStudent(id: string) {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { student: ['update'] })
+  const [row] = await forTenant(ctx).update(student, id, { status: 'archived' })
+  revalidatePath('/dashboard/students')
+  return row
 }
