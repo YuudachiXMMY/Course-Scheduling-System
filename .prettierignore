@@ -1,0 +1,8 @@
+.next
+node_modules
+drizzle
+dist
+coverage
+pnpm-lock.yaml
+package-lock.json
+src/db/auth-schema.ts

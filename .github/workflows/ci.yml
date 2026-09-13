@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: course_scheduling
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d course_scheduling"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://app:app@localhost:5432/course_scheduling
+      BETTER_AUTH_SECRET: ci-secret-ci-secret-ci-secret-32bytes
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build the SAME multi-stage image that ships to production.
+      - name: Build test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          load: true
+          tags: app:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          load: true
+          tags: app:prod
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Migrate + run the tenant-isolation suite against the postgres service.
+      - name: Migrate + test (in-container)
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e NODE_ENV=test \
+            app:test sh -c "node dist/migrate.mjs && npm run test"
+
+      # Smoke-test the production image's health endpoint.
+      - name: Health smoke test
+        run: |
+          docker run -d --name app --network host \
+            -e DATABASE_URL="$DATABASE_URL" \
+            -e BETTER_AUTH_SECRET="$BETTER_AUTH_SECRET" \
+            -e BETTER_AUTH_URL="$BETTER_AUTH_URL" \
+            -e NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" \
+            app:prod
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health; then echo "healthy"; exit 0; fi
+            sleep 2
+          done
+          echo "health check failed"; docker logs app; exit 1

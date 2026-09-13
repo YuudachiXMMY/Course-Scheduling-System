@@ -1,0 +1,34 @@
+# dependencies
+/node_modules
+.pnp
+.pnp.*
+
+# next.js
+/.next
+/out
+/build
+next-env.d.ts
+
+# production build artifacts
+/dist
+
+# testing
+/coverage
+
+# env — never commit secrets; keep the example
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# vercel
+.vercel
