@@ -35,6 +35,7 @@ export const rescheduleRequest = pgTable(
       name: 'fk_reschedule_lesson',
     }).onDelete('cascade'),
     index('idx_reschedule_tenant_status').on(t.tenantId, t.status),
+    index('idx_reschedule_tenant_lesson').on(t.tenantId, t.lessonId), // M7: covers fk_reschedule_lesson
   ],
 )
 
@@ -55,11 +56,12 @@ export const creditPackage = pgTable(
   },
   (t) => [
     uniqueIndex('uq_credit_tenant_id').on(t.tenantId, t.id),
+    // H1: credit balances are financial records — block hard deletes of the owning student.
     foreignKey({
       columns: [t.tenantId, t.studentId],
       foreignColumns: [student.tenantId, student.id],
       name: 'fk_credit_student',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     index('idx_credit_tenant_student').on(t.tenantId, t.studentId),
   ],
 )
@@ -80,16 +82,18 @@ export const payment = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    // H1: payments are immutable accounting history — never cascade-delete with the student.
     foreignKey({
       columns: [t.tenantId, t.studentId],
       foreignColumns: [student.tenantId, student.id],
       name: 'fk_payment_student',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     foreignKey({
       columns: [t.tenantId, t.creditPackageId],
       foreignColumns: [creditPackage.tenantId, creditPackage.id],
       name: 'fk_payment_credit',
-    }).onDelete('set null'),
+    }).onDelete('set null'), // package can be retired; the payment row survives with a null link
     index('idx_payment_tenant_student').on(t.tenantId, t.studentId),
+    index('idx_payment_tenant_credit').on(t.tenantId, t.creditPackageId), // M7: covers fk_payment_credit
   ],
 )

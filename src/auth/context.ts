@@ -19,7 +19,14 @@ export interface AuthContext {
 }
 
 export async function getAuthContext(): Promise<AuthContext | null> {
-  const session = await auth.api.getSession({ headers: await headers() }) // async headers() in Next 16
+  // H2: authz depends on session.user.role (isPlatformAdmin) and on the session still existing in
+  // the DB. Bypass the 5-min cookieCache so a demoted (setRole) or banned (session deleted) user
+  // loses access immediately instead of coasting on a signed cache cookie. We already hit the DB
+  // for the member row every request, so this adds no meaningful cost.
+  const session = await auth.api.getSession({
+    headers: await headers(), // async headers() in Next 16
+    query: { disableCookieCache: true },
+  })
   if (!session?.session) return null
   const tenantId = session.session.activeOrganizationId
   if (!tenantId) return null

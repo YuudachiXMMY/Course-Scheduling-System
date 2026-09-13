@@ -14,22 +14,26 @@ export const attendance = pgTable(
     status: attendanceStatus('status').notNull().default('present'),
     note: text('note'),
     recordedBy: text('recorded_by'), // -> user.id
-    recordedAt: timestamp('recorded_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     uniqueIndex('uq_attendance_lesson_student').on(t.tenantId, t.lessonId, t.studentId), // upsertable per occurrence
+    // H1: attendance is an audit record — never cascade-delete it. Retire lessons/students via
+    // their soft-delete columns (lesson.status / student.status='archived') instead of hard delete.
     foreignKey({
       columns: [t.tenantId, t.lessonId],
       foreignColumns: [lesson.tenantId, lesson.id],
       name: 'fk_attendance_lesson',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     foreignKey({
       columns: [t.tenantId, t.studentId],
       foreignColumns: [student.tenantId, student.id],
       name: 'fk_attendance_student',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     index('idx_attendance_tenant_student').on(t.tenantId, t.studentId),
   ],
 )
