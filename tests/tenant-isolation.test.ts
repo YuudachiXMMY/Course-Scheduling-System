@@ -55,10 +55,15 @@ describe('tenant isolation', () => {
     expect(await forTenant(ctxFor(orgA, userA)).findById(student, studentB)).toBeNull()
   })
   it('A cannot UPDATE B', async () => {
-    expect(await forTenant(ctxFor(orgA, userA)).update(student, studentB, { name: 'hacked' })).toHaveLength(0)
+    expect(
+      await forTenant(ctxFor(orgA, userA)).update(student, studentB, { name: 'hacked' }),
+    ).toHaveLength(0)
   })
   it('insert cannot smuggle a foreign tenantId', async () => {
-    const [row] = await forTenant(ctxFor(orgA, userA)).insert(student, { name: 'x', tenantId: orgB })
+    const [row] = await forTenant(ctxFor(orgA, userA)).insert(student, {
+      name: 'x',
+      tenantId: orgB,
+    })
     expect((row as { tenantId: string }).tenantId).toBe(orgA)
   })
 })

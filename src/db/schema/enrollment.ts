@@ -12,7 +12,9 @@ export const enrollment = pgTable(
     studentId: text('student_id').notNull(),
     sectionId: text('section_id').notNull(),
     status: enrollmentStatus('status').notNull().default('active'),
-    enrolledAt: timestamp('enrolled_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    enrolledAt: timestamp('enrolled_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
     droppedAt: timestamp('dropped_at', { withTimezone: true, mode: 'date' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

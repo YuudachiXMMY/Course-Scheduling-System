@@ -32,7 +32,12 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({ ac, roles: orgRoles, creatorRole: 'owner' }),
-    adminPlugin({ ac: adminAc, roles: adminRoles, adminRoles: ['superadmin'], defaultRole: 'user' }),
+    adminPlugin({
+      ac: adminAc,
+      roles: adminRoles,
+      adminRoles: ['superadmin'],
+      defaultRole: 'user',
+    }),
     nextCookies(), // R6: MUST be last
   ],
 })

@@ -14,7 +14,9 @@ export const attendance = pgTable(
     status: attendanceStatus('status').notNull().default('present'),
     note: text('note'),
     recordedBy: text('recorded_by'), // -> user.id
-    recordedAt: timestamp('recorded_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true, mode: 'date' })
+      .notNull()
+      .defaultNow(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
