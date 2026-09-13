@@ -1,0 +1,11 @@
+export * from './enums'
+export * from './student'
+export * from './course'
+export * from './enrollment'
+export * from './lesson'
+export * from './attendance'
+export * from './grade'
+export * from './note'
+export * from './reserved'
+export * from './relations'
+export * from '../auth-schema' // Better Auth generated tables (user/session/organization/member/...) — R8
