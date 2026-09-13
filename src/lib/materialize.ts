@@ -23,8 +23,21 @@ export async function materializeSection(
   if (!section || !section.rrule || !section.recurrenceDtstart) return { inserted: 0, conflicts: 0 }
   const zone = section.recurrenceTimezone ?? 'Asia/Shanghai'
   const duration = section.defaultDurationMinutes ?? 60
-  const windowStart = section.termStartDate ?? section.recurrenceDtstart
-  const windowEnd = section.termEndDate ?? new Date(windowStart.getTime() + 16 * 7 * 864e5) // +16 weeks fallback
+
+  // term_start_date / term_end_date are stored at UTC midnight, but the section runs in `zone`
+  // (e.g. +08 → UTC midnight is 08:00 local). Snap the window to the FULL local calendar day so
+  // occurrences late on the final day (after 08:00 local) aren't clipped by between()'s upper bound.
+  const localDayBound = (d: Date, edge: 'start' | 'end') => {
+    const utc = DateTime.fromJSDate(d, { zone: 'utc' })
+    const local = DateTime.fromObject({ year: utc.year, month: utc.month, day: utc.day }, { zone })
+    return (edge === 'start' ? local.startOf('day') : local.endOf('day')).toUTC().toJSDate()
+  }
+  const windowStart = section.termStartDate
+    ? localDayBound(section.termStartDate, 'start')
+    : section.recurrenceDtstart
+  const windowEnd = section.termEndDate
+    ? localDayBound(section.termEndDate, 'end')
+    : new Date(windowStart.getTime() + 16 * 7 * 864e5) // +16 weeks fallback
 
   // Derive wall-clock parts of recurrenceDtstart in the section's zone (Luxon), then expand.
   const dt = DateTime.fromJSDate(section.recurrenceDtstart).setZone(zone)

@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
 import { forTenant } from '@/db/tenant'
@@ -27,8 +27,14 @@ export async function getLessonRoster(lessonId: string): Promise<RosterEntry[]> 
     enrollment,
     and(eq(enrollment.sectionId, lrow.sectionId), eq(enrollment.status, 'active')),
   )) as (typeof enrollment.$inferSelect)[]
+  if (enrollments.length === 0) return []
 
-  const students = (await forTenant(ctx).select(student)) as (typeof student.$inferSelect)[]
+  // Only load the enrolled students' names (not the whole tenant's student table).
+  const studentIds = enrollments.map((e) => e.studentId)
+  const students = (await forTenant(ctx).select(
+    student,
+    inArray(student.id, studentIds),
+  )) as (typeof student.$inferSelect)[]
   const nameById = new Map(students.map((s) => [s.id, s.name]))
 
   const recorded = (await forTenant(ctx).select(

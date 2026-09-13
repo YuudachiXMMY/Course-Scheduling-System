@@ -29,12 +29,17 @@ function toHHmm(d: Date): string {
   return DateTime.fromJSDate(d).setZone(ZONE).toFormat('HH:mm')
 }
 
-const createSchema = z.object({
-  sectionId: z.string().trim().min(1),
-  startAt: z.coerce.date(),
-  endAt: z.coerce.date(),
-  title: z.string().trim().max(120).optional(),
-})
+const createSchema = z
+  .object({
+    sectionId: z.string().trim().min(1),
+    startAt: z.coerce.date(),
+    endAt: z.coerce.date(),
+    title: z.string().trim().max(120).optional(),
+  })
+  .refine((d) => d.endAt > d.startAt, {
+    message: '结束时间必须晚于开始时间',
+    path: ['endAt'],
+  })
 
 export async function createLessonAction(
   input: z.input<typeof createSchema>,
@@ -82,11 +87,16 @@ export async function createLessonAction(
   }
 }
 
-const rescheduleSchema = z.object({
-  id: z.string().trim().min(1),
-  startAt: z.coerce.date(),
-  endAt: z.coerce.date(),
-})
+const rescheduleSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    startAt: z.coerce.date(),
+    endAt: z.coerce.date(),
+  })
+  .refine((d) => d.endAt > d.startAt, {
+    message: '结束时间必须晚于开始时间',
+    path: ['endAt'],
+  })
 
 export async function rescheduleLessonAction(
   input: z.input<typeof rescheduleSchema>,

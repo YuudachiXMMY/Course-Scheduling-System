@@ -109,3 +109,68 @@ describe('materializeSection (idempotent + edit-preserving)', () => {
     expect(finalRows.length).toBe(4)
   })
 })
+
+// Regression: term_start_date / term_end_date are stored at UTC midnight but the section runs in
+// Asia/Shanghai (+08). The window must snap to the FULL local day, else the lesson ON term_end_date
+// (16:00 local, past the old 08:00-local clip) is silently dropped.
+describe('materializeSection term window (local-day bounds)', () => {
+  const org2 = 'org_mat_term'
+  const uid2 = 'user_mat_term'
+  let sid2: string
+
+  const cleanup2 = async () => {
+    await db.delete(lesson).where(eq(lesson.tenantId, org2))
+    await db.delete(classSection).where(eq(classSection.tenantId, org2))
+    await db.delete(course).where(eq(course.tenantId, org2))
+    await db.delete(organization).where(inArray(organization.id, [org2]))
+    await db.delete(user).where(inArray(user.id, [uid2]))
+  }
+
+  beforeAll(async () => {
+    await cleanup2()
+    const now = new Date()
+    await db.insert(organization).values([{ id: org2, name: 'MT', slug: 'mt', createdAt: now }])
+    await db.insert(user).values([{ id: uid2, name: 'MT', email: 'mt@m.com', emailVerified: true }])
+    await db
+      .insert(member)
+      .values([{ id: 'm_mt', organizationId: org2, userId: uid2, role: 'owner', createdAt: now }])
+    const ctx = ctxFor(org2, uid2)
+    const [c] = (await forTenant(ctx).insert(course, { title: '英语' })) as { id: string }[]
+    // 16:00 Asia/Shanghai on the first Monday (2026-03-02).
+    const dtstart = DateTime.fromObject(
+      { year: 2026, month: 3, day: 2, hour: 16, minute: 0 },
+      { zone: 'Asia/Shanghai' },
+    )
+      .toUTC()
+      .toJSDate()
+    const [s] = (await forTenant(ctx).insert(classSection, {
+      courseId: c.id,
+      teacherId: uid2,
+      capacity: 1,
+      rrule: 'FREQ=WEEKLY;BYDAY=MO', // bounded only by the term window
+      recurrenceDtstart: dtstart,
+      recurrenceTimezone: 'Asia/Shanghai',
+      defaultDurationMinutes: 60,
+      // Stored at UTC midnight, exactly as createSection() persists them.
+      termStartDate: new Date('2026-03-02T00:00:00Z'),
+      termEndDate: new Date('2026-03-30T00:00:00Z'),
+    })) as { id: string }[]
+    sid2 = s.id
+  })
+  afterAll(cleanup2)
+
+  it('materializes the lesson on term_end_date itself (16:00 local, past the old 08:00 clip)', async () => {
+    const ctx = ctxFor(org2, uid2)
+    const res = await materializeSection(ctx, sid2)
+    // Mondays 03-02, 03-09, 03-16, 03-23, 03-30 → 5 (the 03-30 one used to be clipped to 4).
+    expect(res.inserted).toBe(5)
+    const rows = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.sectionId, sid2),
+    )) as (typeof lesson.$inferSelect)[]
+    const days = rows
+      .map((r) => DateTime.fromJSDate(r.startAt).setZone('Asia/Shanghai').toFormat('yyyy-MM-dd'))
+      .sort()
+    expect(days).toContain('2026-03-30')
+  })
+})
