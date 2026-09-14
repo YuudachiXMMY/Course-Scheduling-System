@@ -19,6 +19,7 @@ export const statement = {
   // RESERVED (declared now so the role matrix stays forward-stable):
   rescheduleRequest: ['create', 'read', 'list', 'approve', 'reject', 'cancel'],
   creditPackage: ['create', 'read', 'list', 'update', 'delete'],
+  report: ['create', 'read', 'list', 'update', 'approve'], // Phase 5: progress reports
 } as const
 export type Statements = typeof statement
 export const ac = createAccessControl(statement)
@@ -30,6 +31,7 @@ export const owner = ac.newRole({
   lesson: ['create', 'read', 'list', 'update', 'delete'],
   rescheduleRequest: ['create', 'read', 'list', 'approve', 'reject', 'cancel'],
   creditPackage: ['create', 'read', 'list', 'update', 'delete'],
+  report: ['create', 'read', 'list', 'update', 'approve'],
 })
 export const admin = ac.newRole({
   ...orgAdminAc.statements,
@@ -38,6 +40,7 @@ export const admin = ac.newRole({
   lesson: ['create', 'read', 'list', 'update', 'delete'],
   rescheduleRequest: ['read', 'list', 'approve', 'reject'],
   creditPackage: ['create', 'read', 'list', 'update'],
+  report: ['create', 'read', 'list', 'update', 'approve'],
 })
 export const teacher = ac.newRole({
   ...memberAc.statements,
@@ -46,6 +49,7 @@ export const teacher = ac.newRole({
   lesson: ['create', 'read', 'list', 'update'],
   rescheduleRequest: ['read', 'list', 'approve', 'reject'],
   creditPackage: ['read', 'list'],
+  report: ['create', 'read', 'list', 'update', 'approve'],
 })
 export const assistant = ac.newRole({
   ...memberAc.statements,
@@ -54,6 +58,7 @@ export const assistant = ac.newRole({
   lesson: ['create', 'read', 'list', 'update'],
   rescheduleRequest: ['read', 'list'],
   creditPackage: ['read', 'list'],
+  report: ['read', 'list'], // assistant may view reports but not draft/approve
 })
 // Phase-1: parent/student are READ-only placeholders; their only future WRITE is a RescheduleRequest (Phase 7).
 export const parent = ac.newRole({

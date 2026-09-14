@@ -29,6 +29,20 @@
       "when": 1789350755914,
       "tag": "0003_nostalgic_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789387147274,
+      "tag": "0004_broken_cyclops",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789388703205,
+      "tag": "0005_little_captain_midlands",
+      "breakpoints": true
     }
   ]
 }

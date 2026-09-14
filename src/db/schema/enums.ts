@@ -18,3 +18,5 @@ export const rescheduleStatus = pgEnum('reschedule_status', [
   'canceled',
 ])
 export const paymentStatus = pgEnum('payment_status', ['pending', 'paid', 'refunded', 'void'])
+// Phase 5: progress report lifecycle — draft (Claude-drafted, editable) → approved (teacher-locked)
+export const reportStatus = pgEnum('report_status', ['draft', 'approved'])

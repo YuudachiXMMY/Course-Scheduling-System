@@ -22,6 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.125.0",
     "@better-auth/drizzle-adapter": "1.7.4",
     "@fullcalendar/core": "^6.1.21",
     "@fullcalendar/daygrid": "^6.1.21",
@@ -29,6 +30,7 @@
     "@fullcalendar/react": "6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
     "@modelcontextprotocol/server": "^2.0.0",
+    "@react-pdf/renderer": "^4.9.0",
     "@t3-oss/env-nextjs": "0.13.11",
     "@touch4it/ical-timezones": "^1.9.0",
     "archiver": "^8.0.0",
