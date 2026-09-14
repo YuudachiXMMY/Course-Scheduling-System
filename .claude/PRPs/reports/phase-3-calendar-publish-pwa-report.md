@@ -16,6 +16,16 @@ Implemented the tutor-facing "publish outward" features on top of Phase-2 lesson
 
 Postgres stays the single source of truth; nothing reads any external calendar.
 
+> **Post-review route fix (2026-09-13):** `/ecc:code-review` on PR #5 found that `(dashboard)`
+> was a Next.js *route group* (contributes no URL segment), so the intended `/dashboard/*` URLs
+> 404'd — including the post-login `router.push('/dashboard')`, the whole nav, and this PR's PWA
+> `start_url`. Fixed by renaming `src/app/(dashboard)/` → `src/app/dashboard/` (literal segment).
+> Routes are now `/dashboard`, `/dashboard/schedule`, `/dashboard/calendar`, `/dashboard/courses`,
+> `/dashboard/students`. The file paths and the build-route line below reflect the
+> implementation-time `(dashboard)/` layout; on disk they now live under `dashboard/`. Also
+> hardened the feed `Cache-Control` → `private, max-age=3600, must-revalidate` (M2). Details in
+> `.claude/PRPs/reviews/pr-5-review.md`.
+
 ## Assessment vs Reality
 
 | Metric | Predicted (Plan) | Actual |
@@ -48,7 +58,7 @@ Postgres stays the single source of truth; nothing reads any external calendar.
 |---|---|---|
 | Static Analysis (typecheck + lint) | ✅ Pass | `tsc --noEmit` and `eslint .` both clean |
 | Unit Tests | ✅ Pass | 26 tests across 6 files (7 new in `ical-feed`) |
-| Build | ✅ Pass | `next build` OK; `/api/calendar/[token]` ƒ, `/manifest.webmanifest` ○, `/calendar` ƒ |
+| Build | ✅ Pass | `next build` OK; `/api/calendar/[token]` ƒ, `/manifest.webmanifest` ○, `/dashboard/calendar` ƒ (post-fix; was `/calendar` pre-rename) |
 | Integration / DB | ✅ Pass | Migration `0002` applies cleanly to a real Postgres; `calendar_feed` present with `uq_calendar_feed_token`; full suite green against live DB |
 | Edge Cases | ✅ Pass | Empty feed → valid event-free VCALENDAR; canceled omitted (query filter); bad token → 404 |
 

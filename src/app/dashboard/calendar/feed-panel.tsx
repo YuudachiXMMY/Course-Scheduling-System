@@ -35,7 +35,8 @@ export default function FeedPanel({
   }
 
   function rotate() {
-    if (!window.confirm('重新生成后，旧链接会立即失效，已订阅的日历需要重新订阅。确定继续？')) return
+    if (!window.confirm('重新生成后，旧链接会立即失效，已订阅的日历需要重新订阅。确定继续？'))
+      return
     startTransition(async () => {
       await rotateFeed()
       setMsg('已重新生成链接')
@@ -74,7 +75,7 @@ export default function FeedPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-neutral-500">一键订阅（webcal）</span>
         <div className="flex items-center gap-2">
-          <a href={webcalUrl} className="break-all text-sm text-blue-600 hover:underline">
+          <a href={webcalUrl} className="text-sm break-all text-blue-600 hover:underline">
             {webcalUrl}
           </a>
           <button
@@ -91,7 +92,7 @@ export default function FeedPanel({
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-neutral-500">手动粘贴（https）</span>
         <div className="flex items-center gap-2">
-          <code className="break-all rounded bg-neutral-100 px-1 py-0.5 text-sm text-neutral-800">
+          <code className="rounded bg-neutral-100 px-1 py-0.5 text-sm break-all text-neutral-800">
             {httpsUrl}
           </code>
           <button

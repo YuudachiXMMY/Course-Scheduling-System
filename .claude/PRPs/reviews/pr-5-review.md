@@ -6,6 +6,10 @@
 **Status**: Draft → review posted as **COMMENT**
 **Decision**: COMMENT (draft) — would be **REQUEST CHANGES** on the two HIGH path-mismatch findings before marking ready.
 
+> **Update (2026-09-13, post-review):** H1, H2, M1, M2 have all been fixed on this branch — see
+> [**Fixes Applied**](#fixes-applied-post-review) at the end. The findings below describe the
+> state **at review time**; the route paths they cite (e.g. `/calendar`) are the pre-fix reality.
+
 ## Summary
 
 Well-structured Phase-3 implementation. The `.ics`/`webcal` feed path has strong security
@@ -138,3 +142,31 @@ and documented in comments. Consider a partial unique index
 Resolve **H1** and **H2** (pick fix direction (a) or (b) — a route-structure decision) before
 marking ready; fold in **M1** with the same change. **M2** is a quick hardening of the
 revocation guarantee. **L1/L2** are optional. The feed's core security model is sound.
+
+## Fixes Applied (post-review)
+
+Chose **fix direction (b)** — the root cause. Decisive evidence: `src/app/page.tsx` redirects
+`/` → `/login`, and both `login/page.tsx` and `signup/page.tsx` do `router.push('/dashboard')`
+on success. So the entire app already assumes it lives under `/dashboard`; `(dashboard)` being a
+*route group* (no URL segment) meant `/dashboard` itself 404'd after login — a latent Phase-2
+break. One rename fixes everything with **zero content edits** for H1/H2/M1:
+
+- **Rename** `src/app/(dashboard)/` → `src/app/dashboard/` (literal segment). Post-build route
+  manifest now serves `/dashboard`, `/dashboard/schedule`, `/dashboard/calendar`,
+  `/dashboard/courses`, `/dashboard/students`. Root `/` remains the `→ /login` redirect (the
+  prior two-pages-both-resolving-to-`/` conflict is also gone).
+  - **H1 resolved** — `manifest.start_url: '/dashboard/schedule'` is now a real route.
+  - **H2 resolved** — the `日历订阅` nav link `/dashboard/calendar` resolves; the pre-existing
+    sibling links and post-login `router.push('/dashboard')` now work too.
+  - **M1 resolved** — `revalidatePath('/dashboard/calendar')` (and every Phase-2 `revalidatePath`)
+    now matches its real route.
+- **M2 resolved** — `src/app/api/calendar/[token]/route.ts` Cache-Control changed
+  `public, max-age=3600` → `private, max-age=3600, must-revalidate` (per-tenant capability data
+  must not be shared-cached; must-revalidate propagates rotate/revoke promptly). Subscription is
+  unaffected — Cache-Control doesn't gate Apple/Google subscribe or poll.
+
+**Not changed** (out of scope, tracked as optional): L1 (read-tier feed creation), L2 (no
+single-active-feed DB constraint / `rows[0]` ordering).
+
+Validation after fix: `typecheck` ✅ · `lint` ✅ · `next build` ✅ (routes now `/dashboard/*`) ·
+`ical-feed` tests 7/7 ✅.

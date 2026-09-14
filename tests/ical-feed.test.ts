@@ -20,7 +20,11 @@ const lessons: FeedLesson[] = [
   },
 ]
 
-const uidLines = (ics: string) => ics.split(/\r?\n/).filter((l) => l.startsWith('UID:')).sort()
+const uidLines = (ics: string) =>
+  ics
+    .split(/\r?\n/)
+    .filter((l) => l.startsWith('UID:'))
+    .sort()
 
 describe('buildIcs', () => {
   it('emits a VCALENDAR with a real VTIMEZONE and one VEVENT per lesson', () => {

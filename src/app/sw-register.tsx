@@ -34,7 +34,7 @@ export function ServiceWorkerRegister() {
         await deferred.prompt()
         setDeferred(null)
       }}
-      className="fixed bottom-4 right-4 rounded bg-neutral-900 px-3 py-2 text-sm text-white shadow"
+      className="fixed right-4 bottom-4 rounded bg-neutral-900 px-3 py-2 text-sm text-white shadow"
     >
       安装到主屏幕
     </button>

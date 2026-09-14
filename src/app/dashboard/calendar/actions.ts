@@ -12,7 +12,9 @@ type Feed = typeof calendarFeed.$inferSelect
 
 // One active (non-revoked) feed per tenant. `calendarFeed` is a NORMAL tenant table here —
 // only the PUBLIC route (src/app/api/calendar/[token]/route.ts) bypasses forTenant() (P3-2).
-async function findActiveFeed(ctx: Awaited<ReturnType<typeof requireAuthContext>>): Promise<Feed | null> {
+async function findActiveFeed(
+  ctx: Awaited<ReturnType<typeof requireAuthContext>>,
+): Promise<Feed | null> {
   const rows = (await forTenant(ctx).select(calendarFeed, isNull(calendarFeed.revokedAt))) as Feed[]
   return rows[0] ?? null
 }

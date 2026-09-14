@@ -18,7 +18,8 @@ export default async function CalendarSettingsPage() {
       <div className="flex flex-col gap-1">
         <h2 className="text-lg font-semibold">日历订阅</h2>
         <p className="text-sm text-neutral-600">
-          把你排的课单向同步到 Apple 日历 / Google 日历。链接只读、无需登录，泄露后可随时重新生成使旧链接失效。
+          把你排的课单向同步到 Apple 日历 / Google
+          日历。链接只读、无需登录，泄露后可随时重新生成使旧链接失效。
         </p>
       </div>
 
@@ -40,7 +41,8 @@ export default async function CalendarSettingsPage() {
           </p>
         </div>
         <p className="text-xs text-neutral-500">
-          订阅只包含最近 8 周至未来 26 周的课节；已取消的课节会在客户端下次刷新时自动消失，改期不会产生重复事件。
+          订阅只包含最近 8 周至未来 26
+          周的课节；已取消的课节会在客户端下次刷新时自动消失，改期不会产生重复事件。
         </p>
       </div>
     </section>
