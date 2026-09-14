@@ -17,6 +17,15 @@ containerization (multi-stage Dockerfile + docker-compose + Coolify deploy).
 ## Local development
 
 ```bash
+./dev.sh                        # one command: .env + deps + Postgres + migrate + `next dev`
+```
+
+`dev.sh` is idempotent (safe to re-run). Other modes: `./dev.sh --setup-only`,
+`./dev.sh --full` (everything in containers), `./dev.sh --down`, `./dev.sh --reset-db`.
+
+<details><summary>Manual steps (what <code>dev.sh</code> automates)</summary>
+
+```bash
 cp .env.example .env            # then set BETTER_AUTH_SECRET=$(openssl rand -base64 32)
 npm install
 docker compose up -d postgres   # local Postgres 17
@@ -25,6 +34,8 @@ npm run db:generate             # writes ./drizzle/0000_*.sql
 npm run db:migrate              # applies migrations (advisory-locked)
 npm run dev                     # http://localhost:3000
 ```
+
+</details>
 
 ## Validation
 
