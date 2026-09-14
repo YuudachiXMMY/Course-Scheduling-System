@@ -3,6 +3,9 @@ ARG NODE_VERSION=24.21.0-alpine
 
 FROM node:${NODE_VERSION} AS deps
 WORKDIR /app
+# P4-6: alpine cannot run Playwright's bundled Chromium; the runtime stage uses SYSTEM chromium.
+# Skip the ~300 MB browser download so `npm ci` doesn't fail fetching a browser we never use here.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN apk add --no-cache libc6-compat
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
@@ -19,6 +22,7 @@ ARG NEXT_PUBLIC_APP_URL=http://localhost:3000
 # throws if DATABASE_URL is unset. No connection is made at build time, and the runtime stage below
 # sets NO secrets — real values are injected at runtime by compose/Coolify.
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production SKIP_ENV_VALIDATION=1 \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL} \
     DATABASE_URL=postgres://build:build@localhost:5432/build \
     BETTER_AUTH_SECRET=build-time-placeholder-secret-not-used-at-runtime \
@@ -39,10 +43,17 @@ FROM build AS test
 ENV NODE_ENV=test
 CMD ["npm", "run", "test"]
 
-FROM node:${NODE_VERSION} AS runtime
+# P4-6: Debian runtime (NOT alpine) so Playwright can drive SYSTEM chromium; fonts-noto-cjk stops
+# CJK 豆腐 in the rendered PNG (PRD's #1 risk). PLAYWRIGHT_CHROMIUM_PATH points browser.ts at it.
+FROM node:24-slim AS runtime
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
-RUN addgroup -g 1001 nodejs && adduser -u 1001 -G nodejs -S nextjs
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 \
+    PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium fonts-noto-cjk \
+    && fc-cache -f \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
@@ -50,7 +61,6 @@ COPY --from=build --chown=nextjs:nodejs /app/dist/migrate.mjs ./dist/migrate.mjs
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=build --chown=nextjs:nodejs /app/docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
-# PHASE 4/5 ONLY: CJK fonts (apk add font-noto-cjk / switch to node:24-slim + fonts-noto-cjk) for Playwright/@react-pdf. NOT now.
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
