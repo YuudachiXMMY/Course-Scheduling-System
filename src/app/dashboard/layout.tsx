@@ -23,6 +23,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <Link href="/dashboard/courses" className="text-neutral-700 hover:underline">
             课程
           </Link>
+          <Link href="/dashboard/calendar" className="text-neutral-700 hover:underline">
+            日历订阅
+          </Link>
         </nav>
       </header>
       <main className="p-6">{children}</main>

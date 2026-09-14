@@ -7,5 +7,6 @@ export * from './attendance'
 export * from './grade'
 export * from './note'
 export * from './reserved'
+export * from './calendar-feed'
 export * from './relations'
 export * from '../auth-schema' // Better Auth generated tables (user/session/organization/member/...) — R8
