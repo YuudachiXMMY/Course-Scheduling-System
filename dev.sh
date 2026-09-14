@@ -70,6 +70,9 @@ ensure_env() {
 
   log "Creating .env from .env.example with fresh secrets…"
   cp .env.example .env
+  # .env holds real secrets (POSTGRES_PASSWORD, BETTER_AUTH_SECRET) — lock it down
+  # to owner-only before writing them, so it's never world-readable on a shared host.
+  chmod 600 .env
 
   local secret password
   secret="$(gen_secret)"
