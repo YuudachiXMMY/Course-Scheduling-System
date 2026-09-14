@@ -1,15 +1,50 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { inArray, eq } from 'drizzle-orm'
 import { db } from '@/db'
-import { organization, member, user, course, classSection, lesson } from '@/db/schema'
+import {
+  organization,
+  member,
+  user,
+  course,
+  classSection,
+  lesson,
+  student,
+  shareLink,
+} from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { can } from '@/auth/authorize'
 import { AuthError, type AuthContext } from '@/auth/context'
-import { mcpAuthContextFor } from '@/auth/mcp-context'
+import { mcpAuthContextFor, resolveMcpAuthContext } from '@/auth/mcp-context'
+import { registerCourseSchedulingTools } from '@/mcp/register-tools'
 import { scheduleLessonCore, rescheduleLessonCore } from '@/lib/schedule-core'
 import { issueConfirmation, consumeConfirmation, hashPayload } from '@/lib/mcp-confirm'
 import { composeParentMessage } from '@/mcp/message'
 import type { FeedLesson } from '@/lib/ical-feed'
+
+// M-1 guard: invoke the REAL draft_parent_message handler while stubbing ONLY the env-coupled
+// principal resolver. mcpAuthContextFor stays real (spread from the actual module) so its own
+// integration tests below are unaffected.
+vi.mock('@/auth/mcp-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/auth/mcp-context')>()),
+  resolveMcpAuthContext: vi.fn(),
+}))
+
+// Register the real MCP tools on a minimal fake server to capture their handlers for direct
+// invocation (no live McpServer / HTTP transport needed).
+type ToolResult = { content: { type: string; text: string }[]; isError?: boolean }
+type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>
+const captureTools = (): Map<string, ToolHandler> => {
+  const handlers = new Map<string, ToolHandler>()
+  const fakeServer = {
+    registerTool: (name: string, _spec: unknown, handler: unknown) => {
+      handlers.set(name, handler as ToolHandler)
+    },
+  }
+  registerCourseSchedulingTools(
+    fakeServer as unknown as Parameters<typeof registerCourseSchedulingTools>[0],
+  )
+  return handlers
+}
 
 const ctxFor = (tenantId: string, userId: string, role = 'owner'): AuthContext => ({
   tenantId,
@@ -115,6 +150,17 @@ describe('composeParentMessage', () => {
     expect(text).toContain('近期暂无排课')
     expect(text).toContain(shareUrl)
   })
+  it('omits the share line when no shareUrl is given (M-1: read-only, no minted link)', () => {
+    const withLessons = composeParentMessage({
+      studentName: '小明',
+      lessons: [mk('l1', 8, 9, '数学', '房间1')],
+    })
+    expect(withLessons).toContain('数学')
+    expect(withLessons).not.toContain('完整课表随时查看')
+    const empty = composeParentMessage({ studentName: '小明', lessons: [] })
+    expect(empty).toContain('近期暂无排课')
+    expect(empty).not.toContain('完整课表随时查看')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -127,12 +173,15 @@ const org = 'org_mcp'
 const userId = 'user_mcp'
 const teacherId = userId
 let sectionId: string
+let studentId: string
 const at = (h: number, m = 0) => new Date(Date.UTC(2026, 2, 9, h, m)) // 2026-03-09
 
 const cleanup = async () => {
   await db.delete(lesson).where(eq(lesson.tenantId, org))
+  await db.delete(shareLink).where(eq(shareLink.tenantId, org))
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
+  await db.delete(student).where(eq(student.tenantId, org))
   await db.delete(organization).where(inArray(organization.id, [org]))
   await db.delete(user).where(inArray(user.id, [userId]))
 }
@@ -154,6 +203,8 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
       capacity: 1,
     })) as { id: string }[]
     sectionId = s.id
+    const [st] = (await forTenant(ctx).insert(student, { name: '测试学生' })) as { id: string }[]
+    studentId = st.id
   })
   afterAll(cleanup)
 
@@ -194,7 +245,9 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
   })
 
   it('rescheduleLessonCore moves a lesson onto an overlapping-with-itself slot (excludeLessonId)', async () => {
-    const rows = (await forTenant(ctxFor(org, userId)).select(lesson)) as (typeof lesson.$inferSelect)[]
+    const rows = (await forTenant(ctxFor(org, userId)).select(
+      lesson,
+    )) as (typeof lesson.$inferSelect)[]
     const target = rows.find((r) => r.status === 'scheduled')
     expect(target).toBeDefined()
     // Move 10:00–11:00 → 10:30–11:30: overlaps its OWN old range, so only excludeLessonId keeps it clean.
@@ -204,5 +257,27 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
       endAt: at(11, 30),
     })
     expect(res.ok).toBe(true)
+  })
+
+  // M-1 REGRESSION GUARD: the read-only draft_parent_message must NOT create a shareLink.
+  // Reverting register-tools.ts from getActiveShare back to ensureActiveShare makes this fail.
+  it('draft_parent_message is read-only: composes a draft without minting a shareLink', async () => {
+    const ctx = ctxFor(org, userId)
+    vi.mocked(resolveMcpAuthContext).mockResolvedValue(ctx)
+    const draft = captureTools().get('draft_parent_message')
+    expect(draft).toBeDefined()
+    const res = await draft!({ studentId })
+    expect(res.isError).toBeFalsy()
+    const text = res.content[0]?.text ?? ''
+    expect(text).toContain('近期课表') // '测试学生 近期课表：' header composed
+    // Student has no active share → tutor-facing note appended, and NO public link emitted.
+    expect(text).toContain('勿发送给家长')
+    expect(text).not.toContain('/s/')
+    // The crux of M-1: invoking the tool created ZERO shareLink rows.
+    const shares = (await forTenant(ctx).select(
+      shareLink,
+      eq(shareLink.studentId, studentId),
+    )) as (typeof shareLink.$inferSelect)[]
+    expect(shares).toHaveLength(0)
   })
 })

@@ -20,12 +20,13 @@ import {
 import { checkTeacherConflict } from '@/lib/conflict'
 import { issueConfirmation, consumeConfirmation } from '@/lib/mcp-confirm'
 import { composeParentMessage } from '@/mcp/message'
-import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
+import { getActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
 import { cardWindow } from '@/lib/ical-feed'
 import { env } from '@/env'
 
 const ZONE = 'Asia/Shanghai'
-const fmtLocal = (d: Date) => DateTime.fromJSDate(d, { zone: 'utc' }).setZone(ZONE).toFormat('MM月dd日 HH:mm')
+const fmtLocal = (d: Date) =>
+  DateTime.fromJSDate(d, { zone: 'utc' }).setZone(ZONE).toFormat('MM月dd日 HH:mm')
 const hhmm = (d: Date) => DateTime.fromJSDate(d, { zone: 'utc' }).setZone(ZONE).toFormat('HH:mm')
 
 // MCP tool result helpers. Prefer returning isError content over throwing so the model gets a
@@ -51,7 +52,8 @@ async function runTool(fn: () => Promise<ReturnType<typeof ok> | ReturnType<type
       return fail(msg)
     }
     if (e instanceof ConflictError) return fail('时间冲突，无法保存')
-    if (e instanceof z.ZodError) return fail(`参数校验失败：${e.issues.map((i) => i.message).join('；')}`)
+    if (e instanceof z.ZodError)
+      return fail(`参数校验失败：${e.issues.map((i) => i.message).join('；')}`)
     return fail(e instanceof Error ? e.message : '未知错误')
   }
 }
@@ -62,12 +64,18 @@ export function registerCourseSchedulingTools(server: McpServer): void {
   // ---- READ: list_classes ----
   server.registerTool(
     'list_classes',
-    { title: '列出班级', description: '列出本机构的班级（含所属课程名称）。', inputSchema: z.object({}) },
+    {
+      title: '列出班级',
+      description: '列出本机构的班级（含所属课程名称）。',
+      inputSchema: z.object({}),
+    },
     async () =>
       runTool(async () => {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { course: ['read'] })
-        const sections = (await forTenant(ctx).select(classSection)) as (typeof classSection.$inferSelect)[]
+        const sections = (await forTenant(ctx).select(
+          classSection,
+        )) as (typeof classSection.$inferSelect)[]
         const courses = (await forTenant(ctx).select(course)) as (typeof course.$inferSelect)[]
         const label = new Map(courses.map((c) => [c.id, c.title]))
         const out = sections.map((r) => ({
@@ -97,7 +105,10 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const rows = (await forTenant(
           ctx,
           // status is an optional filter; when absent the tenant scope alone applies.
-        ).select(student, status ? eq(student.status, status) : undefined)) as (typeof student.$inferSelect)[]
+        ).select(
+          student,
+          status ? eq(student.status, status) : undefined,
+        )) as (typeof student.$inferSelect)[]
         const out = rows.map((s) => ({
           id: s.id,
           name: s.name,
@@ -122,7 +133,10 @@ export function registerCourseSchedulingTools(server: McpServer): void {
       runTool(async () => {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { lesson: ['read'] })
-        const rows = (await forTenant(ctx).select(note, and(eq(note.lessonId, lessonId)))) as (typeof note.$inferSelect)[]
+        const rows = (await forTenant(ctx).select(
+          note,
+          and(eq(note.lessonId, lessonId)),
+        )) as (typeof note.$inferSelect)[]
         const out = rows.map((n) => ({
           id: n.id,
           body: n.body,
@@ -149,8 +163,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         requirePermission(ctx, { lesson: ['create'] })
         const args = createSchema.parse(rawArgs)
         const section = (await forTenant(ctx).findById(classSection, args.sectionId)) as
-          | typeof classSection.$inferSelect
-          | null
+          typeof classSection.$inferSelect | null
         if (!section) throw new Error('班级不存在或不属于当前机构')
         if (!section.teacherId) throw new Error('班级尚未指定教师，无法排课')
         const check = await checkTeacherConflict(ctx, {
@@ -176,7 +189,8 @@ export function registerCourseSchedulingTools(server: McpServer): void {
     'schedule_lesson_confirm',
     {
       title: '排课（确认）',
-      description: '执行已预览的排课。需要 schedule_lesson_preview 返回的 confirmationToken 与完全相同的参数。',
+      description:
+        '执行已预览的排课。需要 schedule_lesson_preview 返回的 confirmationToken 与完全相同的参数。',
       inputSchema: z.object({ ...createFields, confirmationToken: z.string().min(1) }),
     },
     async ({ confirmationToken, ...rawArgs }) =>
@@ -208,7 +222,8 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { lesson: ['update'] })
         const args = rescheduleSchema.parse(rawArgs)
-        const existing = (await forTenant(ctx).findById(lesson, args.id)) as typeof lesson.$inferSelect | null
+        const existing = (await forTenant(ctx).findById(lesson, args.id)) as
+          typeof lesson.$inferSelect | null
         if (!existing) throw new Error('课节不存在')
         if (!existing.teacherId) throw new Error('课节缺少教师信息')
         const check = await checkTeacherConflict(ctx, {
@@ -235,7 +250,8 @@ export function registerCourseSchedulingTools(server: McpServer): void {
     'reschedule_lesson_confirm',
     {
       title: '改期（确认）',
-      description: '执行已预览的改期。需要 reschedule_lesson_preview 返回的 confirmationToken 与完全相同的参数。',
+      description:
+        '执行已预览的改期。需要 reschedule_lesson_preview 返回的 confirmationToken 与完全相同的参数。',
       inputSchema: z.object({ ...rescheduleFields, confirmationToken: z.string().min(1) }),
     },
     async ({ confirmationToken, ...rawArgs }) =>
@@ -244,7 +260,9 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         requirePermission(ctx, { lesson: ['update'] })
         const args = rescheduleSchema.parse(rawArgs)
         if (!consumeConfirmation(confirmationToken, args)) {
-          throw new Error('确认令牌无效、已过期或参数已变化，请重新调用 reschedule_lesson_preview。')
+          throw new Error(
+            '确认令牌无效、已过期或参数已变化，请重新调用 reschedule_lesson_preview。',
+          )
         }
         const result = await rescheduleLessonCore(ctx, args)
         return result.ok
@@ -253,24 +271,39 @@ export function registerCourseSchedulingTools(server: McpServer): void {
       }),
   )
 
-  // ---- draft_parent_message — read-only, reuses Phase-4 share-data (no send) ----
+  // ---- draft_parent_message — READ-ONLY: composes from EXISTING share-data, writes NOTHING ----
+  // M-1 (PR#7 review): this tool must not mint a public share URL as a side effect. It attaches the
+  // student's ALREADY-ACTIVE link if one exists and never creates one. Creating a share stays a
+  // human-initiated action on the web 学生 page (getOrCreateShare) — the sanctioned, UI-confirmed
+  // path. Gate stays read-tier {student:['read'], lesson:['read']}, consistent with P4-9 and the
+  // authenticated PNG export route; it is now honest because the tool no longer writes.
   server.registerTool(
     'draft_parent_message',
     {
       title: '起草家长消息',
-      description: '为某学生起草一条微信课表消息（含只读分享链接）。只返回草稿文本，不发送。',
+      description:
+        '为某学生起草一条微信课表消息，附上其【已有】的只读分享链接（若尚未创建则不附链接，且本工具不会创建）。只读：只返回草稿文本，不发送、不写库。',
       inputSchema: z.object({ studentId: z.string().min(1) }),
     },
     async ({ studentId }) =>
       runTool(async () => {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { student: ['read'], lesson: ['read'] })
-        const s = (await forTenant(ctx).findById(student, studentId)) as typeof student.$inferSelect | null
+        const s = (await forTenant(ctx).findById(student, studentId)) as
+          typeof student.$inferSelect | null
         if (!s) throw new Error('学生不存在')
-        const share = await ensureActiveShare(ctx, studentId)
-        const shareUrl = `${env.NEXT_PUBLIC_APP_URL}/s/${share.token}`
+        // getActiveShare (read-only) — NOT ensureActiveShare. shareUrl is null when no active share.
+        const share = await getActiveShare(ctx, studentId)
+        const shareUrl = share ? `${env.NEXT_PUBLIC_APP_URL}/s/${share.token}` : null
         const lessons = await getStudentLessonsForTenant(ctx, studentId, cardWindow())
-        return ok(composeParentMessage({ studentName: s.name, lessons, shareUrl }))
+        const message = composeParentMessage({ studentName: s.name, lessons, shareUrl })
+        // No share → append a clearly-fenced TUTOR-facing note AFTER the draft, explicitly labeled
+        // 勿发送 so it is unmistakably NOT part of the copyable parent message (PR#7 verify nit).
+        return ok(
+          shareUrl
+            ? message
+            : `${message}\n\n——\n[提示 · 勿发送给家长] 该学生暂无有效分享链接，本草稿未附课表链接；如需附上，请在「学生」页面创建分享后重试。`,
+        )
       }),
   )
 }

@@ -49,6 +49,20 @@ either (a) gate share creation behind a write permission (e.g. `student:['update
 plus an explicit create tool, and correct the tool description to state that a share link is created
 on first use.
 
+**Resolution (fixed)** — On closer inspection, option (a) is *wrong* here: creating a share on first
+use is a **deliberate read-tier decision (P4-9)** — the web `getOrCreateShare`
+(`share-actions.ts:19-25`) and the authenticated PNG export route both gate `ensureActiveShare`
+behind `student:['read']` / `{student:['read'], lesson:['read']}`, because the share is a read-only
+view and viewing/copying its URL is a read operation. Re-tiering the MCP tool would diverge from that
+convention. The real defect is narrower — the tool's "只读" description was false and an AI could
+mint a URL speculatively. Fix (a refinement of option b): `draft_parent_message` now calls
+**`getActiveShare` (read-only), never `ensureActiveShare`** — it attaches an *existing* link if
+present, and when none exists it returns a clean parent draft (no link) plus a clearly-separated
+tutor-facing note pointing to the web 学生 page to create one. `composeParentMessage` now takes an
+optional `shareUrl` and omits the share line when absent. The read-tier gate is unchanged (now
+honest); share creation stays the human-initiated web action, so the speculative-minting vector is
+eliminated rather than relocated.
+
 ### LOW
 
 **L-1 — Draft-and-confirm store never evicts expired-but-unconfirmed tokens**
