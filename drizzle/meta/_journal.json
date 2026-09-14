@@ -43,6 +43,13 @@
       "when": 1789388703205,
       "tag": "0005_little_captain_midlands",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789399184338,
+      "tag": "0006_wonderful_sumo",
+      "breakpoints": true
     }
   ]
 }

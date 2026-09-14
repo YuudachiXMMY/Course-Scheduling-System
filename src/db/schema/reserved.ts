@@ -18,6 +18,10 @@ export const rescheduleRequest = pgTable(
     id: primaryId(),
     tenantId: tenantId(),
     lessonId: text('lesson_id').notNull(),
+    // Phase 7a: which child this request is for. A lesson's section may hold up to 15 students, so
+    // the lesson alone can't identify the child — the portal write path sets + authorizes on this.
+    // Nullable so the migration doesn't break any pre-existing rows; every new portal request sets it.
+    studentId: text('student_id'),
     requestedById: text('requested_by_id'), // parent/student user.id
     requestedStartAt: timestamp('requested_start_at', { withTimezone: true, mode: 'date' }),
     requestedEndAt: timestamp('requested_end_at', { withTimezone: true, mode: 'date' }),
@@ -34,8 +38,14 @@ export const rescheduleRequest = pgTable(
       foreignColumns: [lesson.tenantId, lesson.id],
       name: 'fk_reschedule_lesson',
     }).onDelete('cascade'),
+    foreignKey({
+      columns: [t.tenantId, t.studentId],
+      foreignColumns: [student.tenantId, student.id],
+      name: 'fk_reschedule_student',
+    }).onDelete('cascade'),
     index('idx_reschedule_tenant_status').on(t.tenantId, t.status),
     index('idx_reschedule_tenant_lesson').on(t.tenantId, t.lessonId), // M7: covers fk_reschedule_lesson
+    index('idx_reschedule_tenant_student').on(t.tenantId, t.studentId),
   ],
 )
 

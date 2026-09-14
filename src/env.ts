@@ -22,6 +22,9 @@ export const env = createEnv({
     // to Opus 4.8; set ANTHROPIC_MODEL=claude-haiku-4-5 / claude-sonnet-5 to trade cost for tier.
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_MODEL: z.string().min(1).default('claude-opus-4-8'),
+    // P7a-10: domain for synthesized placeholder emails when provisioning WeChat-only (no-email)
+    // parent/student portal accounts (e.g. portal_<nanoid>@portal.local). Use a domain you control.
+    PORTAL_EMAIL_DOMAIN: z.string().min(1).default('portal.local'),
   },
   client: { NEXT_PUBLIC_APP_URL: z.url() },
   experimental__runtimeEnv: { NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL },

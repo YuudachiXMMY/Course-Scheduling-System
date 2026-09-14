@@ -10,5 +10,6 @@ export * from './progress-report'
 export * from './reserved'
 export * from './calendar-feed'
 export * from './share-link'
+export * from './portal-link'
 export * from './relations'
 export * from '../auth-schema' // Better Auth generated tables (user/session/organization/member/...) — R8
