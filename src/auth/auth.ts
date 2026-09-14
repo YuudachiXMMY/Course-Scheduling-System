@@ -21,7 +21,14 @@ export const auth = betterAuth({
         // M4: give every new user their own tenant on signup. Without this, a fresh user has no
         // organization/member, the session hook below sets activeOrganizationId=null, and the
         // dashboard bounces them back to /login forever. Atomic: org + owner member together.
-        after: async (user) => {
+        //
+        // P7a-2: this hook fires for EVERY user creation, including auth.api.createUser (admin path).
+        // A provisioned parent/student must NOT get their own org — they are added to the tutor's org
+        // via auth.api.addMember (see provisionPortalMember). So self-tenant ONLY for self-signup
+        // (endpoint '/sign-up/email'); the admin create-user path ('/admin/create-user', or any other
+        // context) is skipped. `context` is the current auth endpoint context (verified 1.7.4).
+        after: async (user, context) => {
+          if (context?.path !== '/sign-up/email') return
           const orgId = nanoid()
           await db.transaction(async (tx) => {
             await tx.insert(organizationTable).values({

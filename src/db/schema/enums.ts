@@ -20,3 +20,6 @@ export const rescheduleStatus = pgEnum('reschedule_status', [
 export const paymentStatus = pgEnum('payment_status', ['pending', 'paid', 'refunded', 'void'])
 // Phase 5: progress report lifecycle — draft (Claude-drafted, editable) → approved (teacher-locked)
 export const reportStatus = pgEnum('report_status', ['draft', 'approved'])
+// Phase 7a: how a portal user (Better Auth user.id) relates to a domain student — a guardian
+// ('parent') or the student themselves ('student'). Drives the login-portal per-child scope.
+export const portalRelationship = pgEnum('portal_relationship', ['parent', 'student'])

@@ -191,7 +191,11 @@
 | 4 | Parent Sharing & Export（WeChat-first） | 微信 PNG + 只读分享页 + .ics；小班批量、按家长切分 | complete | with 3 | 2 | [plan](../plans/completed/phase-4-parent-sharing-export.plan.md) · [report](../reports/phase-4-parent-sharing-export-report.md) |
 | 5 | Progress Reports | @react-pdf PDF + Claude 起草（教师审核门禁）+ 小班批量 | complete | with 6 | 2, 4 | [plan](../plans/completed/phase-5-progress-reports.plan.md) · [report](../reports/phase-5-progress-reports-report.md) |
 | 6 | Claude MCP Connector | mcp-handler Streamable HTTP，任务型 tools，静态 bearer，draft-and-confirm | complete | with 5 | 2 | [plan](../plans/completed/phase-6-claude-mcp-connector.plan.md) · [report](../reports/phase-6-claude-mcp-connector-report.md) |
-| 7 | Team, Logins, Reschedule Requests, (opt) Two-way Sync, Payments | 扩展 RBAC + 家长/学生登录门户（含自助改期申请→教师审批）；课程提醒；数据处理告知页；MCP OAuth 2.1；(optional) Google 双向；学费/课时追踪 | pending | - | 3, 4, 5, 6 | - |
+| 7a | Team/Parent/Student Logins + Reschedule Requests | 多角色登录门户（家长/学生）+ 自助改期申请→教师审批工作流 + RBAC 行级硬化 + 数据处理告知/未成年人同意页 | in-progress | - | 3, 4, 5, 6 | [plan](../plans/phase-7a-portal-reschedule.plan.md) · [report (PR-1)](../reports/phase-7a-portal-reschedule-report.md) |
+| 7b | Reminders & Notifications | 自动课程提醒（在盒 cron + 邮件/短信兜底）；改期通过后通知家长；渠道选型 | pending | with 7c | 7a | - |
+| 7c | MCP OAuth 2.1 | MCP connector 从静态 bearer 升级到 OAuth 2.1（WorkOS AuthKit，`withMcpAuth` + RFC 9728），支持多用户 | pending | with 7b | 6, 7a | - |
+| 7d | (optional) Google Two-way Sync | Google 双向同步 + 邀请家长/学生为受邀人（用户 OAuth，watch 通道续期 cron，410 fullSync 处理）；仅确需时做 iCloud CalDAV | pending | - | 7a | - |
+| 7e | Payments & Credits | 学费/课时包/付款状态追踪落地（数据模型已预留 payment/creditPackage） | pending | - | 7a | - |
 
 ### Phase Details
 
@@ -225,17 +229,35 @@
 - **Scope**: mcp-handler Streamable HTTP 端点，任务型 tools（`list_classes`、`schedule_lesson`、`reschedule_lesson`、`get_lesson_notes`、`list_students`、`draft_parent_message`），静态 bearer token 鉴权，严格 Zod schema，每个 handler 内按已验证 token 做行级授权，所有写/外发工具 draft-and-confirm。
 - **Success signal**: 在 Claude Code / Claude.ai 添加 connector 后能列课、能（经确认后）排课、能起草家长消息草稿。
 
-**Phase 7: Team, Logins, Two-way Sync, Payments（多用户与硬化）**
-- **Goal**: 把 solo 工具变成小型多用户产品，并加上自动化与更丰富的同步。
-- **Scope**: 扩展 RBAC 与**家长/学生登录门户（含自助申请改期 → 教师审批工作流）**；自动课程提醒（在盒 cron + 邮件/短信兜底，MVP 未做）；服务条款/家长数据处理告知页；MCP OAuth 2.1（WorkOS AuthKit）；**（optional）Google 双向 + 邀请受邀人（用户 OAuth，尽早启动验证）**；仅确需在 Apple 内直接编辑时才做 iCloud CalDAV；量增后 BullMQ+Redis 与 Message Batches API；学费/课时/付款追踪落地。
-- **Success signal**: 助教/家长/学生能按角色登录看到应看内容；家长能提交改期申请且教师可审批并自动更新课表；提醒自动发出；Claude 多用户经 OAuth 可用。
+> **Phase 7 拆分说明（2026-09-14）**：原 Phase 7 为 XL 汇聚桶，捆绑 8 项能力，其中 Google 双向/iCloud 在 PRD 中本就标为 optional/后续、付款为 Could 优先级。为保证每份 PRP plan「单遍可实现」，Phase 7 拆为 **7a–7e**：**7a**（本轮）交付准备最充分、依赖最内聚的多用户核心；其余按能力独立成阶段，均依赖 7a。
+
+**Phase 7a: Team/Parent/Student Logins + Reschedule Requests（多用户核心）**
+- **Goal**: 把 solo 工具变成小型多用户产品的第一步——让家长/学生登录、只看到自己（孩子）的课表，并能自助申请改期、由教师审批。
+- **Scope**: 家长/学生账号**开通**（导师从后台创建，微信友好的无邮箱占位账号，非自助注册）；**多角色登录门户 `/portal`**（复用 Phase-4 `getStudentLessonsForTenant` + `ScheduleCard`，**行级隔离**：家长只见自己孩子）；**改期申请→教师审批工作流**（`rescheduleRequest` 申请→审批调用既有 `rescheduleLessonCore` 移课，冲突同样拦截）；**RBAC 行级硬化**（在既有 `rescheduleRequest` 角色权限之上增加 user↔student 归属校验，新增 `portalLink` 关联表）；PIPL/未成年人**数据处理告知 + 首登同意**。
+- **Success signal**: 导师能开通家长/学生登录；家长登录只看到自己孩子的课表；家长能提交改期申请且教师可审批（自动移课、冲突被拦）或拒绝；跨家庭/跨租户数据零泄漏（测试证明）。
+
+**Phase 7b: Reminders & Notifications**
+- **Goal**: 自动提醒 + 改期结果通知，减少人工触达。
+- **Scope**: 在盒 cron（Coolify 定时/node-cron）；课前提醒；改期通过后通知家长；渠道选型（邮件/短信/微信）。量增后可上 BullMQ+Redis 与 Message Batches API。依赖 7a。
+
+**Phase 7c: MCP OAuth 2.1**
+- **Goal**: 让 MCP connector 支持多用户。
+- **Scope**: 从静态 bearer 升级到 OAuth 2.1（WorkOS AuthKit，`withMcpAuth` + RFC 9728，校验 token aud、不转发上游）。依赖 6 + 7a。
+
+**Phase 7d: (optional) Google Two-way Sync**
+- **Goal**: 可选的双向日历同步与受邀人邀请。
+- **Scope**: Google 双向 + 邀请家长/学生为受邀人（用户 OAuth，发布状态设 Production 免 7 天失效，watch push 通道续期 cron，处理 410 fullSyncRequired）；仅确需在 Apple 内直接编辑时才做 iCloud CalDAV。依赖 7a。
+
+**Phase 7e: Payments & Credits**
+- **Goal**: 学费/课时追踪落地。
+- **Scope**: 学费/课时包/付款状态（数据模型 `payment`/`creditPackage` 已在 Phase 1 预留）。依赖 7a。
 
 ### Parallelism Notes
 
 - **Phase 3 与 4 可并行**：都只依赖 Phase 2 的排课数据；一个走"教师自己的日历订阅"，一个走"家长导出/分享"，互不阻塞。
 - **Phase 5 与 6 可并行**：报告（5）依赖 Phase 2 + Phase 4 的模板/数据沉淀；MCP（6）依赖 Phase 2 的领域模型；两者互不依赖。
-- **Phase 7 为汇聚**：依赖 3/4/5/6 均落地后再统一做多角色、双向同步、支付等重活。
-- MVP 关键路径 = **1 → 2 →（3 ∥ 4）**；报告与 MCP 属增强，可在 MVP 稳定后并行推进。
+- **Phase 7 已拆分**：原汇聚阶段拆为 **7a–7e**，均依赖 3/4/5/6 落地。**7a**（多用户核心：登录门户 + 改期审批 + RBAC 硬化 + 告知页）为其余子阶段的前置；**7b（提醒）与 7c（MCP OAuth）可并行**；**7d（Google 双向，optional）与 7e（付款）**按需推进，互不阻塞。
+- MVP 关键路径 = **1 → 2 →（3 ∥ 4）**；报告与 MCP 属增强，可在 MVP 稳定后并行推进；7a 是「solo → 小团队产品」的第一步。
 
 ---
 
