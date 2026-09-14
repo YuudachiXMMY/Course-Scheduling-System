@@ -32,7 +32,12 @@ export const createRescheduleRequestSchema = z
 
 export type ApproveResult =
   | { ok: true; request: RescheduleRequestRow; event: CalendarEvent }
-  | { ok: false; error: 'CONFLICT'; conflicts: { id: string; title: string | null }[]; suggestions: string[] }
+  | {
+      ok: false
+      error: 'CONFLICT'
+      conflicts: { id: string; title: string | null }[]
+      suggestions: string[]
+    }
 
 // Parent/student create a pending request for their own child, against a lesson the child attends.
 export async function createRescheduleRequestCore(
@@ -44,7 +49,8 @@ export async function createRescheduleRequestCore(
   // Row-level ownership: the acting user must be linked to this student (P7a-5).
   await assertLinkedToStudent(ctx, data.studentId)
 
-  const target = (await forTenant(ctx).findById(lesson, data.lessonId)) as typeof lesson.$inferSelect | null
+  const target = (await forTenant(ctx).findById(lesson, data.lessonId)) as
+    typeof lesson.$inferSelect | null
   if (!target) throw new Error('课节不存在')
 
   // The child must actually attend this lesson's section (active enrollment).
@@ -77,7 +83,10 @@ export async function approveRescheduleRequestCore(
   ctx: AuthContext,
   requestId: string,
 ): Promise<ApproveResult> {
-  const req = (await forTenant(ctx).findById(rescheduleRequest, requestId)) as RescheduleRequestRow | null
+  const req = (await forTenant(ctx).findById(
+    rescheduleRequest,
+    requestId,
+  )) as RescheduleRequestRow | null
   if (!req) throw new Error('申请不存在')
   if (req.status !== 'pending') throw new Error('申请已处理')
   if (!req.requestedStartAt || !req.requestedEndAt) throw new Error('申请缺少目标时间')
@@ -92,12 +101,18 @@ export async function approveRescheduleRequestCore(
   } catch (e) {
     // GiST race (23P01) → rescheduleLessonCore throws ConflictError. Treat like a soft conflict:
     // leave the request pending so the reviewer retries with a different time.
-    if (e instanceof ConflictError) return { ok: false, error: 'CONFLICT', conflicts: [], suggestions: [] }
+    if (e instanceof ConflictError)
+      return { ok: false, error: 'CONFLICT', conflicts: [], suggestions: [] }
     throw e
   }
 
   if (!result.ok) {
-    return { ok: false, error: 'CONFLICT', conflicts: result.conflicts, suggestions: result.suggestions }
+    return {
+      ok: false,
+      error: 'CONFLICT',
+      conflicts: result.conflicts,
+      suggestions: result.suggestions,
+    }
   }
 
   const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
@@ -112,7 +127,10 @@ export async function rejectRescheduleRequestCore(
   ctx: AuthContext,
   requestId: string,
 ): Promise<RescheduleRequestRow> {
-  const req = (await forTenant(ctx).findById(rescheduleRequest, requestId)) as RescheduleRequestRow | null
+  const req = (await forTenant(ctx).findById(
+    rescheduleRequest,
+    requestId,
+  )) as RescheduleRequestRow | null
   if (!req) throw new Error('申请不存在')
   if (req.status !== 'pending') throw new Error('申请已处理')
   const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
@@ -128,10 +146,15 @@ export async function cancelRescheduleRequestCore(
   ctx: AuthContext,
   requestId: string,
 ): Promise<RescheduleRequestRow> {
-  const req = (await forTenant(ctx).findById(rescheduleRequest, requestId)) as RescheduleRequestRow | null
+  const req = (await forTenant(ctx).findById(
+    rescheduleRequest,
+    requestId,
+  )) as RescheduleRequestRow | null
   if (!req) throw new Error('申请不存在')
   if (req.requestedById !== ctx.userId) throw new Error('无权取消该申请')
   if (req.status !== 'pending') throw new Error('申请已处理')
-  const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, { status: 'canceled' })
+  const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
+    status: 'canceled',
+  })
   return updated as RescheduleRequestRow
 }

@@ -65,14 +65,22 @@ describe('reschedule-request workflow — DB integration', () => {
   beforeAll(async () => {
     await cleanup()
     const now = new Date()
-    await db.insert(organization).values([{ id: org, name: 'R7a', slug: 'r-7a-resched', createdAt: now }])
+    await db
+      .insert(organization)
+      .values([{ id: org, name: 'R7a', slug: 'r-7a-resched', createdAt: now }])
     await db.insert(user).values([
       { id: ownerUserId, name: 'Owner', email: 'owner-7a@t.com', emailVerified: true },
       { id: parentUserId, name: 'Parent', email: 'parent-7a@t.com', emailVerified: true },
     ])
     await db.insert(member).values([
       { id: 'm_owner_7a', organizationId: org, userId: ownerUserId, role: 'owner', createdAt: now },
-      { id: 'm_parent_7a', organizationId: org, userId: parentUserId, role: 'parent', createdAt: now },
+      {
+        id: 'm_parent_7a',
+        organizationId: org,
+        userId: parentUserId,
+        role: 'parent',
+        createdAt: now,
+      },
     ])
 
     const ctx = ownerCtx()
@@ -97,7 +105,11 @@ describe('reschedule-request workflow — DB integration', () => {
 
     // 小明 enrolled in section1 only; linked to the parent. 小红 exists but is NOT linked to the parent.
     await forTenant(ctx).insert(enrollment, { studentId, sectionId, status: 'active' })
-    await forTenant(ctx).insert(portalLink, { studentId, userId: parentUserId, relationship: 'parent' })
+    await forTenant(ctx).insert(portalLink, {
+      studentId,
+      userId: parentUserId,
+      relationship: 'parent',
+    })
 
     const mk = async (startH: number, endH: number, section = sectionId) => {
       const [l] = (await forTenant(ctx).insert(lesson, {
@@ -167,7 +179,10 @@ describe('reschedule-request workflow — DB integration', () => {
       expect(res.request.reviewedAt).toBeInstanceOf(Date)
       expect(new Date(res.event.start).getTime()).toBe(at(16).getTime())
     }
-    const [moved] = (await forTenant(ownerCtx()).select(lesson, eq(lesson.id, lessonA))) as (typeof lesson.$inferSelect)[]
+    const [moved] = (await forTenant(ownerCtx()).select(
+      lesson,
+      eq(lesson.id, lessonA),
+    )) as (typeof lesson.$inferSelect)[]
     expect(moved.startAt.getTime()).toBe(at(16).getTime())
   })
 
@@ -186,7 +201,10 @@ describe('reschedule-request workflow — DB integration', () => {
       eq(rescheduleRequest.id, req.id),
     )) as (typeof rescheduleRequest.$inferSelect)[]
     expect(reloaded.status).toBe('pending')
-    const [c] = (await forTenant(ownerCtx()).select(lesson, eq(lesson.id, lessonC))) as (typeof lesson.$inferSelect)[]
+    const [c] = (await forTenant(ownerCtx()).select(
+      lesson,
+      eq(lesson.id, lessonC),
+    )) as (typeof lesson.$inferSelect)[]
     expect(c.startAt.getTime()).toBe(at(12).getTime()) // unmoved
   })
 
@@ -210,9 +228,9 @@ describe('reschedule-request workflow — DB integration', () => {
       requestedEndAt: at(10),
     })
     // a different portal user (not the requester) cannot cancel
-    await expect(cancelRescheduleRequestCore(ctxFor(org, 'someone_else', 'parent'), req.id)).rejects.toThrow(
-      '无权取消该申请',
-    )
+    await expect(
+      cancelRescheduleRequestCore(ctxFor(org, 'someone_else', 'parent'), req.id),
+    ).rejects.toThrow('无权取消该申请')
     // owner rejects it
     await rejectRescheduleRequestCore(ownerCtx(), req.id)
     // re-processing a non-pending request throws

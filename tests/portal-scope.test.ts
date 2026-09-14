@@ -40,9 +40,21 @@ describe('portal row-level scope — a parent sees ONLY their own child', () => 
     s1 = a1.id
     s2 = a2.id
     sB = b.id
-    await forTenant(ctxA).insert(portalLink, { studentId: s1, userId: parentA1, relationship: 'parent' })
-    await forTenant(ctxA).insert(portalLink, { studentId: s2, userId: parentA2, relationship: 'parent' })
-    await forTenant(ctxB).insert(portalLink, { studentId: sB, userId: parentB, relationship: 'parent' })
+    await forTenant(ctxA).insert(portalLink, {
+      studentId: s1,
+      userId: parentA1,
+      relationship: 'parent',
+    })
+    await forTenant(ctxA).insert(portalLink, {
+      studentId: s2,
+      userId: parentA2,
+      relationship: 'parent',
+    })
+    await forTenant(ctxB).insert(portalLink, {
+      studentId: sB,
+      userId: parentB,
+      relationship: 'parent',
+    })
   })
   afterAll(cleanup)
 
@@ -53,12 +65,16 @@ describe('portal row-level scope — a parent sees ONLY their own child', () => 
 
   it('assertLinkedToStudent allows own child, rejects another parent’s child in the SAME org', async () => {
     await expect(assertLinkedToStudent(ctxFor(orgA, parentA1), s1)).resolves.toBeUndefined()
-    await expect(assertLinkedToStudent(ctxFor(orgA, parentA1), s2)).rejects.toThrow('无权访问该学生')
+    await expect(assertLinkedToStudent(ctxFor(orgA, parentA1), s2)).rejects.toThrow(
+      '无权访问该学生',
+    )
   })
 
   it('cross-tenant: a parent cannot resolve or reach a child in another org', async () => {
     expect(await resolveLinkedStudentIds(ctxFor(orgB, parentB))).toEqual([sB])
     // parentA1 acting in orgA cannot reach the orgB child (portalLink is tenant-scoped)
-    await expect(assertLinkedToStudent(ctxFor(orgA, parentA1), sB)).rejects.toThrow('无权访问该学生')
+    await expect(assertLinkedToStudent(ctxFor(orgA, parentA1), sB)).rejects.toThrow(
+      '无权访问该学生',
+    )
   })
 })

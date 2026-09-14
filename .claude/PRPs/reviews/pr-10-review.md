@@ -80,3 +80,25 @@ None
 - `.claude/PRPs/plans/phase-7a-portal-reschedule.plan.md` (Added) — 计划
 - `.claude/PRPs/reports/phase-7a-portal-reschedule-report.md` (Added) — PR-1 实现报告；偏离与遗留逐条属实 ✓
 - `.claude/PRPs/prds/course-scheduling-system.prd.md` (Modified) — Phase 7 拆分为 7a(in-progress)+7b–7e(pending)，链接解析 ✓
+
+---
+
+## Resolution — MEDIUM-1 已修复（后续提交）
+
+**修复提交**：在 `worktree-prp-phase7-portal-reschedule-plan` 上追加，重写 `src/auth/provision.ts` + `src/app/dashboard/students/portal-actions.ts` + `tests/provision-portal.test.ts`。
+
+**做法**（既修复 MEDIUM-1，又不引入新漏洞）：
+1. **补偿式原子性** — 新增 `deprovisionPortalMember(userId)`（member+account+user，**单事务**内删除）。`createUser` 后若 `addMember` 或 `portalLink` 插入失败，删除刚铸的孤儿 user；仅当本次调用 `created===true`（新铸用户）才拆除，复用既有成员时不误删。
+2. **按邮箱幂等 + 防劫持** — 按已验证 email 查已有 user：已存在**且已是本 org 成员**才复用（支持「一位真实邮箱家长→多个孩子」，且再供应同 (email,student) 为无操作）；存在但**不在本 org** 则抛「该邮箱已被其他账号占用」**拒绝**，绝不按邮箱把外部账号注入本租户（无跨租户成员注入）。合成邮箱（无 loginId）路径不变。
+3. **拆无头 core** `provisionPortalAccountCore(ctx, input)`（遵循 report-core/reschedule-core 约定），action 变薄包装器（`requireAuthContext → requirePermission({member:['create']}) → core → revalidatePath`）。
+
+**校验**：typecheck ✓ · eslint ✓（0 警告）· `next build` ✓ · **`pnpm test` 102/102**（供应用例 4 条：全新+幂等+多孩子 / 防劫持跨租户拒绝 / addMember 失败回滚无孤儿 / 合成邮箱；较原 99 净 +3）。
+
+**对抗式验证**（3 个独立 verifier，安全/正确性并发/约定三视角）：三大声明（原子性、幂等、防劫持）在顺序流下均**未被证伪**，无跨租户劫持、无提权、无纯成功路径下的数据损坏。
+
+**残留 LOW（已知、非阻断，未在本轮修复）**：
+- **并发采纳-拆除竞态** — A(新 email, sA) 与 B(同 email, sB) 并发：A 提交 user+member 后自身 link 插入遇瞬时故障 → A 全局拆除该 user → B 已用该 user 链接 sB，指向被删 user。需瞬时 DB 故障 + 精确交错，重试自愈，不授予越权。
+- **portalLink 检查后插入 TOCTOU** — 并发同 (tenant,student,user) 供应会以原始唯一索引冲突报错而非幂等无操作（无数据损坏；因 `created===false` 不会误拆用户）。可用 `onConflictDoNothing` 硬化。
+- **异 kind 复用为静默无操作** — 先以 parent 供应、后以 student 再供应同 (email,student)，`relationship`/member role 不更新（陈旧关系，非安全问题）。
+- **邮箱枚举** — 区分「他处已存在」与「空闲」的错误信息对已认证 org 管理员泄露账号存在性（调用方已受权，可接受）。
+- 建议后续以 `onConflictDoNothing` + 竞态守卫收口这些边界；`deprovisionPortalMember` 已加契约注释（仅可对本进程新铸的单成员用户调用）。
