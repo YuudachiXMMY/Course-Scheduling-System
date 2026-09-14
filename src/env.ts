@@ -17,6 +17,11 @@ export const env = createEnv({
     MCP_ORG_ID: z.string().min(1).optional(), // organizationId (=tenantId) the token acts as
     MCP_USER_ID: z.string().min(1).optional(), // user.id the token acts as (owner member row)
     MCP_RESOURCE_URL: z.url().optional(), // audience for withMcpAuth (anti confused-deputy)
+    // P5: Claude drafting for progress reports. OPTIONAL so the app boots without it — report
+    // drafting fails fast with a clear message when unset; everything else works. Model defaults
+    // to Opus 4.8; set ANTHROPIC_MODEL=claude-haiku-4-5 / claude-sonnet-5 to trade cost for tier.
+    ANTHROPIC_API_KEY: z.string().min(1).optional(),
+    ANTHROPIC_MODEL: z.string().min(1).default('claude-opus-4-8'),
   },
   client: { NEXT_PUBLIC_APP_URL: z.url() },
   experimental__runtimeEnv: { NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL },
