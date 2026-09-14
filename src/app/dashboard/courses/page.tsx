@@ -32,8 +32,19 @@ export default async function CoursesPage() {
               </div>
               <ul className="mb-3 flex flex-col gap-1">
                 {courseSections.map((s) => (
-                  <li key={s.id} className="text-xs text-neutral-600">
-                    {s.name ?? '（未命名班级）'} · {s.rrule ?? '无重复'} · {s.capacity} 人
+                  <li
+                    key={s.id}
+                    className="flex items-center justify-between gap-2 text-xs text-neutral-600"
+                  >
+                    <span>
+                      {s.name ?? '（未命名班级）'} · {s.rrule ?? '无重复'} · {s.capacity} 人
+                    </span>
+                    <a
+                      href={`/api/export/section/${s.id}`}
+                      className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-neutral-700"
+                    >
+                      批量导出(ZIP)
+                    </a>
                   </li>
                 ))}
                 {courseSections.length === 0 && (

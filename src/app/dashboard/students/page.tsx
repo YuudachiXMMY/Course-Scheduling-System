@@ -1,7 +1,10 @@
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { env } from '@/env'
 import { listStudents } from './actions'
+import { getActiveShare } from './share-data'
 import StudentForm from './student-form'
+import ExportPanel from './export-panel'
 
 export default async function StudentsPage() {
   const ctx = await requireAuthContext()
@@ -9,6 +12,9 @@ export default async function StudentsPage() {
   const students = await listStudents()
   const active = students.filter((s) => s.status !== 'archived')
   const archived = students.filter((s) => s.status === 'archived')
+  // Single-tutor scale: fetch each active student's current active share in parallel.
+  const shares = await Promise.all(active.map((s) => getActiveShare(ctx, s.id)))
+  const shareByStudent = new Map(active.map((s, i) => [s.id, shares[i]]))
 
   return (
     <section className="flex flex-col gap-6">
@@ -21,14 +27,21 @@ export default async function StudentsPage() {
         <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
           {active.length === 0 && <li className="px-4 py-3 text-sm text-neutral-500">暂无学生</li>}
           {active.map((s) => (
-            <li key={s.id} className="flex items-center justify-between px-4 py-3">
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">{s.name}</span>
-                <span className="text-xs text-neutral-500">
-                  {s.schoolGrade ?? '—'} · 微信 {s.parentWechat ?? '—'}
-                </span>
+            <li key={s.id} className="flex flex-col gap-3 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">{s.name}</span>
+                  <span className="text-xs text-neutral-500">
+                    {s.schoolGrade ?? '—'} · 微信 {s.parentWechat ?? '—'}
+                  </span>
+                </div>
+                <StudentForm student={s} />
               </div>
-              <StudentForm student={s} />
+              <ExportPanel
+                studentId={s.id}
+                token={shareByStudent.get(s.id)?.token ?? null}
+                shareOrigin={env.NEXT_PUBLIC_APP_URL}
+              />
             </li>
           ))}
         </ul>

@@ -27,6 +27,18 @@ export function feedWindow(now = new Date()): { from: Date; to: Date } {
   }
 }
 
+// P4-4: shorter, WeChat-friendly window for the schedule card / public page — snap to full
+// Asia/Shanghai calendar days over [startOfToday, +4 weeks], then convert to UTC instants for
+// the `lesson.start_at` comparison. Kept next to feedWindow so all window helpers live together;
+// the per-student .ics still reuses feedWindow (the fuller subscribe-grade window).
+export function cardWindow(now = new Date()): { from: Date; to: Date } {
+  const n = DateTime.fromJSDate(now).setZone(ZONE)
+  return {
+    from: n.startOf('day').toUTC().toJSDate(),
+    to: n.plus({ weeks: 4 }).endOf('day').toUTC().toJSDate(),
+  }
+}
+
 // P3-2 EXCEPTION: NO AuthContext here. The public feed route has already resolved a
 // capability `token` to this `tenantId` (a verified capability). Scope STRICTLY by that
 // tenantId — never by a request param. Do NOT use forTenant() (it requires a principal).
