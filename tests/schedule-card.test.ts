@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { renderScheduleCardHtml, type CardData, type CardLesson } from '@/lib/schedule-card'
+import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
+import { type CardData, type CardLesson } from '@/lib/schedule-card'
 import { cardWindow } from '@/lib/ical-feed'
 
 // 08:00Z == 16:00 Asia/Shanghai (China fixed +08, no DST) — mirrors the ical-feed test's
@@ -23,16 +24,16 @@ function makeLessons(n: number): CardLesson[] {
 }
 
 describe('renderScheduleCardHtml', () => {
-  it('renders the student name with the "的课表" heading', () => {
+  it('renders the student name with the "的课表" heading', async () => {
     const data: CardData = { studentName: '张三', lessons: [baseLesson] }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).toContain('张三')
     expect(html).toContain('的课表')
   })
 
-  it('renders the Asia/Shanghai wall-clock time (08:00Z → 16:00 local) for each lesson', () => {
+  it('renders the Asia/Shanghai wall-clock time (08:00Z → 16:00 local) for each lesson', async () => {
     const data: CardData = { studentName: '张三', lessons: [baseLesson] }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     // startAt 08:00Z → 16:00 local, endAt 09:00Z → 17:00 local.
     expect(html).toContain('16:00')
     expect(html).toContain('17:00')
@@ -41,57 +42,57 @@ describe('renderScheduleCardHtml', () => {
     expect(html).toContain('房间1')
   })
 
-  it('renders a row per lesson (up to the 12-row PNG cap)', () => {
+  it('renders a row per lesson (up to the 12-row PNG cap)', async () => {
     const data: CardData = { studentName: '张三', lessons: makeLessons(5) }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     for (let i = 0; i < 5; i++) {
       expect(html).toContain(`课程${i}`)
     }
   })
 
-  it('embeds the QR as an <img src="data:image/png…"> when qrDataUrl is set', () => {
+  it('embeds the QR as an <img src="data:image/png…"> when qrDataUrl is set', async () => {
     const qrDataUrl = 'data:image/png;base64,AAAABBBBCCCC'
     const data: CardData = { studentName: '张三', lessons: [baseLesson], qrDataUrl }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).toContain('<img')
     expect(html).toContain('src="data:image/png')
     expect(html).toContain(qrDataUrl)
   })
 
-  it('omits the QR block when qrDataUrl is absent', () => {
+  it('omits the QR block when qrDataUrl is absent', async () => {
     const data: CardData = { studentName: '张三', lessons: [baseLesson] }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).not.toContain('data:image/png')
   })
 
-  it('declares the Noto Sans SC CJK font-family (stops 豆腐 in the PNG)', () => {
+  it('declares the Noto Sans SC CJK font-family (stops 豆腐 in the PNG)', async () => {
     const data: CardData = { studentName: '张三', lessons: [baseLesson] }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).toContain('Noto Sans SC')
   })
 
-  it('truncates past 12 lessons with a "+N 节更多" hint', () => {
+  it('truncates past 12 lessons with a "+N 节更多" hint', async () => {
     const data: CardData = { studentName: '张三', lessons: makeLessons(15) }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     // 15 lessons → 12 shown, 3 hidden.
     expect(html).toContain('3 节更多')
   })
 
-  it('does not show the "+N 节更多" hint at exactly 12 lessons', () => {
+  it('does not show the "+N 节更多" hint at exactly 12 lessons', async () => {
     const data: CardData = { studentName: '张三', lessons: makeLessons(12) }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).not.toContain('节更多')
   })
 
-  it('shows "近期暂无排课" for an empty schedule', () => {
+  it('shows "近期暂无排课" for an empty schedule', async () => {
     const data: CardData = { studentName: '张三', lessons: [] }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).toContain('近期暂无排课')
   })
 
-  it('emits a self-contained HTML document', () => {
+  it('emits a self-contained HTML document', async () => {
     const data: CardData = { studentName: '张三', lessons: [baseLesson] }
-    const html = renderScheduleCardHtml(data)
+    const html = await renderScheduleCardHtml(data)
     expect(html).toContain('<!doctype html>')
     expect(html).toContain('id="card"')
   })

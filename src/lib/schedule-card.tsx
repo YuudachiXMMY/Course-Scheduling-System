@@ -1,4 +1,3 @@
-import { renderToStaticMarkup } from 'react-dom/server'
 import { DateTime } from 'luxon'
 
 const ZONE = 'Asia/Shanghai'
@@ -27,7 +26,9 @@ function fmt(d: Date) {
 
 // P4-3: inline style objects ONLY — Tailwind classes do NOT apply under Playwright setContent
 // (no served stylesheet). This same component renders identically in the RSC public page and in
-// the PNG pipeline (renderScheduleCardHtml → setContent).
+// the PNG pipeline (schedule-card-render.tsx's renderScheduleCardHtml → setContent). The PNG
+// wrapper lives in a SEPARATE file so this component can be imported by the RSC public page
+// without dragging react-dom/server into its module graph (Next `build` forbids that).
 export function ScheduleCard({ data }: { data: CardData }) {
   const rows = data.lessons.slice(0, 12) // PNG cap; web page shows all (see Task 5)
   return (
@@ -47,9 +48,7 @@ export function ScheduleCard({ data }: { data: CardData }) {
         <div style={{ fontSize: 18, color: '#525252', marginTop: 4 }}>{data.subtitle}</div>
       )}
       <div style={{ marginTop: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {rows.length === 0 && (
-          <div style={{ fontSize: 20, color: '#737373' }}>近期暂无排课</div>
-        )}
+        {rows.length === 0 && <div style={{ fontSize: 20, color: '#737373' }}>近期暂无排课</div>}
         {rows.map((l) => {
           const s = fmt(l.startAt)
           const e = fmt(l.endAt)
@@ -92,13 +91,4 @@ export function ScheduleCard({ data }: { data: CardData }) {
       )}
     </div>
   )
-}
-
-// PURE — no DB, no Playwright. Wrap in a self-contained doc with a CJK font-family block (P4-3).
-// The Debian runtime image supplies the 'Noto Sans SC' font file (fonts-noto-cjk).
-export function renderScheduleCardHtml(data: CardData): string {
-  const body = renderToStaticMarkup(<ScheduleCard data={data} />)
-  return `<!doctype html><html lang="zh-Hans"><head><meta charset="utf-8">
-      <style>*{margin:0;padding:0}body{font-family:'Noto Sans SC',system-ui,sans-serif}</style>
-      </head><body>${body}</body></html>`
 }

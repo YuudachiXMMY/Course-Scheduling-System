@@ -13,11 +13,7 @@ export const dynamic = 'force-dynamic'
 // noindex belt-and-suspenders: metadata here + X-Robots-Tag header in next.config (P4-10).
 export const metadata: Metadata = { robots: { index: false, follow: false } }
 
-export default async function SharePage({
-  params,
-}: {
-  params: Promise<{ token: string }>
-}) {
+export default async function SharePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
   const share = await getShareByToken(token)
   if (!share) notFound()
@@ -36,9 +32,7 @@ export default async function SharePage({
 
   return (
     <main style={{ maxWidth: 760, margin: '0 auto', padding: 16 }}>
-      <ScheduleCard
-        data={{ studentName: s.name, subtitle: s.schoolGrade ?? undefined, lessons }}
-      />
+      <ScheduleCard data={{ studentName: s.name, subtitle: s.schoolGrade ?? undefined, lessons }} />
       <footer style={{ marginTop: 24, fontSize: 12, color: '#737373' }}>
         本页仅供查看，链接可能随时更新。
         <Link href="/privacy" style={{ marginLeft: 4, textDecoration: 'underline' }}>

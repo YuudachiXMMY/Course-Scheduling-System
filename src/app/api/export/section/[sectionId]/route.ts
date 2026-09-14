@@ -5,7 +5,7 @@ import { requirePermission } from '@/auth/authorize'
 import { forTenant } from '@/db/tenant'
 import { classSection, enrollment, student } from '@/db/schema'
 import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
-import { renderScheduleCardHtml } from '@/lib/schedule-card'
+import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
 import { renderCardPng } from '@/lib/browser'
 import { qrDataUrl } from '@/lib/qr'
 import { buildIcs, cardWindow, feedWindow } from '@/lib/ical-feed'
@@ -31,8 +31,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   const { sectionId } = await params
 
   const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    | typeof classSection.$inferSelect
-    | null
+    typeof classSection.$inferSelect | null
   if (!section) return new Response('Not found', { status: 404 })
 
   const enrollments = (await forTenant(ctx).select(
@@ -44,7 +43,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   const students =
     studentIds.length === 0
       ? []
-      : ((await forTenant(ctx).select(student, inArray(student.id, studentIds))) as (typeof student.$inferSelect)[])
+      : ((await forTenant(ctx).select(
+          student,
+          inArray(student.id, studentIds),
+        )) as (typeof student.$inferSelect)[])
 
   const host = new URL(env.NEXT_PUBLIC_APP_URL).host
 
@@ -65,7 +67,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
     const shareUrl = `${env.NEXT_PUBLIC_APP_URL}/s/${share.token}`
 
     const cardLessons = await getStudentLessonsForTenant(ctx, s.id, cardWindow())
-    const html = renderScheduleCardHtml({
+    const html = await renderScheduleCardHtml({
       studentName: s.name,
       subtitle: s.schoolGrade ?? undefined,
       qrDataUrl: await qrDataUrl(shareUrl),

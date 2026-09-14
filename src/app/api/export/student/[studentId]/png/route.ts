@@ -3,7 +3,7 @@ import { requirePermission } from '@/auth/authorize'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
-import { renderScheduleCardHtml } from '@/lib/schedule-card'
+import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
 import { renderCardPng } from '@/lib/browser'
 import { qrDataUrl } from '@/lib/qr'
 import { cardWindow } from '@/lib/ical-feed'
@@ -19,13 +19,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ student
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['read'], lesson: ['read'] })
   const { studentId } = await params
-  const s = (await forTenant(ctx).findById(student, studentId)) as typeof student.$inferSelect | null
+  const s = (await forTenant(ctx).findById(student, studentId)) as
+    typeof student.$inferSelect | null
   if (!s) return new Response('Not found', { status: 404 })
 
   const share = await ensureActiveShare(ctx, studentId)
   const shareUrl = `${env.NEXT_PUBLIC_APP_URL}/s/${share.token}`
   const lessons = await getStudentLessonsForTenant(ctx, studentId, cardWindow())
-  const html = renderScheduleCardHtml({
+  const html = await renderScheduleCardHtml({
     studentName: s.name,
     subtitle: s.schoolGrade ?? undefined,
     qrDataUrl: await qrDataUrl(shareUrl),
