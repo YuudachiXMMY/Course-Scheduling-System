@@ -18,6 +18,8 @@ None.
 
 ### MEDIUM
 
+> **Update (2026-09-14): M1 and M2 both fixed in this branch.** M1 — added a `stats_snapshot jsonb` column (migration `0005`); `approveReportCore` freezes the computed numbers at approval and `getReportViewModel` reads the snapshot for approved reports (drafts still recompute live). M2 — section-level grades are now bounded by `gradedAt`/`createdAt` within the period window. Both covered by new `report-db.test.ts` cases.
+
 **M1 — Approved reports are not reproducible; numbers can drift from the frozen narrative.**
 `getReportViewModel` (`src/lib/report-core.ts:73-96`) recomputes attendance/grades from the **live** DB at PDF time for *every* report, including `approved` ones. The narrative is frozen on the row, but the numbers are not — if anyone edits an attendance/grade record after approval, the "已定稿" PDF silently shows different numbers while the prose stays the same. An approved report is meant to be a finalized academic record; today it is only deterministic if the underlying rows never change. The code comment ("deterministic given the period") assumes immutable source data, which isn't guaranteed.
 *Suggestion*: snapshot the computed stats (attendance summary + grade items + average) into the row (e.g. a `jsonb stats` column) at **approve** time, and have the PDF read the snapshot for approved reports while still recomputing live for drafts.

@@ -26,8 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   const { sectionId } = await params
 
   const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    | typeof classSection.$inferSelect
-    | null
+    typeof classSection.$inferSelect | null
   if (!section) return new Response('Not found', { status: 404 })
 
   const enrollments = (await forTenant(ctx).select(

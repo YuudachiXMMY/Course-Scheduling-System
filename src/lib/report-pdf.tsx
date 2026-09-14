@@ -20,8 +20,20 @@ export interface ReportPdfModel {
   title: string | null
   status: 'draft' | 'approved'
   narrative: string | null
-  attendance: { total: number; present: number; absent: number; late: number; excused: number; rate: number }
-  grades: { title: string | null; score: number | null; maxScore: number | null; comment: string | null }[]
+  attendance: {
+    total: number
+    present: number
+    absent: number
+    late: number
+    excused: number
+    rate: number
+  }
+  grades: {
+    title: string | null
+    score: number | null
+    maxScore: number | null
+    comment: string | null
+  }[]
   gradeAverage: number | null
   generatedAt: string // ISO datetime, passed in (Date.now is unavailable to keep renders deterministic in tests)
 }
@@ -37,7 +49,16 @@ const styles = StyleSheet.create({
   cell: { flex: 1 },
   label: { color: '#666' },
   para: { lineHeight: 1.6, marginBottom: 8 },
-  footer: { position: 'absolute', bottom: 24, left: 40, right: 40, fontSize: 8, color: '#999', flexDirection: 'row', justifyContent: 'space-between' },
+  footer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 40,
+    right: 40,
+    fontSize: 8,
+    color: '#999',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
 })
 
 export function ReportDocument({ model: m }: { model: ReportPdfModel }) {

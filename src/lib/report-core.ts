@@ -20,8 +20,14 @@ export interface CreateReportInput {
   title?: string | null
 }
 
-export async function createReportDraftCore(ctx: AuthContext, input: CreateReportInput): Promise<Report> {
-  const data = await getReportData(ctx, input.studentId, { from: input.periodStart, to: input.periodEnd })
+export async function createReportDraftCore(
+  ctx: AuthContext,
+  input: CreateReportInput,
+): Promise<Report> {
+  const data = await getReportData(ctx, input.studentId, {
+    from: input.periodStart,
+    to: input.periodEnd,
+  })
   const draft = await draftNarrative(data)
   const [row] = (await forTenant(ctx).insert(progressReport, {
     studentId: input.studentId,
@@ -54,16 +60,25 @@ export async function approveReportCore(ctx: AuthContext, id: string): Promise<R
   const existing = (await forTenant(ctx).findById(progressReport, id)) as Report | null
   if (!existing) throw new Error('报告不存在')
   if (existing.status === 'approved') throw new Error('报告已定稿')
+  // Freeze the numbers at approval time (M1): recompute once from the live DB over the report's
+  // period, then store the snapshot so the finalized PDF is reproducible even if attendance/grades
+  // change later. The frozen narrative and frozen numbers stay in sync.
+  const statsSnapshot = await getReportData(ctx, existing.studentId, {
+    from: existing.periodStart ?? new Date(0),
+    to: existing.periodEnd ?? new Date(),
+  })
   const [row] = (await forTenant(ctx).update(progressReport, id, {
     status: 'approved',
     approvedBy: ctx.userId,
     approvedAt: new Date(),
+    statsSnapshot,
   })) as Report[]
   return row
 }
 
-// Build the PDF view-model: report row (frozen narrative/status) + fresh numbers from the DB,
-// scoped to the report's own period window (deterministic given the period).
+// Build the PDF view-model: report row (frozen narrative/status) + numbers scoped to the report's
+// period. Approved reports read the snapshot frozen at approval (M1 — reproducible); drafts
+// recompute live so previews reflect the latest DB state.
 export async function getReportViewModel(
   ctx: AuthContext,
   id: string,
@@ -71,9 +86,13 @@ export async function getReportViewModel(
 ): Promise<ReportPdfModel | null> {
   const r = (await forTenant(ctx).findById(progressReport, id)) as Report | null
   if (!r) return null
-  const to = r.periodEnd ?? new Date()
-  const from = r.periodStart ?? new Date(0)
-  const data = await getReportData(ctx, r.studentId, { from, to })
+  const data =
+    r.status === 'approved' && r.statsSnapshot
+      ? r.statsSnapshot
+      : await getReportData(ctx, r.studentId, {
+          from: r.periodStart ?? new Date(0),
+          to: r.periodEnd ?? new Date(),
+        })
   return {
     studentName: data.studentName,
     schoolGrade: data.schoolGrade,

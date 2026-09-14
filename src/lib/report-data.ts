@@ -23,7 +23,8 @@ export async function getReportData(
   studentId: string,
   window: { from: Date; to: Date },
 ): Promise<ReportData> {
-  const s = (await forTenant(ctx).findById(student, studentId)) as typeof student.$inferSelect | null
+  const s = (await forTenant(ctx).findById(student, studentId)) as
+    typeof student.$inferSelect | null
   if (!s) throw new Error('学生不存在或不属于当前机构')
 
   const enrollments = (await forTenant(ctx).select(
@@ -56,15 +57,19 @@ export async function getReportData(
         )) as (typeof attendance.$inferSelect)[])
 
   // Grades for this student, scoped in-memory to the window's lessons/sections (avoids an OR query).
+  // Lesson-linked grades inherit the window via lessonIds (lessons are already date-filtered).
+  // Section-level (per-term) grades have no lesson, so bound them by gradedAt (fallback createdAt)
+  // within [from, to] — otherwise a term grade from outside the period would leak into the report.
+  const inWindow = (d: Date | null) => d != null && d >= window.from && d <= window.to
   const allGrades = (await forTenant(ctx).select(
     grade,
     eq(grade.studentId, studentId),
   )) as (typeof grade.$inferSelect)[]
-  const relevantGrades = allGrades.filter(
-    (g) =>
-      (g.lessonId != null && lessonIds.has(g.lessonId)) ||
-      (g.sectionId != null && sectionIdSet.has(g.sectionId)),
-  )
+  const relevantGrades = allGrades.filter((g) => {
+    if (g.lessonId != null && lessonIds.has(g.lessonId)) return true
+    if (g.sectionId != null && sectionIdSet.has(g.sectionId)) return inWindow(g.gradedAt ?? g.createdAt)
+    return false
+  })
 
   // Student-scoped notes for the AI to summarize (most-recent first, capped for prompt size).
   const noteRows = (await forTenant(ctx).select(

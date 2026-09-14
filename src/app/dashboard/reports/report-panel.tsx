@@ -108,7 +108,13 @@ export default function ReportPanel({
           </li>
         )}
         {reports.map((r) => (
-          <ReportItem key={r.id} report={r} studentName={nameOf.get(r.studentId) ?? r.studentId} onRun={run} pending={pending} />
+          <ReportItem
+            key={r.id}
+            report={r}
+            studentName={nameOf.get(r.studentId) ?? r.studentId}
+            onRun={run}
+            pending={pending}
+          />
         ))}
       </ul>
     </div>
@@ -135,9 +141,7 @@ function ReportItem({
     <li className="flex flex-col gap-3 rounded border border-neutral-200 px-4 py-3">
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
-          <span className="text-sm font-medium">
-            {report.title || `${studentName} 进度报告`}
-          </span>
+          <span className="text-sm font-medium">{report.title || `${studentName} 进度报告`}</span>
           <span className="text-xs text-neutral-500">
             {studentName} · {period}
           </span>

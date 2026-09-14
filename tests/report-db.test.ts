@@ -32,6 +32,7 @@ import {
   createReportDraftCore,
   updateReportNarrativeCore,
   approveReportCore,
+  getReportViewModel,
 } from '@/lib/report-core'
 
 const ctxFor = (tenantId: string, userId: string, role = 'owner'): AuthContext => ({
@@ -156,6 +157,57 @@ describe('progress reports — DB integration (report-core + report-data)', () =
 
     await expect(updateReportNarrativeCore(ctx, draft.id, '再改一次')).rejects.toThrow('已定稿')
     await expect(approveReportCore(ctx, draft.id)).rejects.toThrow('已定稿')
+  })
+
+  it('section-level (per-term) grades are bounded by the period window (M2)', async () => {
+    const ctx = ctxFor(org, userId)
+    // in-window term grade (no lesson) — should appear
+    await forTenant(ctx).insert(grade, {
+      studentId,
+      sectionId,
+      title: '期中',
+      score: '90.00',
+      gradedAt: at(9),
+    })
+    // out-of-window term grade (February, before the March window) — must NOT appear
+    await forTenant(ctx).insert(grade, {
+      studentId,
+      sectionId,
+      title: '寒假摸底',
+      score: '50.00',
+      gradedAt: new Date(Date.UTC(2026, 1, 1)),
+    })
+    const data = await getReportData(ctx, studentId, WINDOW)
+    const titles = data.grades.map((g) => g.title)
+    expect(titles).toContain('期中')
+    expect(titles).not.toContain('寒假摸底')
+  })
+
+  it('approved report freezes its numbers — later grade edits do not change the PDF (M1)', async () => {
+    const ctx = ctxFor(org, userId)
+    const draft = await createReportDraftCore(ctx, {
+      studentId,
+      periodStart: WINDOW.from,
+      periodEnd: WINDOW.to,
+    })
+    const liveBefore = await getReportData(ctx, studentId, WINDOW)
+    const approved = await approveReportCore(ctx, draft.id)
+    expect(approved.statsSnapshot).toBeTruthy()
+
+    // A new in-window grade recorded AFTER approval: live recompute sees it, the snapshot must not.
+    await forTenant(ctx).insert(grade, {
+      studentId,
+      lessonId: l1,
+      title: '补测',
+      score: '77.00',
+      gradedAt: at(9),
+    })
+    const liveAfter = await getReportData(ctx, studentId, WINDOW)
+    expect(liveAfter.grades.length).toBe(liveBefore.grades.length + 1) // live changed
+
+    const vm = await getReportViewModel(ctx, draft.id, '2026-03-31 00:00')
+    expect(vm?.status).toBe('approved')
+    expect(vm?.grades.length).toBe(liveBefore.grades.length) // snapshot frozen at approval
   })
 
   it('tenant isolation: another tenant cannot read/mutate this report', async () => {

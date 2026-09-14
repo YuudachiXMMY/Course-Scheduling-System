@@ -31,7 +31,8 @@ export function buildReportPrompt(args: { rubricVersion: string; data: ReportDat
   // The whole structured payload goes in the user turn (volatile → after the cached rubric prefix).
   const userJson = JSON.stringify(
     {
-      instruction: '请依据以下结构化数据为该学生起草一份进度报告叙述。只写叙述，不要编造任何数字或事实。',
+      instruction:
+        '请依据以下结构化数据为该学生起草一份进度报告叙述。只写叙述，不要编造任何数字或事实。',
       data: args.data,
     },
     null,

@@ -32,7 +32,14 @@ export interface ReportData {
 }
 
 export function summarizeAttendance(statuses: AttendanceStatus[]): AttendanceSummary {
-  const s: AttendanceSummary = { total: statuses.length, present: 0, absent: 0, late: 0, excused: 0, rate: 0 }
+  const s: AttendanceSummary = {
+    total: statuses.length,
+    present: 0,
+    absent: 0,
+    late: 0,
+    excused: 0,
+    rate: 0,
+  }
   for (const st of statuses) s[st] += 1
   s.rate = s.total === 0 ? 0 : Math.round((s.present / s.total) * 100) / 100
   return s

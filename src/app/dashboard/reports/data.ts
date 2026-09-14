@@ -25,7 +25,9 @@ const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
 export async function getReportsPageData(
   ctx: AuthContext,
 ): Promise<{ reports: ReportRow[]; students: StudentOption[] }> {
-  const rows = (await forTenant(ctx).select(progressReport)) as (typeof progressReport.$inferSelect)[]
+  const rows = (await forTenant(ctx).select(
+    progressReport,
+  )) as (typeof progressReport.$inferSelect)[]
   const students = (await forTenant(ctx).select(
     student,
     eq(student.status, 'active'),

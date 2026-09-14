@@ -1,8 +1,18 @@
-import { pgTable, text, date, timestamp, index, uniqueIndex, foreignKey } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  text,
+  date,
+  timestamp,
+  jsonb,
+  index,
+  uniqueIndex,
+  foreignKey,
+} from 'drizzle-orm/pg-core'
 import { primaryId, tenantId, createdAt, updatedAt } from './_helpers'
 import { reportStatus } from './enums'
 import { student } from './student'
 import { classSection } from './course'
+import type { ReportData } from '@/lib/report-stats'
 
 // Phase 5: per-student progress report. Narrative is Claude-drafted then teacher-edited; numbers
 // (attendance/grades) are rendered from the DB at PDF time, never stored here (no LLM-fabricated
@@ -18,6 +28,10 @@ export const progressReport = pgTable(
     periodStart: date('period_start', { mode: 'date' }),
     periodEnd: date('period_end', { mode: 'date' }),
     narrative: text('narrative'), // AI-drafted + teacher-edited prose (NO numbers)
+    // Numbers snapshot frozen at APPROVE time so an approved report is reproducible: attendance/
+    // grades edited after approval must not silently change the finalized PDF (M1). Null while draft
+    // — drafts recompute live from the DB. Shape = ReportData (JSON-safe: no Date fields).
+    statsSnapshot: jsonb('stats_snapshot').$type<ReportData>(),
     rubricVersion: text('rubric_version').notNull(), // which RUBRIC[version] drafted it (reproducibility)
     model: text('model'), // audit: which Claude model drafted the narrative
     status: reportStatus('status').notNull().default('draft'),

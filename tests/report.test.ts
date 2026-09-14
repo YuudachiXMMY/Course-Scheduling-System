@@ -1,10 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import {
-  summarizeAttendance,
-  parseScore,
-  averageScore,
-  type ReportData,
-} from '@/lib/report-stats'
+import { summarizeAttendance, parseScore, averageScore, type ReportData } from '@/lib/report-stats'
 import { buildReportPrompt, RUBRIC, RUBRIC_VERSION } from '@/lib/report-prompt'
 import { can } from '@/auth/authorize'
 import { renderReportPdf } from '@/lib/report-pdf'
@@ -42,7 +37,14 @@ describe('report-stats aggregators', () => {
     expect(s).toEqual({ total: 5, present: 4, absent: 1, late: 0, excused: 0, rate: 0.8 })
   })
   it('summarizeAttendance handles empty (rate 0, no divide-by-zero)', () => {
-    expect(summarizeAttendance([])).toEqual({ total: 0, present: 0, absent: 0, late: 0, excused: 0, rate: 0 })
+    expect(summarizeAttendance([])).toEqual({
+      total: 0,
+      present: 0,
+      absent: 0,
+      late: 0,
+      excused: 0,
+      rate: 0,
+    })
   })
   it('parseScore parses numeric STRINGS from node-pg (and rejects junk)', () => {
     expect(parseScore('85.00')).toBe(85)

@@ -1,0 +1,1 @@
+ALTER TABLE "progress_report" ADD COLUMN "stats_snapshot" jsonb;
