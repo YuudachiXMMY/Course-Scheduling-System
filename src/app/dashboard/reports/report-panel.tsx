@@ -2,7 +2,12 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createReportDraft, updateReportNarrative, approveReport, type ReportResult } from './actions'
+import {
+  createReportDraft,
+  updateReportNarrative,
+  approveReport,
+  type ReportResult,
+} from './actions'
 import type { ReportRow, StudentOption } from './data'
 
 export default function ReportPanel({
