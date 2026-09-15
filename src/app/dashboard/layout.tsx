@@ -2,13 +2,20 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getAuthContext } from '@/auth/context'
+import { isPortalRole } from '@/auth/portal'
 import LogoutButton from './logout-button'
 
 // UX-level guard ONLY. Real authorization is re-checked in every Server Action /
 // Route Handler / data fetch via requireAuthContext() + requirePermission().
+// Role gate: parent/student belong in /portal, never the staff dashboard. Without this, a portal
+// user could reach any /dashboard/* route whose permission verb they happen to hold — e.g.
+// /dashboard/reschedule, gated on rescheduleRequest:['list'] which parent/student also carry for
+// their OWN /portal/reschedule view, exposing the tenant-wide request queue. Mirrors PortalLayout's
+// symmetric `if (!isPortalRole) redirect('/dashboard')`.
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const ctx = await getAuthContext()
   if (!ctx) redirect('/login')
+  if (isPortalRole(ctx.role)) redirect('/portal')
 
   return (
     <div className="min-h-dvh">
