@@ -42,9 +42,24 @@ export default function SectionForm({
   function submit() {
     setError(null)
     setStatus(null)
+    // Validate required fields client-side: in production, server-side ZodError messages are
+    // redacted by Next.js and surface as the cryptic "Minified React error #441" instead of a
+    // helpful message. Fail fast here with clear feedback.
+    if (byDays.length === 0) {
+      setError('请至少选择一个上课日')
+      return
+    }
+    if (!termStart) {
+      setError('请选择学期开始日期')
+      return
+    }
+    if (termEnd && termEnd < termStart) {
+      setError('学期结束日期不能早于开始日期')
+      return
+    }
     startTransition(async () => {
       try {
-        const section = await createSection({
+        const result = await createSection({
           courseId,
           name: name || undefined,
           teacherId: defaultTeacherId,
@@ -56,7 +71,11 @@ export default function SectionForm({
           termEndDate: termEnd || undefined,
           timezone: 'Asia/Shanghai',
         })
-        const res = await materializeSectionAction((section as { id: string }).id)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        const res = await materializeSectionAction(result.section.id)
         setStatus(
           `已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`,
         )
@@ -134,9 +153,10 @@ export default function SectionForm({
       </div>
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col text-xs text-neutral-500">
-          学期开始
+          学期开始 <span className="text-red-500">*</span>
           <input
             type="date"
+            required
             className="rounded border border-neutral-300 px-2 py-1 text-sm"
             value={termStart}
             onChange={(e) => setTermStart(e.target.value)}
