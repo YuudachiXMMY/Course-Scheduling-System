@@ -10,6 +10,7 @@ import type {
   EventDropArg,
   EventClickArg,
   EventContentArg,
+  EventMountArg,
 } from '@fullcalendar/core'
 import zhCn from '@fullcalendar/core/locales/zh-cn'
 import { createLessonAction, rescheduleLessonAction } from './actions'
@@ -124,11 +125,17 @@ export default function ScheduleCalendar({
     setSelectedId(info.event.id)
   }
 
+  // Stable per-event anchor for E2E: fcEvents sets id: e.id, which is the underlying lesson id.
+  function handleEventDidMount(info: EventMountArg) {
+    info.el.setAttribute('data-testid', 'calendar-event-' + info.event.id)
+  }
+
   return (
     <div className="flex flex-col gap-3">
       <label className="flex items-center gap-2 text-sm">
         <span className="text-neutral-600">拖拽新建课节的班级：</span>
         <select
+          data-testid="section-select"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           value={sectionId}
           onChange={(e) => setSectionId(e.target.value)}
@@ -177,6 +184,7 @@ export default function ScheduleCalendar({
         select={handleSelect}
         eventDrop={handleDrop}
         eventClick={handleEventClick}
+        eventDidMount={handleEventDidMount}
       />
       {selectedId && (
         <LessonDetail

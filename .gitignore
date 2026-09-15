@@ -15,10 +15,23 @@ next-env.d.ts
 # testing
 /coverage
 
-# env — never commit secrets; keep the example
+# env — never commit secrets; keep the examples
 .env
 .env.*
 !.env.example
+!.env.e2e.example
+
+# playwright / e2e
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache
+tests/e2e/.auth
+tests/e2e/.seed
+
+# Next.js auto-generated agent rule files (next dev, agentRules)
+/AGENTS.md
+/CLAUDE.md
 
 # misc
 .DS_Store
