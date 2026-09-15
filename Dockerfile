@@ -56,6 +56,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd -g 1001 nodejs && useradd -u 1001 -g nodejs -m nextjs
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Next's standalone file tracing misses playwright-core/browsers.json (loaded via a runtime-computed
+# path), so the export routes 500 at import. Copy the full packages into the runtime node_modules to
+# guarantee resolution. No browser binaries ship (PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD during install) —
+# we drive the SYSTEM chromium installed above via PLAYWRIGHT_CHROMIUM_PATH.
+COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright ./node_modules/playwright
+COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright-core ./node_modules/playwright-core
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/dist/migrate.mjs ./dist/migrate.mjs
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle

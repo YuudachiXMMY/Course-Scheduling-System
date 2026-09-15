@@ -51,18 +51,23 @@ export default function ReportPanel({
     setErr(null)
     startTransition(async () => {
       // createReportDraft returns problems as data (see actions.ts) so a missing API key / drafting
-      // failure shows a helpful message instead of the redacted "React error #441" crash.
-      const res = await createReportDraft({
-        studentId,
-        periodStart,
-        periodEnd,
-        title: title.trim() || undefined,
-      })
-      if (!res.ok) {
-        setErr(res.error)
-        return
+      // failure shows a helpful message instead of the redacted "React error #441" crash. The
+      // try/catch additionally covers a throw before the action's internal guard (auth/permission).
+      try {
+        const res = await createReportDraft({
+          studentId,
+          periodStart,
+          periodEnd,
+          title: title.trim() || undefined,
+        })
+        if (!res.ok) {
+          setErr(res.error)
+          return
+        }
+        router.refresh()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
       }
-      router.refresh()
     })
   }
 
