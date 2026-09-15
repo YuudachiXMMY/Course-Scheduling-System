@@ -31,10 +31,20 @@ export async function listCourses(): Promise<Course[]> {
   return (await forTenant(ctx).select(course)) as Course[]
 }
 
-export async function createCourse(input: CourseInput) {
+// Return validation problems as DATA instead of throwing (mirrors createSection): thrown Server
+// Action errors are redacted by Next.js in production and surface as the cryptic "Minified React
+// error #441" / a failed RSC refresh ("This page couldn't load"). Returning the message reaches the
+// client intact so a bad field shows helpful feedback instead of crashing the courses page.
+export type CourseResult = { ok: true; course: Course } | { ok: false; error: string }
+
+export async function createCourse(input: CourseInput): Promise<CourseResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['create'] })
-  const data = courseSchema.parse(input)
+  const parsed = courseSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  const data = parsed.data
   const [row] = await forTenant(ctx).insert(course, {
     title: data.title,
     subject: data.subject,
@@ -42,27 +52,41 @@ export async function createCourse(input: CourseInput) {
     defaultDurationMinutes: data.defaultDurationMinutes,
   })
   revalidatePath('/dashboard/courses')
-  return row
+  return { ok: true, course: row as Course }
 }
 
-export async function updateCourse(id: string, input: CourseInput) {
+export async function updateCourse(id: string, input: CourseInput): Promise<CourseResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['update'] })
-  const data = courseSchema.parse(input)
+  const parsed = courseSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  const data = parsed.data
   const [row] = await forTenant(ctx).update(course, id, {
     title: data.title,
     subject: data.subject,
     level: data.level,
     defaultDurationMinutes: data.defaultDurationMinutes,
   })
+  if (!row) return { ok: false, error: '课程不存在或不属于当前机构' }
   revalidatePath('/dashboard/courses')
-  return row
+  return { ok: true, course: row as Course }
 }
 
 export async function archiveCourse(id: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['update'] })
   const [row] = await forTenant(ctx).update(course, id, { isArchived: true })
+  revalidatePath('/dashboard/courses')
+  return row
+}
+
+// Un-archive: mirror of archiveCourse so an archived course template can be brought back.
+export async function restoreCourse(id: string) {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { course: ['update'] })
+  const [row] = await forTenant(ctx).update(course, id, { isArchived: false })
   revalidatePath('/dashboard/courses')
   return row
 }

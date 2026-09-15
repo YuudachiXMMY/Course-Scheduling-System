@@ -71,3 +71,12 @@ export async function archiveStudent(id: string) {
   revalidatePath('/dashboard/students')
   return row
 }
+
+// Un-archive: mirror of archiveStudent so a soft-deleted student can be brought back to active.
+export async function restoreStudent(id: string) {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { student: ['update'] })
+  const [row] = await forTenant(ctx).update(student, id, { status: 'active' })
+  revalidatePath('/dashboard/students')
+  return row
+}

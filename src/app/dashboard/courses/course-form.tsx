@@ -29,10 +29,13 @@ export default function CourseForm({ course }: { course?: Course }) {
           level,
           defaultDurationMinutes: Number(duration),
         }
-        if (isEdit && course) {
-          await updateCourse(course.id, input)
-        } else {
-          await createCourse(input)
+        const result =
+          isEdit && course ? await updateCourse(course.id, input) : await createCourse(input)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        if (!isEdit) {
           setTitle('')
           setSubject('')
           setLevel('')

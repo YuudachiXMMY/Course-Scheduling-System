@@ -5,6 +5,7 @@ import { listStudents } from '../students/actions'
 import CourseForm from './course-form'
 import SectionForm from './section-form'
 import SectionRoster from './section-roster'
+import CourseRestore from './course-restore'
 
 export default async function CoursesPage() {
   const ctx = await requireAuthContext()
@@ -15,6 +16,7 @@ export default async function CoursesPage() {
     listStudents(),
   ])
   const activeCourses = courses.filter((c) => !c.isArchived)
+  const archivedCourses = courses.filter((c) => c.isArchived)
   const studentOptions = students
     .filter((s) => s.status !== 'archived')
     .map((s) => ({ id: s.id, name: s.name }))
@@ -76,6 +78,30 @@ export default async function CoursesPage() {
           )
         })}
       </div>
+
+      {archivedCourses.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium text-neutral-700">
+            已归档（{archivedCourses.length}）
+          </h3>
+          <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
+            {archivedCourses.map((c) => (
+              <li
+                key={c.id}
+                className="flex items-center justify-between px-4 py-3 text-sm text-neutral-500"
+              >
+                <span>
+                  {c.title}
+                  <span className="ml-2 text-xs text-neutral-400">
+                    {c.subject ?? '—'} · {c.level ?? '—'}
+                  </span>
+                </span>
+                <CourseRestore courseId={c.id} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   )
 }

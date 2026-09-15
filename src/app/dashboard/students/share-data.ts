@@ -2,10 +2,11 @@ import 'server-only'
 import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { forTenant } from '@/db/tenant'
-import { shareLink, enrollment, lesson } from '@/db/schema'
+import { shareLink, enrollment, lesson, classSection, course } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import type { FeedLesson } from '@/lib/ical-feed'
-import { sliceLessonsForSections } from '@/lib/share'
+import { sliceLessonsForSections, withSectionTitles } from '@/lib/share'
+import { sectionDisplayName } from '@/lib/ical-feed'
 
 type Share = typeof shareLink.$inferSelect
 
@@ -54,5 +55,27 @@ export async function getStudentLessonsForTenant(
     inArray(lesson.sectionId, ids),
   )) as (typeof lesson.$inferSelect)[]
 
-  return sliceLessonsForSections(rows, ids, window)
+  // Resolve "课程名 · 班级名" for each section (two forTenant reads — the spine forbids raw joins) so
+  // the authenticated preview/PNG card matches the public page instead of showing the generic "课节".
+  const sections = (await forTenant(ctx).select(
+    classSection,
+    inArray(classSection.id, ids),
+  )) as (typeof classSection.$inferSelect)[]
+  const courseIds = [...new Set(sections.map((s) => s.courseId))]
+  const courses =
+    courseIds.length === 0
+      ? []
+      : ((await forTenant(ctx).select(
+          course,
+          inArray(course.id, courseIds),
+        )) as (typeof course.$inferSelect)[])
+  const titleByCourse = new Map(courses.map((c) => [c.id, c.title]))
+  const titleBySection = new Map<string, string>()
+  for (const s of sections) {
+    const courseTitle = titleByCourse.get(s.courseId)
+    if (!courseTitle) continue
+    titleBySection.set(s.id, sectionDisplayName(courseTitle, s.name))
+  }
+
+  return sliceLessonsForSections(withSectionTitles(rows, titleBySection), ids, window)
 }
