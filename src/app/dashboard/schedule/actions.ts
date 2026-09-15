@@ -48,6 +48,50 @@ export async function cancelLessonAction(id: string): Promise<{ ok: true }> {
   return { ok: true }
 }
 
+// Lesson-level location / online-class link editing from the detail drawer (req5). Returns
+// validation problems as data (production redacts thrown Server Action errors → React #441).
+const updateLessonSchema = z.object({
+  id: z.string().trim().min(1),
+  location: z.string().trim().max(200).optional(),
+  meetingUrl: z.string().trim().max(500).optional(),
+})
+export type UpdateLessonResult = { ok: true } | { ok: false; error: string }
+
+export async function updateLessonAction(
+  input: z.input<typeof updateLessonSchema>,
+): Promise<UpdateLessonResult> {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { lesson: ['update'] })
+  const parsed = updateLessonSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  const data = parsed.data
+  const [row] = await forTenant(ctx).update(lesson, data.id, {
+    location: data.location ?? null,
+    meetingUrl: data.meetingUrl ?? null,
+  })
+  if (!row) return { ok: false, error: '课节不存在' }
+  revalidatePath('/dashboard/schedule')
+  return { ok: true }
+}
+
+export interface LessonMeta {
+  location: string | null
+  meetingUrl: string | null
+  title: string | null
+}
+
+export async function getLessonMeta(lessonId: string): Promise<LessonMeta | null> {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { lesson: ['read'] })
+  const row = (await forTenant(ctx).findById(lesson, lessonId)) as
+    | typeof lesson.$inferSelect
+    | null
+  if (!row) return null
+  return { location: row.location, meetingUrl: row.meetingUrl, title: row.title }
+}
+
 export async function cancelSeriesAction(sectionId: string): Promise<{ canceled: number }> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })

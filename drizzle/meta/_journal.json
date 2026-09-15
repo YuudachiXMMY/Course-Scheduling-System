@@ -50,6 +50,13 @@
       "when": 1789399184338,
       "tag": "0006_wonderful_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1789441899581,
+      "tag": "0007_bored_magus",
+      "breakpoints": true
     }
   ]
 }

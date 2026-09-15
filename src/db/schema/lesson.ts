@@ -26,6 +26,7 @@ export const lesson = pgTable(
     endAt: timestamp('end_at', { withTimezone: true, mode: 'date' }).notNull(),
     status: lessonStatus('status').notNull().default('scheduled'),
     location: text('location'),
+    meetingUrl: text('meeting_url'), // online-class link (Zoom/腾讯会议) for this occurrence
     title: text('title'),
     notes: text('notes'),
     isException: boolean('is_exception').notNull().default(false), // moved/renamed off pattern, or ad-hoc

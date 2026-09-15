@@ -2,7 +2,7 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
 import { forTenant } from '@/db/tenant'
@@ -104,15 +104,57 @@ export async function listAttendance(lessonId: string) {
   )) as (typeof attendance.$inferSelect)[]
 }
 
-const noteSchema = z.object({
+// A lesson's notes: ONE shared note (studentId = null) that every student's per-lesson report
+// draws from, PLUS an optional per-student comment (studentId set). Modeled on the note table's
+// nullable studentId — no new table needed. The note table has no (lesson, student) unique
+// constraint, so all writes are select-then-write (mirrors upsertAttendance above).
+export interface LessonNotes {
+  shared: string
+  perStudent: Record<string, string>
+}
+
+export async function getLessonNotes(lessonId: string): Promise<LessonNotes> {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { lesson: ['read'] })
+  const rows = (await forTenant(ctx).select(
+    note,
+    eq(note.lessonId, lessonId),
+  )) as (typeof note.$inferSelect)[]
+  // Oldest → newest so a later row wins per key (latest edit reflects current state).
+  rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  let shared = ''
+  const perStudent: Record<string, string> = {}
+  for (const r of rows) {
+    if (r.studentId) perStudent[r.studentId] = r.body
+    else shared = r.body
+  }
+  return { shared, perStudent }
+}
+
+const sharedNoteSchema = z.object({
   lessonId: z.string().trim().min(1),
   body: z.string().trim().min(1, '笔记不能为空').max(2000),
 })
 
-export async function addNote(input: z.input<typeof noteSchema>) {
+// Shared lesson note (studentId = null): upsert the single row so it can be viewed and edited later.
+export async function upsertSharedNote(input: z.input<typeof sharedNoteSchema>) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
-  const data = noteSchema.parse(input)
+  const data = sharedNoteSchema.parse(input)
+
+  const existing = (await forTenant(ctx).select(
+    note,
+    and(eq(note.lessonId, data.lessonId), isNull(note.studentId)),
+  )) as (typeof note.$inferSelect)[]
+
+  if (existing[0]) {
+    const [row] = await forTenant(ctx).update(note, existing[0].id, {
+      body: data.body,
+      authorId: ctx.userId,
+    })
+    revalidatePath('/dashboard/schedule')
+    return row
+  }
   const [row] = await forTenant(ctx).insert(note, {
     lessonId: data.lessonId,
     authorId: ctx.userId,
@@ -123,11 +165,38 @@ export async function addNote(input: z.input<typeof noteSchema>) {
   return row
 }
 
-export async function listNotes(lessonId: string) {
+const studentNoteSchema = z.object({
+  lessonId: z.string().trim().min(1),
+  studentId: z.string().trim().min(1),
+  body: z.string().trim().min(1, '点评不能为空').max(2000),
+})
+
+// Per-student comment (studentId set): each student's own note for the lesson, upserted independently.
+export async function upsertStudentNote(input: z.input<typeof studentNoteSchema>) {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { lesson: ['read'] })
-  return (await forTenant(ctx).select(
+  requirePermission(ctx, { lesson: ['update'] })
+  const data = studentNoteSchema.parse(input)
+
+  const existing = (await forTenant(ctx).select(
     note,
-    eq(note.lessonId, lessonId),
+    and(eq(note.lessonId, data.lessonId), eq(note.studentId, data.studentId)),
   )) as (typeof note.$inferSelect)[]
+
+  if (existing[0]) {
+    const [row] = await forTenant(ctx).update(note, existing[0].id, {
+      body: data.body,
+      authorId: ctx.userId,
+    })
+    revalidatePath('/dashboard/schedule')
+    return row
+  }
+  const [row] = await forTenant(ctx).insert(note, {
+    lessonId: data.lessonId,
+    studentId: data.studentId,
+    authorId: ctx.userId,
+    body: data.body,
+    visibility: 'internal',
+  })
+  revalidatePath('/dashboard/schedule')
+  return row
 }

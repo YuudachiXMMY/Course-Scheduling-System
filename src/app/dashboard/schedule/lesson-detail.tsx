@@ -2,8 +2,15 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { getLessonRoster, upsertAttendance, addNote, type RosterEntry } from './attendance-actions'
-import { cancelLessonAction } from './actions'
+import {
+  getLessonRoster,
+  upsertAttendance,
+  getLessonNotes,
+  upsertSharedNote,
+  upsertStudentNote,
+  type RosterEntry,
+} from './attendance-actions'
+import { cancelLessonAction, updateLessonAction, getLessonMeta } from './actions'
 
 type AttStatus = 'present' | 'absent' | 'late' | 'excused'
 const STATUS_LABELS: { value: AttStatus; label: string }[] = [
@@ -23,7 +30,10 @@ export default function LessonDetail({
   onChanged: (lessonId: string) => void
 }) {
   const [roster, setRoster] = useState<RosterEntry[]>([])
-  const [noteBody, setNoteBody] = useState('')
+  const [sharedNote, setSharedNote] = useState('')
+  const [comments, setComments] = useState<Record<string, string>>({})
+  const [location, setLocation] = useState('')
+  const [meetingUrl, setMeetingUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -31,12 +41,17 @@ export default function LessonDetail({
 
   useEffect(() => {
     let active = true
-    getLessonRoster(lessonId).then((r) => {
-      if (active) {
+    Promise.all([getLessonRoster(lessonId), getLessonNotes(lessonId), getLessonMeta(lessonId)]).then(
+      ([r, notes, meta]) => {
+        if (!active) return
         setRoster(r)
+        setSharedNote(notes.shared)
+        setComments(notes.perStudent)
+        setLocation(meta?.location ?? '')
+        setMeetingUrl(meta?.meetingUrl ?? '')
         setLoading(false)
-      }
-    })
+      },
+    )
     return () => {
       active = false
     }
@@ -50,12 +65,42 @@ export default function LessonDetail({
     })
   }
 
-  function saveNote() {
-    if (!noteBody.trim()) return
+  function saveShared() {
+    if (!sharedNote.trim()) {
+      setMsg('笔记内容为空')
+      return
+    }
     startTransition(async () => {
-      await addNote({ lessonId, body: noteBody })
-      setNoteBody('')
-      setMsg('已保存笔记')
+      await upsertSharedNote({ lessonId, body: sharedNote })
+      setMsg('已保存本节课笔记')
+    })
+  }
+
+  function saveComment(studentId: string) {
+    const body = comments[studentId] ?? ''
+    if (!body.trim()) {
+      setMsg('点评内容为空')
+      return
+    }
+    startTransition(async () => {
+      await upsertStudentNote({ lessonId, studentId, body })
+      setMsg('已保存学生点评')
+    })
+  }
+
+  function saveMeta() {
+    startTransition(async () => {
+      const res = await updateLessonAction({
+        id: lessonId,
+        location: location || undefined,
+        meetingUrl: meetingUrl || undefined,
+      })
+      if (!res.ok) {
+        setMsg(res.error)
+        return
+      }
+      setMsg('已保存上课地点/网课链接')
+      router.refresh()
     })
   }
 
@@ -78,6 +123,30 @@ export default function LessonDetail({
           <h3 className="text-base font-semibold">课节详情</h3>
           <button type="button" className="text-sm text-neutral-500" onClick={onClose}>
             关闭
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <h4 className="text-sm font-medium text-neutral-700">上课地点 / 网课链接</h4>
+          <input
+            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+            placeholder="上课地点（教室 / 线下地址）"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+          <input
+            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+            placeholder="网课链接（Zoom / 腾讯会议）https://…"
+            value={meetingUrl}
+            onChange={(e) => setMeetingUrl(e.target.value)}
+          />
+          <button
+            type="button"
+            disabled={pending}
+            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+            onClick={saveMeta}
+          >
+            保存地点/链接
           </button>
         </div>
 
@@ -115,22 +184,49 @@ export default function LessonDetail({
         </div>
 
         <div className="flex flex-col gap-2">
-          <h4 className="text-sm font-medium text-neutral-700">课堂笔记</h4>
+          <h4 className="text-sm font-medium text-neutral-700">本节课笔记（全班共享）</h4>
           <textarea
             className="min-h-20 rounded border border-neutral-300 px-2 py-1 text-sm"
             placeholder="今天讲了…"
-            value={noteBody}
-            onChange={(ev) => setNoteBody(ev.target.value)}
+            value={sharedNote}
+            onChange={(ev) => setSharedNote(ev.target.value)}
           />
           <button
             type="button"
             disabled={pending}
             className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
-            onClick={saveNote}
+            onClick={saveShared}
           >
             保存笔记
           </button>
         </div>
+
+        {!loading && roster.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h4 className="text-sm font-medium text-neutral-700">学生点评（每人独立）</h4>
+            {roster.map((e) => (
+              <div key={e.studentId} className="flex flex-col gap-1">
+                <span className="text-xs text-neutral-600">{e.name}</span>
+                <textarea
+                  className="min-h-14 rounded border border-neutral-300 px-2 py-1 text-sm"
+                  placeholder={`给 ${e.name} 的本节课点评…`}
+                  value={comments[e.studentId] ?? ''}
+                  onChange={(ev) =>
+                    setComments((prev) => ({ ...prev, [e.studentId]: ev.target.value }))
+                  }
+                />
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="self-start rounded border border-neutral-300 px-3 py-1 text-xs disabled:opacity-50"
+                  onClick={() => saveComment(e.studentId)}
+                >
+                  保存点评
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {msg && <p className="text-xs text-green-700">{msg}</p>}
 
