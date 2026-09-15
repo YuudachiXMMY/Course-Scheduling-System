@@ -191,7 +191,7 @@
 | 4 | Parent Sharing & Export（WeChat-first） | 微信 PNG + 只读分享页 + .ics；小班批量、按家长切分 | complete | with 3 | 2 | [plan](../plans/completed/phase-4-parent-sharing-export.plan.md) · [report](../reports/phase-4-parent-sharing-export-report.md) |
 | 5 | Progress Reports | @react-pdf PDF + Claude 起草（教师审核门禁）+ 小班批量 | complete | with 6 | 2, 4 | [plan](../plans/completed/phase-5-progress-reports.plan.md) · [report](../reports/phase-5-progress-reports-report.md) |
 | 6 | Claude MCP Connector | mcp-handler Streamable HTTP，任务型 tools，静态 bearer，draft-and-confirm | complete | with 5 | 2 | [plan](../plans/completed/phase-6-claude-mcp-connector.plan.md) · [report](../reports/phase-6-claude-mcp-connector-report.md) |
-| 7a | Team/Parent/Student Logins + Reschedule Requests | 多角色登录门户（家长/学生）+ 自助改期申请→教师审批工作流 + RBAC 行级硬化 + 数据处理告知/未成年人同意页 | in-progress | - | 3, 4, 5, 6 | [plan](../plans/phase-7a-portal-reschedule.plan.md) · [report (PR-1)](../reports/phase-7a-portal-reschedule-report.md) |
+| 7a | Team/Parent/Student Logins + Reschedule Requests | 多角色登录门户（家长/学生）+ 自助改期申请→教师审批工作流 + RBAC 行级硬化 + 数据处理告知/未成年人同意页 | complete | - | 3, 4, 5, 6 | [plan](../plans/completed/phase-7a-portal-reschedule.plan.md) · [report (PR-1)](../reports/phase-7a-portal-reschedule-report.md) · [report (PR-2)](../reports/phase-7a-portal-reschedule-pr2-report.md) |
 | 7b | Reminders & Notifications | 自动课程提醒（在盒 cron + 邮件/短信兜底）；改期通过后通知家长；渠道选型 | pending | with 7c | 7a | - |
 | 7c | MCP OAuth 2.1 | MCP connector 从静态 bearer 升级到 OAuth 2.1（WorkOS AuthKit，`withMcpAuth` + RFC 9728），支持多用户 | pending | with 7b | 6, 7a | - |
 | 7d | (optional) Google Two-way Sync | Google 双向同步 + 邀请家长/学生为受邀人（用户 OAuth，watch 通道续期 cron，410 fullSync 处理）；仅确需时做 iCloud CalDAV | pending | - | 7a | - |

@@ -6,6 +6,7 @@ import { getActiveShare } from './share-data'
 import StudentForm from './student-form'
 import StudentRestore from './student-restore'
 import ExportPanel from './export-panel'
+import PortalAccountForm from './portal-account-form'
 
 export default async function StudentsPage() {
   const ctx = await requireAuthContext()
@@ -43,6 +44,7 @@ export default async function StudentsPage() {
                 token={shareByStudent.get(s.id)?.token ?? null}
                 shareOrigin={env.NEXT_PUBLIC_APP_URL}
               />
+              <PortalAccountForm studentId={s.id} studentName={s.name} />
             </li>
           ))}
         </ul>

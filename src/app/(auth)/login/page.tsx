@@ -22,7 +22,8 @@ export default function LoginPage() {
       setError(error.message ?? '登录失败')
       return
     }
-    router.push('/dashboard')
+    // Route by role via the root dispatcher (parent/student → /portal, else → /dashboard).
+    router.push('/')
     router.refresh()
   }
 
