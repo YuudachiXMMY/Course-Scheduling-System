@@ -22,6 +22,13 @@ export const env = createEnv({
     // to Opus 4.8; set ANTHROPIC_MODEL=claude-haiku-4-5 / claude-sonnet-5 to trade cost for tier.
     ANTHROPIC_API_KEY: z.string().min(1).optional(),
     ANTHROPIC_MODEL: z.string().min(1).default('claude-opus-4-8'),
+    // P8: 报告起草 provider 切换。默认走 Anthropic(行为不变);设为 'minimax' 改用 MiniMax(CN)。
+    REPORT_PROVIDER: z.enum(['anthropic', 'minimax']).default('anthropic'),
+    // MiniMax(中国区)OpenAI 兼容端点。OPTIONAL,以便 provider=anthropic 时无需配置即可启动。
+    // 注意:CN Key 必须配 api.minimaxi.com(尾字母 i);Global Key 配 api.minimax.io,否则 404/鉴权失败。
+    MINIMAX_API_KEY: z.string().min(1).optional(),
+    MINIMAX_MODEL: z.string().min(1).default('MiniMax-M3'),
+    MINIMAX_BASE_URL: z.url().default('https://api.minimaxi.com/v1'),
     // P7a-10: domain for synthesized placeholder emails when provisioning WeChat-only (no-email)
     // parent/student portal accounts (e.g. portal_<nanoid>@portal.local). Use a domain you control.
     PORTAL_EMAIL_DOMAIN: z.string().min(1).default('portal.local'),

@@ -4,16 +4,33 @@ import { buildReportPrompt, RUBRIC, RUBRIC_VERSION } from '@/lib/report-prompt'
 import { can } from '@/auth/authorize'
 import { renderReportPdf } from '@/lib/report-pdf'
 
-// ---- Mocks for the Claude-draft path (env + SDK), so no real API is hit ----
-const fakeEnv: { ANTHROPIC_API_KEY: string | undefined; ANTHROPIC_MODEL: string } = {
+// ---- Mocks for the draft path (env + SDKs), so no real API is hit ----
+const fakeEnv: {
+  REPORT_PROVIDER: 'anthropic' | 'minimax'
+  ANTHROPIC_API_KEY: string | undefined
+  ANTHROPIC_MODEL: string
+  MINIMAX_API_KEY: string | undefined
+  MINIMAX_MODEL: string
+  MINIMAX_BASE_URL: string
+} = {
+  REPORT_PROVIDER: 'anthropic',
   ANTHROPIC_API_KEY: 'sk-test',
   ANTHROPIC_MODEL: 'claude-opus-4-8',
+  MINIMAX_API_KEY: 'mm-test',
+  MINIMAX_MODEL: 'MiniMax-M3',
+  MINIMAX_BASE_URL: 'https://api.minimaxi.com/v1',
 }
 vi.mock('@/env', () => ({ env: fakeEnv }))
 const createMock = vi.fn()
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
     messages = { create: createMock }
+  },
+}))
+const mmCreateMock = vi.fn()
+vi.mock('openai', () => ({
+  default: class {
+    chat = { completions: { create: mmCreateMock } }
   },
 }))
 
@@ -134,8 +151,12 @@ describe('renderReportPdf', () => {
 describe('draftNarrative', () => {
   beforeEach(() => {
     createMock.mockReset()
+    mmCreateMock.mockReset()
+    fakeEnv.REPORT_PROVIDER = 'anthropic'
     fakeEnv.ANTHROPIC_API_KEY = 'sk-test'
     fakeEnv.ANTHROPIC_MODEL = 'claude-opus-4-8'
+    fakeEnv.MINIMAX_API_KEY = 'mm-test'
+    fakeEnv.MINIMAX_MODEL = 'MiniMax-M3'
   })
 
   it('composes the request (cached rubric system, data in user turn) and returns the text', async () => {
@@ -161,5 +182,31 @@ describe('draftNarrative', () => {
     const { draftNarrative } = await import('@/lib/report-draft')
     await expect(draftNarrative(sampleData)).rejects.toThrow('未配置 Claude API Key')
     expect(createMock).not.toHaveBeenCalled()
+  })
+
+  it('minimax: 发送 system+user 两条消息并返回文本,model 为 MINIMAX_MODEL', async () => {
+    fakeEnv.REPORT_PROVIDER = 'minimax'
+    mmCreateMock.mockResolvedValue({ choices: [{ message: { content: '小明进步明显。' } }] })
+    const { draftNarrative } = await import('@/lib/report-draft')
+    const res = await draftNarrative(sampleData)
+
+    expect(res.narrative).toBe('小明进步明显。')
+    expect(res.model).toBe('MiniMax-M3')
+    expect(res.rubricVersion).toBe(RUBRIC_VERSION)
+    expect(createMock).not.toHaveBeenCalled() // 未走 Anthropic
+
+    const arg = mmCreateMock.mock.calls[0]![0]
+    expect(arg.model).toBe('MiniMax-M3')
+    expect(arg.messages[0].role).toBe('system')
+    expect(arg.messages[1].role).toBe('user')
+    expect(arg.messages[1].content).toContain('小明')
+  })
+
+  it('minimax: 未配 MINIMAX_API_KEY 时抛错且不调用 API', async () => {
+    fakeEnv.REPORT_PROVIDER = 'minimax'
+    fakeEnv.MINIMAX_API_KEY = undefined
+    const { draftNarrative } = await import('@/lib/report-draft')
+    await expect(draftNarrative(sampleData)).rejects.toThrow('未配置 MiniMax API Key')
+    expect(mmCreateMock).not.toHaveBeenCalled()
   })
 })
