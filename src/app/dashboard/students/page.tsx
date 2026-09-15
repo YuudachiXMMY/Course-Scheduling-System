@@ -4,6 +4,7 @@ import { env } from '@/env'
 import { listStudents } from './actions'
 import { getActiveShare } from './share-data'
 import StudentForm from './student-form'
+import StudentRestore from './student-restore'
 import ExportPanel from './export-panel'
 
 export default async function StudentsPage() {
@@ -49,10 +50,14 @@ export default async function StudentsPage() {
       {archived.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-neutral-700">已归档（{archived.length}）</h3>
-          <ul className="divide-y divide-neutral-200 rounded border border-neutral-200 opacity-60">
+          <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
             {archived.map((s) => (
-              <li key={s.id} className="px-4 py-3 text-sm">
-                {s.name}
+              <li
+                key={s.id}
+                className="flex items-center justify-between px-4 py-3 text-sm text-neutral-500"
+              >
+                <span>{s.name}</span>
+                <StudentRestore studentId={s.id} />
               </li>
             ))}
           </ul>

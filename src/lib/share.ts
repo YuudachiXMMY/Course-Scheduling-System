@@ -1,7 +1,7 @@
 import 'server-only'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '@/db'
-import { shareLink, enrollment, lesson } from '@/db/schema'
+import { shareLink, enrollment, lesson, classSection, course } from '@/db/schema'
 import { type FeedLesson, feedWindow } from '@/lib/ical-feed'
 
 // Shape the pure slicing helper needs from a lesson row. Kept minimal so BOTH the public
@@ -44,6 +44,38 @@ export function sliceLessonsForSections(
       endAt: r.endAt,
       location: r.location,
     }))
+}
+
+// A lesson row only stores a title when it was manually renamed off-pattern; auto-materialized
+// lessons leave it null, so the schedule card / iCal fell back to the generic "课节". Resolve a
+// human display name from the lesson's SECTION → COURSE ("课程名 · 班级名") and fill it in where the
+// lesson has no explicit title. PURE — testable with a fabricated section-name map (single logic
+// path shared by both public + authenticated slice callers).
+export function withSectionTitles<T extends SliceableLesson>(
+  rows: T[],
+  titleBySection: Map<string, string>,
+): T[] {
+  return rows.map((r) => ({ ...r, title: r.title ?? titleBySection.get(r.sectionId) ?? null }))
+}
+
+// Build the sectionId → "课程名 · 班级名" map for a set of sections, on the PUBLIC (token-scoped) db
+// path. Scope by the token-resolved tenantId only — never a request param (mirrors the reads below).
+export async function courseTitlesForSections(
+  tenantId: string,
+  sectionIds: string[],
+): Promise<Map<string, string>> {
+  if (sectionIds.length === 0) return new Map()
+  const rows = await db
+    .select({ id: classSection.id, name: classSection.name, courseTitle: course.title })
+    .from(classSection)
+    .innerJoin(
+      course,
+      and(eq(course.tenantId, classSection.tenantId), eq(course.id, classSection.courseId)),
+    )
+    .where(and(eq(classSection.tenantId, tenantId), inArray(classSection.id, sectionIds)))
+  return new Map(
+    rows.map((r) => [r.id, r.name ? `${r.courseTitle} · ${r.name}` : r.courseTitle]),
+  )
 }
 
 // Resolve a capability token to its (non-revoked) shareLink row, or null. Global-unique token
@@ -94,6 +126,11 @@ export async function getStudentScheduleForShare(
     .from(lesson)
     .where(and(eq(lesson.tenantId, tenantId), inArray(lesson.sectionId, sectionIds)))
 
+  // Fill each lesson's display title from its course/section before slicing, so the public card
+  // shows "课程名 · 班级名" instead of the generic "课节" fallback.
+  const titleBySection = await courseTitlesForSections(tenantId, sectionIds)
+  const named = withSectionTitles(rows, titleBySection)
+
   // Window + non-canceled + section membership all live in the pure helper (single logic path).
-  return sliceLessonsForSections(rows, sectionIds, window)
+  return sliceLessonsForSections(named, sectionIds, window)
 }

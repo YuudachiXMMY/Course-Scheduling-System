@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { sliceLessonsForSections, type SliceableLesson } from '@/lib/share'
+import { sliceLessonsForSections, withSectionTitles, type SliceableLesson } from '@/lib/share'
 
 // Rolling window: [2026-01-01, 2026-02-01). Filter keeps startAt >= from && startAt < to.
 const window = {
@@ -103,6 +103,22 @@ describe('sliceLessonsForSections', () => {
     })
     expect(first).not.toHaveProperty('sectionId')
     expect(first).not.toHaveProperty('status')
+  })
+
+  it('resolves the section display title but never overrides an explicit lesson title', () => {
+    const titles = new Map([
+      ['sec-active', '高一数学 · 周一班'],
+    ])
+    const named = withSectionTitles(rows, titles)
+    // keep-1 already had a title ('数学') → preserved; keep-2 was null → filled from the section.
+    expect(named.find((r) => r.id === 'keep-1')?.title).toBe('数学')
+    expect(named.find((r) => r.id === 'keep-2')?.title).toBe('高一数学 · 周一班')
+    // A section with no map entry falls back to null (ScheduleCard/buildIcs then render "课节").
+    const orphan = withSectionTitles(
+      [{ ...rows[1], id: 'orphan', sectionId: 'sec-unknown' }],
+      titles,
+    )
+    expect(orphan[0].title).toBeNull()
   })
 
   it('treats the window as half-open [from, to)', () => {

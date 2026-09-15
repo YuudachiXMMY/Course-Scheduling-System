@@ -31,19 +31,33 @@ const createSchema = z
   })
 export type CreateReportInput = z.input<typeof createSchema>
 
-export async function createReportDraft(input: CreateReportInput): Promise<Report> {
+// Return validation/generation problems as DATA instead of throwing (mirrors courses/createSection):
+// Next.js redacts thrown Server Action error messages in production, so a Zod failure or a Claude
+// drafting error (e.g. missing ANTHROPIC_API_KEY) would otherwise surface as the opaque "Minified
+// React error #441" (Server Components render error). Returning the message reaches the client intact.
+export type CreateReportResult = { ok: true; report: Report } | { ok: false; error: string }
+
+export async function createReportDraft(input: CreateReportInput): Promise<CreateReportResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { report: ['create'] })
-  const data = createSchema.parse(input)
-  const row = await createReportDraftCore(ctx, {
-    studentId: data.studentId,
-    sectionId: data.sectionId,
-    title: data.title,
-    periodStart: data.periodStart,
-    periodEnd: data.periodEnd,
-  })
-  revalidatePath('/dashboard/reports')
-  return row
+  const parsed = createSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  const data = parsed.data
+  try {
+    const row = await createReportDraftCore(ctx, {
+      studentId: data.studentId,
+      sectionId: data.sectionId,
+      title: data.title,
+      periodStart: data.periodStart,
+      periodEnd: data.periodEnd,
+    })
+    revalidatePath('/dashboard/reports')
+    return { ok: true, report: row }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : '生成报告失败' }
+  }
 }
 
 const updateSchema = z.object({ id: z.string().min(1), narrative: z.string().max(20_000) })

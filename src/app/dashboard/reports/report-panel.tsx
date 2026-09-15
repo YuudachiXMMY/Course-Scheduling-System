@@ -41,14 +41,22 @@ export default function ReportPanel({
       setErr('请选择学生与时间段')
       return
     }
-    run(() =>
-      createReportDraft({
+    setErr(null)
+    startTransition(async () => {
+      // createReportDraft returns problems as data (see actions.ts) so a missing API key / drafting
+      // failure shows a helpful message instead of the redacted "React error #441" crash.
+      const res = await createReportDraft({
         studentId,
         periodStart,
         periodEnd,
         title: title.trim() || undefined,
-      }),
-    )
+      })
+      if (!res.ok) {
+        setErr(res.error)
+        return
+      }
+      router.refresh()
+    })
   }
 
   return (
