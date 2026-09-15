@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { createReportDraft, updateReportNarrative, approveReport } from './actions'
+import { createReportDraft, updateReportNarrative, approveReport, type ReportResult } from './actions'
 import type { ReportRow, StudentOption } from './data'
 
 export default function ReportPanel({
@@ -23,15 +23,17 @@ export default function ReportPanel({
   const [periodEnd, setPeriodEnd] = useState('')
   const [title, setTitle] = useState('')
 
-  function run(fn: () => Promise<unknown>) {
+  // All mutating report actions now return problems as data (ReportResult) so a redacted server
+  // error never reaches the client as the cryptic "React error #441"; show res.error inline instead.
+  function run(fn: () => Promise<ReportResult>) {
     setErr(null)
     startTransition(async () => {
-      try {
-        await fn()
-        router.refresh()
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : '操作失败')
+      const res = await fn()
+      if (!res.ok) {
+        setErr(res.error)
+        return
       }
+      router.refresh()
     })
   }
 
@@ -137,7 +139,7 @@ function ReportItem({
 }: {
   report: ReportRow
   studentName: string
-  onRun: (fn: () => Promise<unknown>) => void
+  onRun: (fn: () => Promise<ReportResult>) => void
   pending: boolean
 }) {
   const [text, setText] = useState(report.narrative ?? '')

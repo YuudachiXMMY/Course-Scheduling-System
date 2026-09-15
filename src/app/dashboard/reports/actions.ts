@@ -32,12 +32,13 @@ const createSchema = z
 export type CreateReportInput = z.input<typeof createSchema>
 
 // Return validation/generation problems as DATA instead of throwing (mirrors courses/createSection):
-// Next.js redacts thrown Server Action error messages in production, so a Zod failure or a Claude
-// drafting error (e.g. missing ANTHROPIC_API_KEY) would otherwise surface as the opaque "Minified
-// React error #441" (Server Components render error). Returning the message reaches the client intact.
-export type CreateReportResult = { ok: true; report: Report } | { ok: false; error: string }
+// Next.js redacts thrown Server Action error messages in production, so a Zod failure or a core
+// error (missing ANTHROPIC_API_KEY, "报告已定稿", "学生不存在", …) would otherwise surface as the
+// opaque "Minified React error #441" (Server Components render error). Returning the message reaches
+// the client intact. Every mutating report action shares this shape so the panel handles them uniformly.
+export type ReportResult = { ok: true; report: Report } | { ok: false; error: string }
 
-export async function createReportDraft(input: CreateReportInput): Promise<CreateReportResult> {
+export async function createReportDraft(input: CreateReportInput): Promise<ReportResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { report: ['create'] })
   const parsed = createSchema.safeParse(input)
@@ -56,6 +57,8 @@ export async function createReportDraft(input: CreateReportInput): Promise<Creat
     revalidatePath('/dashboard/reports')
     return { ok: true, report: row }
   } catch (e) {
+    // Keep the stack in server logs (the redacted message is all the client would otherwise get).
+    console.error('createReportDraft failed', e)
     return { ok: false, error: e instanceof Error ? e.message : '生成报告失败' }
   }
 }
@@ -63,21 +66,38 @@ export async function createReportDraft(input: CreateReportInput): Promise<Creat
 const updateSchema = z.object({ id: z.string().min(1), narrative: z.string().max(20_000) })
 export type UpdateReportInput = z.input<typeof updateSchema>
 
-export async function updateReportNarrative(input: UpdateReportInput): Promise<Report> {
+export async function updateReportNarrative(input: UpdateReportInput): Promise<ReportResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { report: ['update'] })
-  const data = updateSchema.parse(input)
-  const row = await updateReportNarrativeCore(ctx, data.id, data.narrative)
-  revalidatePath('/dashboard/reports')
-  return row
+  const parsed = updateSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  try {
+    const row = await updateReportNarrativeCore(ctx, parsed.data.id, parsed.data.narrative)
+    revalidatePath('/dashboard/reports')
+    return { ok: true, report: row }
+  } catch (e) {
+    console.error('updateReportNarrative failed', e)
+    return { ok: false, error: e instanceof Error ? e.message : '保存失败' }
+  }
 }
 
-export async function approveReport(id: string): Promise<Report> {
+export async function approveReport(id: string): Promise<ReportResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { report: ['approve'] })
-  const row = await approveReportCore(ctx, z.string().min(1).parse(id))
-  revalidatePath('/dashboard/reports')
-  return row
+  const parsed = z.string().min(1).safeParse(id)
+  if (!parsed.success) {
+    return { ok: false, error: '无效的报告 ID' }
+  }
+  try {
+    const row = await approveReportCore(ctx, parsed.data)
+    revalidatePath('/dashboard/reports')
+    return { ok: true, report: row }
+  } catch (e) {
+    console.error('approveReport failed', e)
+    return { ok: false, error: e instanceof Error ? e.message : '批准失败' }
+  }
 }
 
 export async function listReports(): Promise<Report[]> {

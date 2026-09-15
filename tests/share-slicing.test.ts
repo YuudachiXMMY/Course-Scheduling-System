@@ -106,9 +106,7 @@ describe('sliceLessonsForSections', () => {
   })
 
   it('resolves the section display title but never overrides an explicit lesson title', () => {
-    const titles = new Map([
-      ['sec-active', '高一数学 · 周一班'],
-    ])
+    const titles = new Map([['sec-active', '高一数学 · 周一班']])
     const named = withSectionTitles(rows, titles)
     // keep-1 already had a title ('数学') → preserved; keep-2 was null → filled from the section.
     expect(named.find((r) => r.id === 'keep-1')?.title).toBe('数学')

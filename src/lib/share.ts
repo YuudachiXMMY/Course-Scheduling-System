@@ -2,7 +2,7 @@ import 'server-only'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '@/db'
 import { shareLink, enrollment, lesson, classSection, course } from '@/db/schema'
-import { type FeedLesson, feedWindow } from '@/lib/ical-feed'
+import { type FeedLesson, feedWindow, sectionDisplayName } from '@/lib/ical-feed'
 
 // Shape the pure slicing helper needs from a lesson row. Kept minimal so BOTH the public
 // reader below AND the authenticated share-data path (src/app/dashboard/students/share-data.ts)
@@ -73,9 +73,7 @@ export async function courseTitlesForSections(
       and(eq(course.tenantId, classSection.tenantId), eq(course.id, classSection.courseId)),
     )
     .where(and(eq(classSection.tenantId, tenantId), inArray(classSection.id, sectionIds)))
-  return new Map(
-    rows.map((r) => [r.id, r.name ? `${r.courseTitle} · ${r.name}` : r.courseTitle]),
-  )
+  return new Map(rows.map((r) => [r.id, sectionDisplayName(r.courseTitle, r.name)]))
 }
 
 // Resolve a capability token to its (non-revoked) shareLink row, or null. Global-unique token

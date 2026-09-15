@@ -27,9 +27,7 @@ export default function DashboardError({
         <p className="text-sm text-red-700">
           操作未能完成。请重试；若反复出现，请刷新页面或稍后再试。
         </p>
-        {error.digest && (
-          <p className="mt-1 text-xs text-red-500">错误编号：{error.digest}</p>
-        )}
+        {error.digest && <p className="mt-1 text-xs text-red-500">错误编号：{error.digest}</p>}
       </div>
       <div className="flex gap-2">
         <button

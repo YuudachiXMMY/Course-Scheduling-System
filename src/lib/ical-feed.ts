@@ -4,7 +4,7 @@ import { getVtimezoneComponent } from '@touch4it/ical-timezones'
 import { DateTime } from 'luxon'
 import { and, eq, gte, lt, ne } from 'drizzle-orm'
 import { db } from '@/db'
-import { lesson } from '@/db/schema'
+import { lesson, classSection, course } from '@/db/schema'
 
 const ZONE = 'Asia/Shanghai'
 
@@ -14,6 +14,13 @@ export interface FeedLesson {
   startAt: Date
   endAt: Date
   location: string | null
+}
+
+// Single source of truth for a lesson's human display name: "课程名 · 班级名" (or just the course
+// title when the section is unnamed). Shared by the ICS feed here and both share slice paths
+// (share.ts / share-data.ts) so auto-materialized lessons never fall back to the generic "课节".
+export function sectionDisplayName(courseTitle: string, sectionName: string | null): string {
+  return sectionName ? `${courseTitle} · ${sectionName}` : courseTitle
 }
 
 // Rolling window in Asia/Shanghai calendar days: [now-8w, now+26w] (P3-6). Reuse the
@@ -45,6 +52,8 @@ export function cardWindow(now = new Date()): { from: Date; to: Date } {
 // This is the ONLY sanctioned public read path; it is confined to this file.
 export async function getFeedLessons(tenantId: string): Promise<FeedLesson[]> {
   const { from, to } = feedWindow()
+  // Join section → course so each event carries a real name ("课程名 · 班级名") instead of the
+  // generic "课节". Both FKs are NOT NULL, so the inner joins never drop a lesson row.
   const rows = await db
     .select({
       id: lesson.id,
@@ -52,8 +61,18 @@ export async function getFeedLessons(tenantId: string): Promise<FeedLesson[]> {
       startAt: lesson.startAt,
       endAt: lesson.endAt,
       location: lesson.location,
+      sectionName: classSection.name,
+      courseTitle: course.title,
     })
     .from(lesson)
+    .innerJoin(
+      classSection,
+      and(eq(classSection.tenantId, lesson.tenantId), eq(classSection.id, lesson.sectionId)),
+    )
+    .innerJoin(
+      course,
+      and(eq(course.tenantId, classSection.tenantId), eq(course.id, classSection.courseId)),
+    )
     .where(
       and(
         eq(lesson.tenantId, tenantId),
@@ -62,7 +81,13 @@ export async function getFeedLessons(tenantId: string): Promise<FeedLesson[]> {
         ne(lesson.status, 'canceled'),
       ),
     )
-  return rows
+  return rows.map((r) => ({
+    id: r.id,
+    title: r.title ?? sectionDisplayName(r.courseTitle, r.sectionName),
+    startAt: r.startAt,
+    endAt: r.endAt,
+    location: r.location,
+  }))
 }
 
 // Pure builder (no DB) so it is unit-testable with fabricated lessons — mirrors

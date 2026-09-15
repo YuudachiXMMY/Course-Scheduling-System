@@ -81,7 +81,9 @@ export default async function CoursesPage() {
 
       {archivedCourses.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-neutral-700">已归档（{archivedCourses.length}）</h3>
+          <h3 className="text-sm font-medium text-neutral-700">
+            已归档（{archivedCourses.length}）
+          </h3>
           <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
             {archivedCourses.map((c) => (
               <li

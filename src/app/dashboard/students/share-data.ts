@@ -6,6 +6,7 @@ import { shareLink, enrollment, lesson, classSection, course } from '@/db/schema
 import type { AuthContext } from '@/auth/context'
 import type { FeedLesson } from '@/lib/ical-feed'
 import { sliceLessonsForSections, withSectionTitles } from '@/lib/share'
+import { sectionDisplayName } from '@/lib/ical-feed'
 
 type Share = typeof shareLink.$inferSelect
 
@@ -73,7 +74,7 @@ export async function getStudentLessonsForTenant(
   for (const s of sections) {
     const courseTitle = titleByCourse.get(s.courseId)
     if (!courseTitle) continue
-    titleBySection.set(s.id, s.name ? `${courseTitle} · ${s.name}` : courseTitle)
+    titleBySection.set(s.id, sectionDisplayName(courseTitle, s.name))
   }
 
   return sliceLessonsForSections(withSectionTitles(rows, titleBySection), ids, window)
