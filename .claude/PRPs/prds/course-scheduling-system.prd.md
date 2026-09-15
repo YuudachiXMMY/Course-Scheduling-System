@@ -192,7 +192,7 @@
 | 5 | Progress Reports | @react-pdf PDF + Claude 起草（教师审核门禁）+ 小班批量 | complete | with 6 | 2, 4 | [plan](../plans/completed/phase-5-progress-reports.plan.md) · [report](../reports/phase-5-progress-reports-report.md) |
 | 6 | Claude MCP Connector | mcp-handler Streamable HTTP，任务型 tools，静态 bearer，draft-and-confirm | complete | with 5 | 2 | [plan](../plans/completed/phase-6-claude-mcp-connector.plan.md) · [report](../reports/phase-6-claude-mcp-connector-report.md) |
 | 7a | Team/Parent/Student Logins + Reschedule Requests | 多角色登录门户（家长/学生）+ 自助改期申请→教师审批工作流 + RBAC 行级硬化 + 数据处理告知/未成年人同意页 | complete | - | 3, 4, 5, 6 | [plan](../plans/completed/phase-7a-portal-reschedule.plan.md) · [report (PR-1)](../reports/phase-7a-portal-reschedule-report.md) · [report (PR-2)](../reports/phase-7a-portal-reschedule-pr2-report.md) |
-| 7b | Reminders & Notifications | 自动课程提醒（在盒 cron + 邮件/短信兜底）；改期通过后通知家长；渠道选型 | pending | with 7c | 7a | - |
+| 7b | Reminders & Notifications | 自动课程提醒（在盒 cron 触发受保护路由）；改期结果通知教师与家长；渠道＝站内通知中心（持久化）+ PWA Web Push（尽力而为） | in-progress | with 7c | 7a | [plan](../plans/phase-7b-reminders-notifications.plan.md) |
 | 7c | MCP OAuth 2.1 | MCP connector 从静态 bearer 升级到 OAuth 2.1（**Better Auth `mcp` 插件**，`requireMcpAuth` + RFC 9728，校验 token aud；**取代原定 WorkOS AuthKit**——见 plan 内偏差说明与 ADR 0002），支持多用户 | in-progress | with 7b | 6, 7a | [plan](../plans/phase-7c-mcp-oauth.plan.md) |
 | 7d | (optional) Google Two-way Sync | Google 双向同步 + 邀请家长/学生为受邀人（用户 OAuth，watch 通道续期 cron，410 fullSync 处理）；仅确需时做 iCloud CalDAV | pending | - | 7a | - |
 | 7e | Payments & Credits | 学费/课时包/付款状态追踪落地（数据模型已预留 payment/creditPackage） | pending | - | 7a | - |
@@ -238,7 +238,7 @@
 
 **Phase 7b: Reminders & Notifications**
 - **Goal**: 自动提醒 + 改期结果通知，减少人工触达。
-- **Scope**: 在盒 cron（Coolify 定时/node-cron）；课前提醒；改期通过后通知家长；渠道选型（邮件/短信/微信）。量增后可上 BullMQ+Redis 与 Message Batches API。依赖 7a。
+- **Scope**: 在盒 cron（**Coolify 定时任务 curl 受保护的 `/api/cron/reminders`**，而非 node-cron）；课前提醒（默认 24h/1h，教师与家长）；改期结果通知（approve/reject → requester + teacher）。**渠道已定：站内通知中心（持久化 `notification` 表，可靠来源）+ PWA Web Push（尽力而为）**——家长多为无邮箱微信占位账号，故本阶段不走邮件/短信。量增后可上 BullMQ+Redis 与 Message Batches API。依赖 7a。详见 [plan](../plans/phase-7b-reminders-notifications.plan.md)。
 
 **Phase 7c: MCP OAuth 2.1**
 - **Goal**: 让 MCP connector 支持多用户。
