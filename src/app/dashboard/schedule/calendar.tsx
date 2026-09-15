@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import type { DateSelectArg, EventDropArg, EventClickArg } from '@fullcalendar/core'
+import type {
+  DateSelectArg,
+  EventDropArg,
+  EventClickArg,
+  EventContentArg,
+} from '@fullcalendar/core'
 import zhCn from '@fullcalendar/core/locales/zh-cn'
 import { createLessonAction, rescheduleLessonAction } from './actions'
 import type { CalendarEvent } from './types'
@@ -14,6 +19,27 @@ import LessonDetail from './lesson-detail'
 interface SectionOption {
   id: string
   name: string
+}
+
+// Render the event as "课程名 · 学生名" plus an online/location hint (req6).
+function renderEventContent(arg: EventContentArg) {
+  const p = arg.event.extendedProps as {
+    courseTitle?: string | null
+    studentNames?: string[]
+    location?: string | null
+    meetingUrl?: string | null
+  }
+  const label = p.courseTitle || arg.event.title
+  const names = p.studentNames ?? []
+  const shown = names.slice(0, 3).join('、') + (names.length > 3 ? ` 等${names.length}人` : '')
+  const place = p.meetingUrl ? '线上' : (p.location ?? '')
+  return (
+    <div className="overflow-hidden px-1 text-xs leading-tight">
+      <div className="truncate font-medium">{label}</div>
+      {shown && <div className="truncate opacity-80">{shown}</div>}
+      {place && <div className="truncate opacity-70">{place}</div>}
+    </div>
+  )
 }
 
 export default function ScheduleCalendar({
@@ -25,8 +51,39 @@ export default function ScheduleCalendar({
 }) {
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
   const [sectionId, setSectionId] = useState<string>(sections[0]?.id ?? '')
+  const [visibleSectionIds, setVisibleSectionIds] = useState<Set<string>>(
+    () => new Set(sections.map((s) => s.id)),
+  )
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [, startTransition] = useTransition()
+
+  function toggleVisible(id: string) {
+    setVisibleSectionIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const fcEvents = useMemo(
+    () =>
+      events
+        .filter((e) => visibleSectionIds.has(e.sectionId))
+        .map((e) => ({
+          id: e.id,
+          title: e.title,
+          start: e.start,
+          end: e.end,
+          extendedProps: {
+            courseTitle: e.courseTitle,
+            studentNames: e.studentNames,
+            location: e.location,
+            meetingUrl: e.meetingUrl,
+          },
+        })),
+    [events, visibleSectionIds],
+  )
 
   function handleSelect(info: DateSelectArg) {
     if (!sectionId) {
@@ -84,6 +141,23 @@ export default function ScheduleCalendar({
           ))}
         </select>
       </label>
+
+      {sections.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-neutral-600">显示班级：</span>
+          {sections.map((s) => (
+            <label key={s.id} className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={visibleSectionIds.has(s.id)}
+                onChange={() => toggleVisible(s.id)}
+              />
+              {s.name}
+            </label>
+          ))}
+        </div>
+      )}
+
       <FullCalendar
         plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
         initialView="timeGridWeek"
@@ -98,7 +172,8 @@ export default function ScheduleCalendar({
         height="auto"
         selectable
         editable
-        events={events}
+        events={fcEvents}
+        eventContent={renderEventContent}
         select={handleSelect}
         eventDrop={handleDrop}
         eventClick={handleEventClick}

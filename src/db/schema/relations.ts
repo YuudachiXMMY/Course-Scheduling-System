@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm'
-import { course, classSection } from './course'
+import { course, classSection, sectionMeeting } from './course'
 import { student } from './student'
 import { enrollment } from './enrollment'
 import { lesson } from './lesson'
@@ -12,6 +12,13 @@ export const sectionRelations = relations(classSection, ({ one, many }) => ({
   course: one(course, { fields: [classSection.courseId], references: [course.id] }),
   lessons: many(lesson),
   enrollments: many(enrollment),
+  meetings: many(sectionMeeting),
+}))
+export const sectionMeetingRelations = relations(sectionMeeting, ({ one }) => ({
+  section: one(classSection, {
+    fields: [sectionMeeting.sectionId],
+    references: [classSection.id],
+  }),
 }))
 export const studentRelations = relations(student, ({ many }) => ({
   enrollments: many(enrollment),

@@ -9,6 +9,10 @@ export interface CalendarEvent {
   end: string // ISO UTC instant
   sectionId: string
   status: 'scheduled' | 'completed' | 'canceled'
+  courseTitle?: string | null // parent course name, for the calendar event label
+  studentNames?: string[] // active-enrolled students of the section, for the calendar event label
+  location?: string | null
+  meetingUrl?: string | null // online-class link (Zoom/腾讯会议)
 }
 
 export type ScheduleResult =
