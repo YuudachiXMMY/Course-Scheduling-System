@@ -41,14 +41,24 @@ export default function ReportPanel({
       setErr('请选择学生与时间段')
       return
     }
-    run(() =>
-      createReportDraft({
-        studentId,
-        periodStart,
-        periodEnd,
-        title: title.trim() || undefined,
-      }),
-    )
+    setErr(null)
+    startTransition(async () => {
+      try {
+        const res = await createReportDraft({
+          studentId,
+          periodStart,
+          periodEnd,
+          title: title.trim() || undefined,
+        })
+        if (!res.ok) {
+          setErr(res.error)
+          return
+        }
+        router.refresh()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
+      }
+    })
   }
 
   return (

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { getAuthContext } from '@/auth/context'
+import LogoutButton from './logout-button'
 
 // UX-level guard ONLY. Real authorization is re-checked in every Server Action /
 // Route Handler / data fetch via requireAuthContext() + requirePermission().
@@ -29,6 +30,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <Link href="/dashboard/calendar" className="text-neutral-700 hover:underline">
             日历订阅
           </Link>
+          <LogoutButton />
         </nav>
       </header>
       <main className="p-6">{children}</main>

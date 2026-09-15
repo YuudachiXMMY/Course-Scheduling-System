@@ -9,6 +9,13 @@ const nextConfig: NextConfig = {
   // marked external they load from node_modules at runtime and trace into .next/standalone. qrcode
   // is pure-JS and bundles fine, so it stays out of this list.
   serverExternalPackages: ['playwright', 'archiver'],
+  // playwright-core loads browsers.json via a runtime-computed path that Next's static output-file
+  // tracing can't see, so the traced standalone copy is incomplete and the PNG/ZIP export routes
+  // 500 at import ("Cannot find module .../playwright-core/browsers.json"). Force the full packages
+  // into the trace for the export routes so they ship into .next/standalone/node_modules.
+  outputFileTracingIncludes: {
+    '/api/export/**': ['./node_modules/playwright/**', './node_modules/playwright-core/**'],
+  },
   // P4-10: belt-and-suspenders noindex for public share pages (paired with page `robots` metadata),
   // so a leaked/forwarded /s/<token> link is never indexed.
   async headers() {
