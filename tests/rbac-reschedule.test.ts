@@ -37,4 +37,21 @@ describe('RBAC for reschedule requests', () => {
     expect(isPortalRole('teacher')).toBe(false)
     expect(isPortalRole('assistant')).toBe(false)
   })
+
+  // Regression (PR #20 review C1): parent/student legitimately hold rescheduleRequest:['list'] for
+  // their OWN /portal/reschedule view — so a page-level `requirePermission(rescheduleRequest:['list'])`
+  // is NOT sufficient to keep them out of the tenant-wide /dashboard/reschedule queue. The only defense
+  // is the role gate in DashboardLayout (`if (isPortalRole(ctx.role)) redirect('/portal')`). This test
+  // pins both halves of that invariant so the gap can't silently reopen.
+  it('list is held by portal roles too, so the dashboard tree must be gated by isPortalRole', () => {
+    for (const r of ['parent', 'student']) {
+      expect(can(r, { rescheduleRequest: ['list'] })).toBe(true) // why the page guard is insufficient
+      expect(isPortalRole(r)).toBe(true) // why DashboardLayout redirects them to /portal
+    }
+    // Staff who legitimately see the queue are NOT redirected out of the dashboard.
+    for (const r of ['owner', 'admin', 'teacher', 'assistant']) {
+      expect(can(r, { rescheduleRequest: ['list'] })).toBe(true)
+      expect(isPortalRole(r)).toBe(false)
+    }
+  })
 })
