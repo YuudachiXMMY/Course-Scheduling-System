@@ -53,7 +53,13 @@ export async function cancelLessonAction(id: string): Promise<{ ok: true }> {
 const updateLessonSchema = z.object({
   id: z.string().trim().min(1),
   location: z.string().trim().max(200).optional(),
-  meetingUrl: z.string().trim().max(500).optional(),
+  // M2: restrict to http(s) so the link can't carry a javascript:/data: scheme if rendered as href.
+  meetingUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .regex(/^https?:\/\//, '网课链接需以 http:// 或 https:// 开头')
+    .optional(),
 })
 export type UpdateLessonResult = { ok: true } | { ok: false; error: string }
 
@@ -85,9 +91,7 @@ export interface LessonMeta {
 export async function getLessonMeta(lessonId: string): Promise<LessonMeta | null> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['read'] })
-  const row = (await forTenant(ctx).findById(lesson, lessonId)) as
-    | typeof lesson.$inferSelect
-    | null
+  const row = (await forTenant(ctx).findById(lesson, lessonId)) as typeof lesson.$inferSelect | null
   if (!row) return null
   return { location: row.location, meetingUrl: row.meetingUrl, title: row.title }
 }

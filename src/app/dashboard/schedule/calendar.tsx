@@ -5,7 +5,12 @@ import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import type { DateSelectArg, EventDropArg, EventClickArg, EventContentArg } from '@fullcalendar/core'
+import type {
+  DateSelectArg,
+  EventDropArg,
+  EventClickArg,
+  EventContentArg,
+} from '@fullcalendar/core'
 import zhCn from '@fullcalendar/core/locales/zh-cn'
 import { createLessonAction, rescheduleLessonAction } from './actions'
 import type { CalendarEvent } from './types'

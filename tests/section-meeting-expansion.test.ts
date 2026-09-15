@@ -17,7 +17,12 @@ interface Meeting {
 }
 
 // Mirror materialize.ts: anchor date = term-start calendar day; each meeting supplies its own time.
-function expandMeetings(meetings: Meeting[], termStart: string, windowStart: Date, windowEnd: Date) {
+function expandMeetings(
+  meetings: Meeting[],
+  termStart: string,
+  windowStart: Date,
+  windowEnd: Date,
+) {
   const [y, mo, d] = termStart.split('-').map(Number)
   return meetings.flatMap((m) => {
     const [hh, mm] = m.startTime.split(':').map(Number)

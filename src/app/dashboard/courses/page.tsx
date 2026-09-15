@@ -51,11 +51,7 @@ export default async function CoursesPage() {
                         {s.name ?? '（未命名班级）'} · {s.rrule ?? '无重复'} · {s.capacity} 人
                       </span>
                       <div className="flex shrink-0 items-center gap-2">
-                        <SectionForm
-                          courseId={c.id}
-                          defaultTeacherId={ctx.userId}
-                          section={s}
-                        />
+                        <SectionForm courseId={c.id} defaultTeacherId={ctx.userId} section={s} />
                         <SectionRoster
                           sectionId={s.id}
                           capacity={s.capacity}

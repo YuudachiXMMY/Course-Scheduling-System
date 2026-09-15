@@ -41,17 +41,19 @@ export default function LessonDetail({
 
   useEffect(() => {
     let active = true
-    Promise.all([getLessonRoster(lessonId), getLessonNotes(lessonId), getLessonMeta(lessonId)]).then(
-      ([r, notes, meta]) => {
-        if (!active) return
-        setRoster(r)
-        setSharedNote(notes.shared)
-        setComments(notes.perStudent)
-        setLocation(meta?.location ?? '')
-        setMeetingUrl(meta?.meetingUrl ?? '')
-        setLoading(false)
-      },
-    )
+    Promise.all([
+      getLessonRoster(lessonId),
+      getLessonNotes(lessonId),
+      getLessonMeta(lessonId),
+    ]).then(([r, notes, meta]) => {
+      if (!active) return
+      setRoster(r)
+      setSharedNote(notes.shared)
+      setComments(notes.perStudent)
+      setLocation(meta?.location ?? '')
+      setMeetingUrl(meta?.meetingUrl ?? '')
+      setLoading(false)
+    })
     return () => {
       active = false
     }
