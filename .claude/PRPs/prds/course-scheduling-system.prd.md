@@ -193,7 +193,7 @@
 | 6 | Claude MCP Connector | mcp-handler Streamable HTTP，任务型 tools，静态 bearer，draft-and-confirm | complete | with 5 | 2 | [plan](../plans/completed/phase-6-claude-mcp-connector.plan.md) · [report](../reports/phase-6-claude-mcp-connector-report.md) |
 | 7a | Team/Parent/Student Logins + Reschedule Requests | 多角色登录门户（家长/学生）+ 自助改期申请→教师审批工作流 + RBAC 行级硬化 + 数据处理告知/未成年人同意页 | complete | - | 3, 4, 5, 6 | [plan](../plans/completed/phase-7a-portal-reschedule.plan.md) · [report (PR-1)](../reports/phase-7a-portal-reschedule-report.md) · [report (PR-2)](../reports/phase-7a-portal-reschedule-pr2-report.md) |
 | 7b | Reminders & Notifications | 自动课程提醒（在盒 cron + 邮件/短信兜底）；改期通过后通知家长；渠道选型 | pending | with 7c | 7a | - |
-| 7c | MCP OAuth 2.1 | MCP connector 从静态 bearer 升级到 OAuth 2.1（WorkOS AuthKit，`withMcpAuth` + RFC 9728），支持多用户 | pending | with 7b | 6, 7a | - |
+| 7c | MCP OAuth 2.1 | MCP connector 从静态 bearer 升级到 OAuth 2.1（**Better Auth `mcp` 插件**，`requireMcpAuth` + RFC 9728，校验 token aud；**取代原定 WorkOS AuthKit**——见 plan 内偏差说明与 ADR 0002），支持多用户 | in-progress | with 7b | 6, 7a | [plan](../plans/phase-7c-mcp-oauth.plan.md) |
 | 7d | (optional) Google Two-way Sync | Google 双向同步 + 邀请家长/学生为受邀人（用户 OAuth，watch 通道续期 cron，410 fullSync 处理）；仅确需时做 iCloud CalDAV | pending | - | 7a | - |
 | 7e | Payments & Credits | 学费/课时包/付款状态追踪落地（数据模型已预留 payment/creditPackage） | pending | - | 7a | - |
 
