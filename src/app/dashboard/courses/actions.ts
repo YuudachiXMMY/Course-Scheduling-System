@@ -92,6 +92,13 @@ const sectionSchema = z.object({
 })
 export type SectionInput = z.input<typeof sectionSchema>
 
+// createSection returns validation problems as data instead of throwing: Next.js redacts thrown
+// Server Action error messages in production (they surface as the opaque "Minified React error
+// #441"), so any Zod field failure must be RETURNED to reach the client with a helpful message.
+export type CreateSectionResult =
+  | { ok: true; section: ClassSection }
+  | { ok: false; error: string }
+
 // Build recurrenceDtstart as the wall-clock (term start date + start time) in the section's zone.
 function computeDtstart(termStartDate: string, startTime: string, zone: string): Date {
   const [y, mo, d] = termStartDate.split('-').map(Number)
@@ -101,14 +108,18 @@ function computeDtstart(termStartDate: string, startTime: string, zone: string):
     .toJSDate()
 }
 
-export async function createSection(input: SectionInput) {
+export async function createSection(input: SectionInput): Promise<CreateSectionResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['create'] })
-  const data = sectionSchema.parse(input)
+  const parsed = sectionSchema.safeParse(input)
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  const data = parsed.data
 
   // courseId must belong to this tenant (composite FK enforces it too, but check for a clean error).
   const parent = await forTenant(ctx).findById(course, data.courseId)
-  if (!parent) throw new Error('课程不存在或不属于当前机构')
+  if (!parent) return { ok: false, error: '课程不存在或不属于当前机构' }
 
   const until = data.termEndDate
     ? DateTime.fromISO(`${data.termEndDate}T23:59:59`, { zone: data.timezone }).toUTC().toJSDate()
@@ -129,7 +140,7 @@ export async function createSection(input: SectionInput) {
     defaultDurationMinutes: data.durationMinutes,
   })
   revalidatePath('/dashboard/courses')
-  return row
+  return { ok: true, section: row as ClassSection }
 }
 
 export async function updateSection(id: string, input: SectionInput) {

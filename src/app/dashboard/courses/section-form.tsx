@@ -59,7 +59,7 @@ export default function SectionForm({
     }
     startTransition(async () => {
       try {
-        const section = await createSection({
+        const result = await createSection({
           courseId,
           name: name || undefined,
           teacherId: defaultTeacherId,
@@ -71,7 +71,11 @@ export default function SectionForm({
           termEndDate: termEnd || undefined,
           timezone: 'Asia/Shanghai',
         })
-        const res = await materializeSectionAction((section as { id: string }).id)
+        if (!result.ok) {
+          setError(result.error)
+          return
+        }
+        const res = await materializeSectionAction(result.section.id)
         setStatus(
           `已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`,
         )
