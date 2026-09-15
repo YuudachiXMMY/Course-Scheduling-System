@@ -38,6 +38,16 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
       NEXT_PUBLIC_APP_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      # P8: report-drafting provider + credentials. The standalone server does NOT read .env at
+      # runtime, so these must be injected here or the container falls back to REPORT_PROVIDER's
+      # 'anthropic' default and fails with "未配置 Claude API Key". Empty defaults keep them optional
+      # (emptyStringAsUndefined in src/env.ts treats "" as unset); set the ones your provider needs.
+      REPORT_PROVIDER: ${REPORT_PROVIDER:-anthropic}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-8}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
+      MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimaxi.com/v1}
     ports:
       - '3000:3000'
   test:
