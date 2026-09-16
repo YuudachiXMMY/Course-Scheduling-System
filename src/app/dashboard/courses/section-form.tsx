@@ -63,10 +63,18 @@ export default function SectionForm({
   const router = useRouter()
 
   // Edit mode: load the section's existing meeting slots to prefill the rows.
+  // Depend on section?.id (a stable primitive), NOT the section object: listSectionMeetings is a
+  // Server Action, and every Server Action invocation triggers a router refresh that re-renders the
+  // server parent (SettingsPanel → getSectionHeader), handing this client component a BRAND-NEW
+  // `section` object each time. With `section` in the deps that fresh reference re-fires the effect →
+  // another action → another refresh → an unbounded loop that floods history.replaceState (WebKit
+  // caps it at 100/10s → "This page couldn't load"). The id is unchanged across refreshes, so the
+  // effect runs once per section as intended.
+  const sectionId = section?.id
   useEffect(() => {
-    if (!open || !isEdit || !section) return
+    if (!open || !isEdit || !sectionId) return
     let active = true
-    listSectionMeetings(section.id).then((rows) => {
+    listSectionMeetings(sectionId).then((rows) => {
       if (!active) return
       if (rows.length > 0) {
         setMeetings(
@@ -81,7 +89,7 @@ export default function SectionForm({
     return () => {
       active = false
     }
-  }, [open, isEdit, section])
+  }, [open, isEdit, sectionId])
 
   function updateMeeting(i: number, patch: Partial<MeetingRow>) {
     setMeetings((prev) => prev.map((m, idx) => (idx === i ? { ...m, ...patch } : m)))
