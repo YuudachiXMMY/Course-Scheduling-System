@@ -22,9 +22,10 @@ import { issueConfirmation, consumeConfirmation } from '@/lib/mcp-confirm'
 import { composeParentMessage } from '@/mcp/message'
 import { getActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
 import { cardWindow } from '@/lib/ical-feed'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 import { env } from '@/env'
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 const fmtLocal = (d: Date) =>
   DateTime.fromJSDate(d, { zone: 'utc' }).setZone(ZONE).toFormat('MM月dd日 HH:mm')
 const hhmm = (d: Date) => DateTime.fromJSDate(d, { zone: 'utc' }).setZone(ZONE).toFormat('HH:mm')

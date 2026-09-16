@@ -8,8 +8,9 @@ import { rescheduleLessonAction } from '@/app/dashboard/schedule/actions'
 import { materializeSectionAction } from '@/app/dashboard/courses/actions'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
 import type { SectionLesson } from './data'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 const fmtTime = (iso: string) =>
   DateTime.fromISO(iso, { zone: 'utc' }).setZone(ZONE).toFormat('HH:mm')
 const fmtDay = (iso: string) => {

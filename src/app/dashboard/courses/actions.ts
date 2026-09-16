@@ -10,6 +10,7 @@ import { forTenant } from '@/db/tenant'
 import { course, classSection, sectionMeeting, lesson } from '@/db/schema'
 import { buildWeeklyRrule, type Weekday, WEEKDAYS } from '@/lib/rrule-build'
 import { materializeSection } from '@/lib/materialize'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 
 export type Course = typeof course.$inferSelect
 export type ClassSection = typeof classSection.$inferSelect
@@ -120,7 +121,7 @@ const sectionSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
-  timezone: z.string().trim().default('Asia/Shanghai'),
+  timezone: z.string().trim().default(APP_TIME_ZONE),
   defaultLocation: z.string().trim().max(200).optional(),
   // M2: only accept http(s) URLs so a link can never carry a javascript:/data: scheme if it's ever
   // rendered as an href downstream.

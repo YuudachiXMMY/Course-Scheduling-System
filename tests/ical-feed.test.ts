@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { buildIcs, feedWindow, type FeedLesson } from '@/lib/ical-feed'
 
-// Two lessons at known UTC instants. 08:00Z == 16:00 Asia/Shanghai (China fixed +08, no DST) —
-// mirrors the recurrence test's 16:00-local invariant.
+// Two lessons at known UTC instants. Jan 5 is EST (America/Toronto, UTC-5), so 08:00Z == 03:00 local.
 const lessons: FeedLesson[] = [
   {
     id: 'lesson-a',
@@ -32,16 +31,16 @@ describe('buildIcs', () => {
     expect(ics).toContain('BEGIN:VCALENDAR')
     expect(ics).toContain('END:VCALENDAR')
     expect(ics).toContain('BEGIN:VTIMEZONE')
-    expect(ics).toContain('TZID:Asia/Shanghai')
+    expect(ics).toContain('TZID:America/Toronto')
     expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(2)
     expect(ics).toContain('UID:lesson-a@example.com')
     expect(ics).toContain('UID:lesson-b@example.com')
   })
 
-  it('renders the correct Asia/Shanghai wall-clock time (08:00Z → 16:00 local)', () => {
+  it('renders the correct America/Toronto wall-clock time (08:00Z → 03:00 local, EST)', () => {
     const ics = buildIcs(lessons, { host: 'example.com' })
-    // ical-generator formats a TZID event as DTSTART;TZID=Asia/Shanghai:YYYYMMDDTHHMMSS
-    expect(ics).toMatch(/DTSTART;TZID=Asia\/Shanghai:20260105T160000/)
+    // ical-generator formats a TZID event as DTSTART;TZID=America/Toronto:YYYYMMDDTHHMMSS
+    expect(ics).toMatch(/DTSTART;TZID=America\/Toronto:20260105T030000/)
   })
 
   it('falls back to the default summary when title is null', () => {
@@ -72,7 +71,7 @@ describe('buildIcs', () => {
 })
 
 describe('feedWindow', () => {
-  it('returns from < to spanning ~34 weeks (8 back + 26 forward) on Asia/Shanghai day edges', () => {
+  it('returns from < to spanning ~34 weeks (8 back + 26 forward) on America/Toronto day edges', () => {
     const now = new Date('2026-06-15T12:00:00Z')
     const { from, to } = feedWindow(now)
     expect(from.getTime()).toBeLessThan(to.getTime())

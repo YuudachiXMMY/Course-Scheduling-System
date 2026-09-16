@@ -3,8 +3,8 @@ import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
 import { type CardData, type CardLesson } from '@/lib/schedule-card'
 import { cardWindow } from '@/lib/ical-feed'
 
-// 08:00Z == 16:00 Asia/Shanghai (China fixed +08, no DST) — mirrors the ical-feed test's
-// 16:00-local invariant so the card and the .ics agree on wall-clock time.
+// Jan 5 is EST (America/Toronto, UTC-5), so 08:00Z == 03:00 local — mirrors the ical-feed test
+// so the card and the .ics agree on wall-clock time.
 const baseLesson: CardLesson = {
   id: 'lesson-a',
   title: '数学',
@@ -31,12 +31,12 @@ describe('renderScheduleCardHtml', () => {
     expect(html).toContain('的课表')
   })
 
-  it('renders the Asia/Shanghai wall-clock time (08:00Z → 16:00 local) for each lesson', async () => {
+  it('renders the America/Toronto wall-clock time (08:00Z → 03:00 local, EST) for each lesson', async () => {
     const data: CardData = { studentName: '张三', lessons: [baseLesson] }
     const html = await renderScheduleCardHtml(data)
-    // startAt 08:00Z → 16:00 local, endAt 09:00Z → 17:00 local.
-    expect(html).toContain('16:00')
-    expect(html).toContain('17:00')
+    // startAt 08:00Z → 03:00 local, endAt 09:00Z → 04:00 local.
+    expect(html).toContain('03:00')
+    expect(html).toContain('04:00')
     // The lesson title/location survive into a row.
     expect(html).toContain('数学')
     expect(html).toContain('房间1')
@@ -99,7 +99,7 @@ describe('renderScheduleCardHtml', () => {
 })
 
 describe('cardWindow', () => {
-  it('returns from < to spanning ~4 weeks on Asia/Shanghai day edges', () => {
+  it('returns from < to spanning ~4 weeks on America/Toronto day edges', () => {
     const now = new Date('2026-06-15T12:00:00Z')
     const { from, to } = cardWindow(now)
     expect(from.getTime()).toBeLessThan(to.getTime())
@@ -110,11 +110,11 @@ describe('cardWindow', () => {
     expect(weeks).toBeLessThan(4.3)
   })
 
-  it('snaps `from` to the start of an Asia/Shanghai day (midnight +08 == 16:00Z)', () => {
+  it('snaps `from` to the start of an America/Toronto day (midnight EDT == 04:00Z)', () => {
     const now = new Date('2026-06-15T12:00:00Z')
     const { from } = cardWindow(now)
-    // Start of a Shanghai calendar day is 16:00:00 UTC the previous day.
-    expect(from.getUTCHours()).toBe(16)
+    // June is EDT (UTC-4): the start of a Toronto calendar day is 04:00:00 UTC the same day.
+    expect(from.getUTCHours()).toBe(4)
     expect(from.getUTCMinutes()).toBe(0)
     expect(from.getUTCSeconds()).toBe(0)
   })

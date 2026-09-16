@@ -3,15 +3,16 @@ import { and, eq, gte, inArray, lt, ne } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { forTenant } from '@/db/tenant'
 import { lesson, classSection, course, enrollment, student } from '@/db/schema'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { AuthContext } from '@/auth/context'
 import type { CalendarEvent } from './types'
 
-// Server-only read. Defaults to the current month (Asia/Shanghai) if no range is given.
+// Server-only read. Defaults to the current month (America/Toronto) if no range is given.
 export async function listLessonsInRange(
   ctx: AuthContext,
   range?: { from: Date; to: Date },
 ): Promise<CalendarEvent[]> {
-  const now = DateTime.now().setZone('Asia/Shanghai')
+  const now = DateTime.now().setZone(APP_TIME_ZONE)
   const from = range?.from ?? now.startOf('month').minus({ weeks: 1 }).toUTC().toJSDate()
   const to = range?.to ?? now.endOf('month').plus({ weeks: 1 }).toUTC().toJSDate()
 

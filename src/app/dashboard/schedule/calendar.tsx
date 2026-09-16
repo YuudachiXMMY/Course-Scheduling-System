@@ -14,6 +14,7 @@ import type {
 } from '@fullcalendar/core'
 import zhCn from '@fullcalendar/core/locales/zh-cn'
 import { createLessonAction, rescheduleLessonAction } from './actions'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { CalendarEvent } from './types'
 import LessonDetail from './lesson-detail'
 
@@ -192,7 +193,7 @@ export default function ScheduleCalendar({
         plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
         initialView="timeGridWeek"
         locale={zhCn}
-        timeZone="Asia/Shanghai"
+        timeZone={APP_TIME_ZONE}
         initialDate={initialEvents[0]?.start}
         headerToolbar={{
           left: 'prev,next today',

@@ -115,7 +115,7 @@ describe('mcp-confirm draft-and-confirm gate', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Pure: parent-message composer (Asia/Shanghai formatting, share URL, empty).
+// Pure: parent-message composer (America/Toronto formatting, share URL, empty).
 // ---------------------------------------------------------------------------
 describe('composeParentMessage', () => {
   const shareUrl = 'https://x.example/s/tok'
@@ -132,15 +132,15 @@ describe('composeParentMessage', () => {
     endAt: new Date(Date.UTC(2026, 2, 2, endH)),
     location,
   })
-  it('formats lessons in Asia/Shanghai and includes the share URL', () => {
+  it('formats lessons in America/Toronto and includes the share URL', () => {
     const text = composeParentMessage({
       studentName: '小明',
       lessons: [mk('l1', 8, 9, '数学', '房间1')],
       shareUrl,
     })
     expect(text).toContain('小明 近期课表：')
-    expect(text).toContain('16:00') // 08:00Z → 16:00 Asia/Shanghai (+8)
-    expect(text).toContain('17:00') // 09:00Z → 17:00
+    expect(text).toContain('03:00') // 08:00Z → 03:00 America/Toronto (EST, -5; Mar 2 is pre-DST)
+    expect(text).toContain('04:00') // 09:00Z → 04:00
     expect(text).toContain('数学')
     expect(text).toContain('房间1')
     expect(text).toContain(shareUrl)

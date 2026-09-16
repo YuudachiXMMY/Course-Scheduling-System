@@ -3,6 +3,7 @@ import { and, eq, ne, sql } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { forTenant } from '@/db/tenant'
 import { lesson } from '@/db/schema'
+import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
 
 export interface ConflictSummary {
@@ -15,7 +16,7 @@ export interface ConflictSummary {
 export interface ConflictCheck {
   hasConflict: boolean
   conflicts: ConflictSummary[]
-  suggestions: Date[] // free start times same day, same duration (Asia/Shanghai wall-clock)
+  suggestions: Date[] // free start times same day, same duration (America/Toronto wall-clock)
 }
 
 /**
@@ -52,12 +53,12 @@ export async function checkTeacherConflict(
   return { hasConflict: conflicts.length > 0, conflicts, suggestions }
 }
 
-// Scan the SAME calendar day (Asia/Shanghai) in 30-min steps for the first N gaps that fit.
+// Scan the SAME calendar day (America/Toronto) in 30-min steps for the first N gaps that fit.
 export async function suggestFreeSlots(
   ctx: AuthContext,
   args: { teacherId: string; startAt: Date; endAt: Date },
 ): Promise<Date[]> {
-  const zone = 'Asia/Shanghai'
+  const zone = APP_TIME_ZONE
   const durationMs = args.endAt.getTime() - args.startAt.getTime()
   const day = DateTime.fromJSDate(args.startAt).setZone(zone)
   const dayStart = day.set({ hour: 8, minute: 0, second: 0, millisecond: 0 }) // 08:00 local

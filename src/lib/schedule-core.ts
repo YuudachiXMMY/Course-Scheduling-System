@@ -6,6 +6,7 @@ import { forTenant } from '@/db/tenant'
 import { lesson, classSection } from '@/db/schema'
 import { checkTeacherConflict } from '@/lib/conflict'
 import { ConflictError, isExclusionViolation } from '@/lib/errors'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { CalendarEvent, ScheduleResult } from '@/app/dashboard/schedule/types'
 
 // P6-3: the scheduling create/reschedule core, extracted from the Server Actions so the Next.js
@@ -16,7 +17,7 @@ import type { CalendarEvent, ScheduleResult } from '@/app/dashboard/schedule/typ
 // Precedent: src/lib/materialize.ts (materializeSection) already lives in src/lib with a
 // "Phase-6 MCP shares it" comment. This is the same pattern for the ad-hoc create/reschedule path.
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 
 function toEvent(row: typeof lesson.$inferSelect): CalendarEvent {
   return {
