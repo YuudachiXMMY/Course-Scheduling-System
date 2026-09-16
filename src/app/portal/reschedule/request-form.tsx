@@ -109,8 +109,8 @@ export default function RequestForm({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 rounded border border-neutral-200 p-4">
-        <h3 className="text-sm font-medium text-neutral-700">申请改期</h3>
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm">
+        <h3 className="text-sm font-medium text-neutral-700 tabular-nums">申请改期</h3>
         {options.length === 0 ? (
           <p className="text-sm text-neutral-500">近期暂无可申请改期的课节。</p>
         ) : (
@@ -169,7 +169,7 @@ export default function RequestForm({
                 type="button"
                 onClick={submit}
                 disabled={pending}
-                className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
               >
                 {pending ? '提交中…' : '提交申请'}
               </button>
@@ -179,17 +179,19 @@ export default function RequestForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium text-neutral-700">我的申请（{requests.length}）</h3>
-        <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
+        <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
+          我的申请（{requests.length}）
+        </h3>
+        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
           {requests.length === 0 && (
-            <li className="px-4 py-3 text-sm text-neutral-500">暂无申请</li>
+            <li className="px-4 py-8 text-center text-sm text-neutral-500">暂无申请</li>
           )}
           {requests.map((r) => (
             <li
               key={r.id}
               data-testid="reschedule-row"
               data-status={r.status}
-              className="flex items-center justify-between px-4 py-3 text-sm"
+              className="flex items-center justify-between px-4 py-3 text-sm tabular-nums"
             >
               <div className="flex flex-col">
                 <span>
@@ -207,7 +209,7 @@ export default function RequestForm({
                     type="button"
                     onClick={() => cancel(r.id)}
                     disabled={pending}
-                    className="rounded border border-neutral-300 px-2 py-1 text-xs disabled:opacity-50"
+                    className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
                   >
                     取消
                   </button>

@@ -75,7 +75,7 @@ export default function ReportPanel({
     <div className="flex flex-col gap-6">
       <form
         onSubmit={generate}
-        className="flex flex-col gap-3 rounded border border-neutral-200 p-4"
+        className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm"
       >
         <h3 className="text-sm font-medium text-neutral-700">生成报告草稿</h3>
         <div className="flex flex-wrap gap-3">
@@ -113,7 +113,7 @@ export default function ReportPanel({
           <button
             type="submit"
             disabled={pending || students.length === 0}
-            className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
           >
             {pending ? '生成中…' : '生成草稿'}
           </button>
@@ -123,7 +123,7 @@ export default function ReportPanel({
 
       <ul className="flex flex-col gap-3">
         {reports.length === 0 && (
-          <li className="rounded border border-neutral-200 px-4 py-3 text-sm text-neutral-500">
+          <li className="rounded-lg border border-neutral-200 px-4 py-8 text-center text-sm text-neutral-500">
             暂无报告
           </li>
         )}
@@ -158,7 +158,7 @@ function ReportItem({
     report.periodStart && report.periodEnd ? `${report.periodStart} ~ ${report.periodEnd}` : '—'
 
   return (
-    <li className="flex flex-col gap-3 rounded border border-neutral-200 px-4 py-3">
+    <li className="flex flex-col gap-3 rounded-lg border border-neutral-200 px-4 py-3 tabular-nums shadow-sm">
       <div className="flex items-center justify-between">
         <div className="flex flex-col">
           <span className="text-sm font-medium">{report.title || `${studentName} 进度报告`}</span>
@@ -193,7 +193,7 @@ function ReportItem({
               type="button"
               disabled={pending}
               onClick={() => onRun(() => updateReportNarrative({ id: report.id, narrative: text }))}
-              className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700 disabled:opacity-50"
+              className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
             >
               保存
             </button>
@@ -205,7 +205,7 @@ function ReportItem({
                   onRun(() => approveReport(report.id))
                 }
               }}
-              className="rounded bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-50"
+              className="rounded bg-neutral-900 px-3 py-1 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
             >
               批准
             </button>
@@ -215,7 +215,7 @@ function ReportItem({
           href={`/api/reports/${report.id}/pdf`}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700"
+          className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           下载 PDF
         </a>

@@ -44,7 +44,7 @@ export default function ConsentGate() {
           type="button"
           onClick={acknowledge}
           disabled={pending}
-          className="rounded bg-neutral-900 px-4 py-2 text-sm text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
         >
           {pending ? '提交中…' : '我已阅读并同意'}
         </button>

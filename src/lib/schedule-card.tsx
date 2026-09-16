@@ -42,6 +42,7 @@ export function ScheduleCard({ data }: { data: CardData }) {
         background: '#ffffff',
         fontFamily: "'Noto Sans SC', system-ui, sans-serif",
         color: '#171717',
+        fontVariantNumeric: 'tabular-nums',
       }}
     >
       <div style={{ fontSize: 30, fontWeight: 700 }}>{data.studentName} 的课表</div>
@@ -86,7 +87,13 @@ export function ScheduleCard({ data }: { data: CardData }) {
       {data.qrDataUrl && (
         <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 16 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={data.qrDataUrl} width={132} height={132} alt="扫码查看课表" />
+          <img
+            src={data.qrDataUrl}
+            width={132}
+            height={132}
+            alt="扫码查看课表"
+            style={{ outline: '1px solid rgba(0, 0, 0, 0.1)', outlineOffset: '-1px' }}
+          />
           <div style={{ fontSize: 16, color: '#525252' }}>微信扫码查看/收藏完整课表</div>
         </div>
       )}

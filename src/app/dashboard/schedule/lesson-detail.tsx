@@ -118,16 +118,20 @@ export default function LessonDetail({
   return (
     <div
       data-testid="lesson-detail-drawer"
-      className="fixed inset-0 z-50 flex justify-end bg-black/30"
+      className="cs-enter-backdrop fixed inset-0 z-50 flex justify-end bg-black/30"
       onClick={onClose}
     >
       <div
-        className="flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl"
+        className="cs-enter-panel flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold">课节详情</h3>
-          <button type="button" className="text-sm text-neutral-500" onClick={onClose}>
+          <button
+            type="button"
+            className="text-sm text-neutral-500 hover:text-neutral-900"
+            onClick={onClose}
+          >
             关闭
           </button>
         </div>
@@ -149,7 +153,7 @@ export default function LessonDetail({
           <button
             type="button"
             disabled={pending}
-            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
             onClick={saveMeta}
           >
             保存地点/链接
@@ -177,10 +181,10 @@ export default function LessonDetail({
                     type="button"
                     disabled={pending}
                     onClick={() => mark(e.studentId, s.value)}
-                    className={`rounded px-2 py-0.5 text-xs ${
+                    className={`rounded px-2 py-1 text-xs ${
                       e.status === s.value
                         ? 'bg-neutral-900 text-white'
-                        : 'border border-neutral-300 text-neutral-600'
+                        : 'border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
                     }`}
                   >
                     {s.label}
@@ -202,7 +206,7 @@ export default function LessonDetail({
           <button
             type="button"
             disabled={pending}
-            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
             onClick={saveShared}
           >
             保存笔记
@@ -226,7 +230,7 @@ export default function LessonDetail({
                 <button
                   type="button"
                   disabled={pending}
-                  className="self-start rounded border border-neutral-300 px-3 py-1 text-xs disabled:opacity-50"
+                  className="self-start rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
                   onClick={() => saveComment(e.studentId)}
                 >
                   保存点评
@@ -243,7 +247,7 @@ export default function LessonDetail({
             data-testid="lesson-cancel"
             type="button"
             disabled={pending}
-            className="rounded border border-red-300 px-3 py-1 text-xs text-red-600"
+            className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50"
             onClick={cancelOne}
           >
             取消这一节

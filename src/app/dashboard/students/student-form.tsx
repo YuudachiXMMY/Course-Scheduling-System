@@ -47,7 +47,7 @@ export default function StudentForm({ student }: { student?: Student }) {
     return (
       <button
         type="button"
-        className="rounded border border-neutral-300 px-3 py-1 text-xs"
+        className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
         onClick={() => setOpen(true)}
       >
         编辑
@@ -56,7 +56,7 @@ export default function StudentForm({ student }: { student?: Student }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded border border-neutral-200 p-4">
+    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4 shadow-sm">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
@@ -82,7 +82,7 @@ export default function StudentForm({ student }: { student?: Student }) {
         <button
           type="button"
           disabled={pending}
-          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
           onClick={submit}
         >
           {isEdit ? '保存' : '添加学生'}
@@ -92,7 +92,7 @@ export default function StudentForm({ student }: { student?: Student }) {
             <button
               type="button"
               disabled={pending}
-              className="rounded border border-neutral-300 px-3 py-1 text-xs"
+              className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
               onClick={() => setOpen(false)}
             >
               取消
@@ -100,7 +100,7 @@ export default function StudentForm({ student }: { student?: Student }) {
             <button
               type="button"
               disabled={pending}
-              className="rounded border border-red-300 px-3 py-1 text-xs text-red-600"
+              className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50"
               onClick={archive}
             >
               归档

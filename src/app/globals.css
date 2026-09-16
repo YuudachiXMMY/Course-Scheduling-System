@@ -5,7 +5,151 @@
     "Noto Sans SC", "Hiragino Sans GB", "Segoe UI", sans-serif;
 }
 
-html,
-body {
-  font-family: var(--font-sans);
+/*
+ * App-wide interaction polish. Kept in the base layer (not per-component utility
+ * strings) so all ~50 buttons / ~65 inputs / links share ONE consistent focus,
+ * transition, and press treatment without editing every JSX file. Utilities in
+ * JSX still win over these (Tailwind orders utilities after base), so callers can
+ * override per-instance. Colour refs use Tailwind v4's emitted `--color-*` vars.
+ */
+@layer base {
+  html {
+    /* Skill: apply font smoothing at the root (body also carries `antialiased`). */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  html,
+  body {
+    font-family: var(--font-sans);
+  }
+
+  /*
+   * Interactive controls animate state changes instead of snapping. Scoped
+   * property list (never `transition: all`) so only cheap, compositor- or
+   * paint-friendly properties retarget when the user changes intent mid-motion.
+   */
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [tabindex] {
+    transition-property: color, background-color, border-color, box-shadow,
+      outline-color, opacity, transform;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+
+  /*
+   * Consistent keyboard focus ring — the app had none, leaving keyboard users
+   * with no visible focus. `:focus-visible` keeps mouse clicks ring-free.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-neutral-900);
+    outline-offset: 2px;
+  }
+
+  /* Tactile press: subtle, interruptible, and reduced-motion aware (below). */
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+  }
+
+  /* Short titles / body text wrap gracefully; balance is a no-op past ~6 lines. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Neutral inset outline so image edges don't blur into the surface. */
+  img {
+    outline: 1px solid rgb(0 0 0 / 0.1);
+    outline-offset: -1px;
+  }
+
+  ::selection {
+    background-color: var(--color-neutral-900);
+    color: white;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    img {
+      outline-color: rgb(255 255 255 / 0.1);
+    }
+  }
+
+  /* Honour reduced-motion: drop the retargeting transitions and the press dip. */
+  @media (prefers-reduced-motion: reduce) {
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [tabindex] {
+      transition-duration: 0ms;
+    }
+
+    button:not(:disabled):active,
+    [role="button"]:not([aria-disabled="true"]):active {
+      transform: none;
+    }
+  }
+}
+
+/*
+ * Staged one-shot entrances (skill: reserve keyframes for entrances, not state
+ * changes). Used by the lesson-detail slide-over so it eases in instead of
+ * snapping. Enter only — the drawer unmounts on close, so an exit tween would
+ * mean keeping it mounted; not worth the state churn here.
+ */
+@keyframes cs-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cs-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(1.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.cs-enter-backdrop {
+  animation: cs-fade-in 150ms ease-out;
+}
+
+.cs-enter-panel {
+  animation: cs-slide-in-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-enter-backdrop,
+  .cs-enter-panel {
+    animation: none;
+  }
+}
+
+/* FullCalendar renders time labels — align digits so week/day columns don't jitter. */
+.fc {
+  font-variant-numeric: tabular-nums;
 }

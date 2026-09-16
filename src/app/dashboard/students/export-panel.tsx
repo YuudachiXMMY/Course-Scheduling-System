@@ -62,7 +62,7 @@ export default function ExportPanel({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded border border-neutral-200 p-4">
+    <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm">
       {shareUrl ? (
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium text-neutral-500">分享链接</span>
@@ -74,7 +74,7 @@ export default function ExportPanel({
               type="button"
               disabled={pending}
               onClick={() => copy(shareUrl)}
-              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 disabled:opacity-50"
+              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
             >
               复制
             </button>
@@ -89,7 +89,7 @@ export default function ExportPanel({
           type="button"
           disabled={pending}
           onClick={createOrCopy}
-          className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
         >
           {shareUrl ? '复制分享链接' : '生成分享链接'}
         </button>
@@ -97,13 +97,13 @@ export default function ExportPanel({
           href={pngUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700"
+          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           下载图片
         </a>
         <a
           href={icsUrl}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700"
+          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           下载 .ics
         </a>
@@ -115,7 +115,7 @@ export default function ExportPanel({
             type="button"
             disabled={pending}
             onClick={rotate}
-            className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 disabled:opacity-50"
+            className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
           >
             重新生成
           </button>
@@ -123,7 +123,7 @@ export default function ExportPanel({
             type="button"
             disabled={pending}
             onClick={revoke}
-            className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 disabled:opacity-50"
+            className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
           >
             停用
           </button>

@@ -77,7 +77,7 @@ export default function ReviewPanel({
   }
 
   return (
-    <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
+    <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
       {requests.map((r) => {
         const conflict = conflicts[r.id]
         return (
@@ -85,7 +85,7 @@ export default function ReviewPanel({
             key={r.id}
             data-testid="reschedule-request"
             data-request-id={r.id}
-            className="flex flex-col gap-2 px-4 py-3 text-sm"
+            className="flex flex-col gap-2 px-4 py-3 text-sm tabular-nums"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-0.5">
@@ -107,7 +107,7 @@ export default function ReviewPanel({
                     type="button"
                     onClick={() => approve(r.id)}
                     disabled={pending}
-                    className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+                    className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
                   >
                     通过
                   </button>
@@ -116,7 +116,7 @@ export default function ReviewPanel({
                     type="button"
                     onClick={() => reject(r.id)}
                     disabled={pending}
-                    className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 disabled:opacity-50"
+                    className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                   >
                     拒绝
                   </button>
