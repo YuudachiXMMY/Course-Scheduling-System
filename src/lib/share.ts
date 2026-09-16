@@ -44,6 +44,10 @@ export function sliceLessonsForSections(
       endAt: r.endAt,
       location: r.location,
     }))
+    // Order by start time ascending so the shared schedule card renders lessons by date —
+    // the DB query has no ORDER BY, so row order is otherwise undefined. Single sort point
+    // covers both the public share page and the authenticated preview path.
+    .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
 }
 
 // A lesson row only stores a title when it was manually renamed off-pattern; auto-materialized
