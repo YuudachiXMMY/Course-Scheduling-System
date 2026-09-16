@@ -25,12 +25,17 @@ async function ensureFeed(page: Page) {
   await expect(page.getByRole('heading', { name: '日历订阅', exact: true })).toBeVisible()
 
   const generate = page.getByRole('button', { name: '生成订阅链接' })
+  const regenerate = page.getByRole('button', { name: '重新生成链接' })
+  // Wait for the panel to settle into ONE of its two terminal states (no-feed → generate button, or
+  // feed present → regenerate button) before branching — otherwise a non-waiting isVisible() can race
+  // the render and skip the generate step.
+  await expect(generate.or(regenerate)).toBeVisible()
   if (await generate.isVisible()) {
     await generate.click()
     await expect(page.getByText('已生成订阅链接')).toBeVisible()
   }
   // Feed branch is now rendered (rotate/revoke controls present).
-  await expect(page.getByRole('button', { name: '重新生成链接' })).toBeVisible()
+  await expect(regenerate).toBeVisible()
 }
 
 test.describe('日历订阅链接 CRUD', () => {

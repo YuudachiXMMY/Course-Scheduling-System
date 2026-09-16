@@ -23,6 +23,11 @@ test.describe('注册', () => {
       await page.getByLabel('姓名').fill(name)
       await page.getByLabel('邮箱').fill(email)
       await page.getByLabel('密码').fill(password)
+      // Capture the sign-up response so a retry honors the real rate-limit backoff (X-Retry-After)
+      // rather than sleeping a fixed, guessed window.
+      const responsePromise = page
+        .waitForResponse((r) => r.url().includes('/api/auth/sign-up/email'), { timeout: 12_000 })
+        .catch(() => null)
       await page.getByRole('button', { name: '注册', exact: true }).click()
       try {
         await page.waitForURL(/\/dashboard/, { timeout: 12_000 })
@@ -30,7 +35,10 @@ test.describe('注册', () => {
         break
       } catch {
         if (attempt === maxAttempts) break
-        await page.waitForTimeout(11_000) // ride out the sign-up rate-limit window, then retry
+        // Throttled → wait exactly X-Retry-After (+1s); otherwise a brief pause before retrying.
+        const res = await responsePromise
+        const retryAfter = res?.status() === 429 ? Number(res.headers()['x-retry-after']) || 10 : 2
+        await page.waitForTimeout((retryAfter + 1) * 1000)
       }
     }
 
@@ -45,10 +53,31 @@ test.describe('注册', () => {
     await page.getByLabel('姓名').fill(`E2E重复-${Date.now()}`)
     await page.getByLabel('邮箱').fill(E2E_ACCOUNTS.owner.email) // already seeded → sign-up rejected
     await page.getByLabel('密码').fill('E2eSignup123!')
-    await page.getByRole('button', { name: '注册', exact: true }).click()
 
-    // Better Auth is not localized; assert the red error <p> is shown and we did NOT navigate away,
-    // rather than pinning exact English copy. (A rate-limit response would also surface here.)
+    // Submit, retrying past any rate-limit (429) so we assert on the REAL duplicate rejection — not the
+    // same red <p> a throttled response would also produce (that would pass for the wrong reason).
+    let status = 0
+    let body = ''
+    const maxAttempts = 4
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const responsePromise = page.waitForResponse((r) =>
+        r.url().includes('/api/auth/sign-up/email'),
+      )
+      await page.getByRole('button', { name: '注册', exact: true }).click()
+      const res = await responsePromise
+      status = res.status()
+      body = await res.text()
+      if (status !== 429 || attempt === maxAttempts) break
+      const retryAfter = Number(res.headers()['x-retry-after']) || 10
+      await page.waitForTimeout((retryAfter + 1) * 1000)
+    }
+
+    // A genuine duplicate is a 4xx that names the conflict — NOT a 429 rate-limit. Better Auth is not
+    // localized, so we match on the response (status + code/message) rather than the rendered copy.
+    expect(status, `expected duplicate-email rejection, got ${status}`).not.toBe(429)
+    expect(status).toBeGreaterThanOrEqual(400)
+    expect(status).toBeLessThan(500)
+    expect(body.toLowerCase()).toMatch(/exist|already|unique/)
     await expect(page.locator('p.text-red-600')).toBeVisible()
     await expect(page).toHaveURL(/\/signup/)
   })

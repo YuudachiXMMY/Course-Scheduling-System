@@ -37,6 +37,11 @@ export class LoginPage {
     const maxAttempts = 4
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       await this.fill(email, password)
+      // Capture the sign-in response so a retry can honor Better Auth's actual rate-limit backoff
+      // (X-Retry-After) instead of blindly sleeping a fixed, guessed window.
+      const responsePromise = this.page
+        .waitForResponse((r) => r.url().includes('/api/auth/sign-in/email'), { timeout: 12_000 })
+        .catch(() => null)
       await this.submit.click()
       try {
         await this.page.waitForURL(/\/(dashboard|portal)/, { timeout: 12_000 })
@@ -51,7 +56,10 @@ export class LoginPage {
             `login did not navigate after ${maxAttempts} attempts (last error: ${err ?? 'none'})`,
           )
         }
-        await this.page.waitForTimeout(11_000) // wait out the rate-limit window, then retry
+        // Throttled → wait exactly X-Retry-After (+1s); otherwise a brief pause before retrying.
+        const res = await responsePromise
+        const retryAfter = res?.status() === 429 ? Number(res.headers()['x-retry-after']) || 10 : 2
+        await this.page.waitForTimeout((retryAfter + 1) * 1000)
       }
     }
   }
