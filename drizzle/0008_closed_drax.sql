@@ -1,0 +1,1 @@
+ALTER TABLE "reschedule_request" ADD COLUMN "review_note" text;

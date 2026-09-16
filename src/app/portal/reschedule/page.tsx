@@ -34,6 +34,7 @@ export default async function PortalReschedulePage() {
       id: r.id,
       status: r.status,
       reason: r.reason,
+      reviewNote: r.reviewNote,
       requestedStartAt: r.requestedStartAt ? r.requestedStartAt.toISOString() : null,
       requestedEndAt: r.requestedEndAt ? r.requestedEndAt.toISOString() : null,
       createdAt: r.createdAt ? r.createdAt.toISOString() : null,

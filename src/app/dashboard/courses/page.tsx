@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
 import { listCourses, listSections } from './actions'
@@ -24,6 +25,13 @@ export default async function CoursesPage() {
   return (
     <section className="flex flex-col gap-6">
       <h2 className="text-lg font-semibold">课程</h2>
+      <Link
+        href="/dashboard/teach"
+        className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 hover:bg-neutral-100"
+      >
+        <span>课程与报告已统一到「教务工作台」——在班级内直接管理学生、排课、报告与导出。</span>
+        <span className="shrink-0 font-medium text-neutral-900">前往教务工作台 →</span>
+      </Link>
       <CourseForm />
       <div className="flex flex-col gap-4">
         {activeCourses.length === 0 && (

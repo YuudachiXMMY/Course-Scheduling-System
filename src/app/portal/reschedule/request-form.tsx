@@ -20,6 +20,7 @@ export interface RequestRow {
   id: string
   status: string
   reason: string | null
+  reviewNote: string | null
   requestedStartAt: string | null
   requestedEndAt: string | null
   createdAt: string | null
@@ -191,13 +192,16 @@ export default function RequestForm({
               key={r.id}
               data-testid="reschedule-row"
               data-status={r.status}
-              className="flex items-center justify-between px-4 py-3 text-sm tabular-nums"
+              className="flex items-start justify-between gap-4 px-4 py-3 text-sm tabular-nums"
             >
               <div className="flex flex-col">
                 <span>
                   期望：{fmtDisplay(r.requestedStartAt)} – {fmtDisplay(r.requestedEndAt)}
                 </span>
                 {r.reason && <span className="text-xs text-neutral-500">原因：{r.reason}</span>}
+                {r.status === 'rejected' && r.reviewNote && (
+                  <span className="text-xs text-red-600">老师回复：{r.reviewNote}</span>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-xs text-neutral-600">

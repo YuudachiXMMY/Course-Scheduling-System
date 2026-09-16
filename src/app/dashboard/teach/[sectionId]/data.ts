@@ -3,7 +3,15 @@ import { and, eq, gte, inArray, lte, ne } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { notFound } from 'next/navigation'
 import { forTenant } from '@/db/tenant'
-import { classSection, course, enrollment, student, lesson, progressReport } from '@/db/schema'
+import {
+  classSection,
+  course,
+  enrollment,
+  student,
+  lesson,
+  progressReport,
+  rescheduleRequest,
+} from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import type { ReportRow } from '@/app/dashboard/reports/data'
 
@@ -108,6 +116,29 @@ export async function getSectionLessons(ctx: AuthContext, id: string): Promise<S
       meetingUrl: r.meetingUrl,
       isPast: r.endAt.getTime() < nowMs,
     }))
+}
+
+// Count of PENDING reschedule requests (portal-originated) that target a lesson in THIS section — a
+// teacher-facing "N 条待处理改期" badge that links into the tenant-wide 改期申请 queue. Tenant-scoped:
+// select this section's lessons, then filter the tenant's pending requests by lesson membership. The
+// reschedule queue itself stays global (a request isn't editable here); this is just contextual signal.
+export async function getSectionPendingRescheduleCount(
+  ctx: AuthContext,
+  id: string,
+): Promise<number> {
+  const lessons = (await forTenant(ctx).select(
+    lesson,
+    eq(lesson.sectionId, id),
+  )) as (typeof lesson.$inferSelect)[]
+  if (lessons.length === 0) return 0
+  // Push the lesson-membership filter into SQL (inArray) rather than scanning the tenant's entire
+  // pending set in memory — this runs per section-layout render. lessonIds is non-empty (guarded above).
+  const lessonIds = lessons.map((l) => l.id)
+  const pending = (await forTenant(ctx).select(
+    rescheduleRequest,
+    and(eq(rescheduleRequest.status, 'pending'), inArray(rescheduleRequest.lessonId, lessonIds)),
+  )) as (typeof rescheduleRequest.$inferSelect)[]
+  return pending.length
 }
 
 // Reports are student+period scoped (a student may sit in several sections); we surface the reports of

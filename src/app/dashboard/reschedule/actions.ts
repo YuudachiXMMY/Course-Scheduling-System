@@ -16,8 +16,7 @@ import {
 // because a successful approve MOVES the lesson via rescheduleLessonCore.
 export type ApproveActionResult = ApproveResult | { ok: false; error: string }
 export type RejectActionResult =
-  | { ok: true; request: RescheduleRequestRow }
-  | { ok: false; error: string }
+  { ok: true; request: RescheduleRequestRow } | { ok: false; error: string }
 
 export async function approveRescheduleRequest(id: string): Promise<ApproveActionResult> {
   const ctx = await requireAuthContext()
@@ -35,11 +34,14 @@ export async function approveRescheduleRequest(id: string): Promise<ApproveActio
   }
 }
 
-export async function rejectRescheduleRequest(id: string): Promise<RejectActionResult> {
+export async function rejectRescheduleRequest(
+  id: string,
+  note?: string,
+): Promise<RejectActionResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { rescheduleRequest: ['reject'] })
   try {
-    const row = await rejectRescheduleRequestCore(ctx, id)
+    const row = await rejectRescheduleRequestCore(ctx, id, note)
     revalidatePath('/dashboard/reschedule')
     return { ok: true, request: row }
   } catch (e) {

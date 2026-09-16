@@ -123,10 +123,16 @@ export async function approveRescheduleRequestCore(
   return { ok: true, request: updated as RescheduleRequestRow, event: result.event }
 }
 
+// Optional reviewer note (a reject reason). Trimmed + capped to mirror the request's own `reason`
+// field; empty/whitespace collapses to null so we never persist a blank string.
+export const rejectRescheduleNoteSchema = z.string().trim().max(500).optional()
+
 export async function rejectRescheduleRequestCore(
   ctx: AuthContext,
   requestId: string,
+  note?: string,
 ): Promise<RescheduleRequestRow> {
+  const parsedNote = rejectRescheduleNoteSchema.parse(note)
   const req = (await forTenant(ctx).findById(
     rescheduleRequest,
     requestId,
@@ -137,6 +143,7 @@ export async function rejectRescheduleRequestCore(
     status: 'rejected',
     reviewedById: ctx.userId,
     reviewedAt: new Date(),
+    reviewNote: parsedNote && parsedNote.length > 0 ? parsedNote : null,
   })
   return updated as RescheduleRequestRow
 }

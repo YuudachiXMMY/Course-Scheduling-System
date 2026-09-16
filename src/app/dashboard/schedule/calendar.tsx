@@ -56,6 +56,9 @@ export default function ScheduleCalendar({
     () => new Set(sections.map((s) => s.id)),
   )
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Inline notice replaces window.alert for the "no section" + conflict paths — a native alert blocks
+  // the whole tab (and the extension's event loop); this amber bar is dismissible and non-modal.
+  const [notice, setNotice] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
   function toggleVisible(id: string) {
@@ -88,9 +91,10 @@ export default function ScheduleCalendar({
 
   function handleSelect(info: DateSelectArg) {
     if (!sectionId) {
-      alert('请先在上方选择一个班级')
+      setNotice('请先在上方选择一个班级')
       return
     }
+    setNotice(null)
     startTransition(async () => {
       const res = await createLessonAction({
         sectionId,
@@ -98,7 +102,7 @@ export default function ScheduleCalendar({
         endAt: info.end,
       })
       if (!res.ok) {
-        alert(`时间冲突，可用时段：${res.suggestions.join('、') || '当天已排满'}`)
+        setNotice(`时间冲突，可用时段：${res.suggestions.join('、') || '当天已排满'}`)
       } else {
         setEvents((prev) => [...prev, res.event])
       }
@@ -106,6 +110,7 @@ export default function ScheduleCalendar({
   }
 
   function handleDrop(info: EventDropArg) {
+    setNotice(null)
     startTransition(async () => {
       const res = await rescheduleLessonAction({
         id: info.event.id,
@@ -114,7 +119,7 @@ export default function ScheduleCalendar({
       })
       if (!res.ok) {
         info.revert()
-        alert(`时间冲突，可用时段：${res.suggestions.join('、') || '当天已排满'}`)
+        setNotice(`时间冲突，可用时段：${res.suggestions.join('、') || '当天已排满'}`)
       } else {
         setEvents((prev) => prev.map((e) => (e.id === res.event.id ? res.event : e)))
       }
@@ -148,6 +153,24 @@ export default function ScheduleCalendar({
           ))}
         </select>
       </label>
+
+      {notice && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            aria-label="关闭提示"
+            className="shrink-0 text-amber-600 hover:text-amber-900"
+          >
+            关闭
+          </button>
+        </div>
+      )}
 
       {sections.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 text-xs">

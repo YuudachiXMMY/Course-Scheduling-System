@@ -5,29 +5,34 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import LogoutButton from '../logout-button'
 
-// Top nav with active-state highlighting. v1 is ADDITIVE: every legacy link is kept (so smoke.spec's
-// name→href assertions stay green) and 教务工作台 is added. A later phase folds 课程/报告 into the
-// workspace and trims them here in lockstep with the spec. flex-wrap keeps it from overflowing narrow
-// screens.
+// Top nav with active-state highlighting. Every legacy link is KEPT (so smoke.spec's name→href
+// assertions stay green, and each accessible name stays unique — exactly one link per label). The
+// consolidation is visual: 课程/报告 now fold into a 教务 cluster behind the 教务工作台 workspace as
+// `muted` secondary destinations, signalling they're managed there. A hard 302 on /dashboard/courses
+// stays deferred until the workspace grows a course/section CREATE surface (today it's read-only nav,
+// so /dashboard/courses is still the only place to create). flex-wrap prevents narrow-screen overflow.
 function NavLink({
   href,
   activePrefix,
+  muted,
   children,
 }: {
   href: string
   activePrefix?: string
+  muted?: boolean
   children: ReactNode
 }) {
   const pathname = usePathname()
   const active = activePrefix ? pathname.startsWith(activePrefix) : pathname === href
+  const base = muted ? 'text-xs' : ''
   return (
     <Link
       href={href}
       aria-current={active ? 'page' : undefined}
       className={
         active
-          ? 'font-medium text-neutral-900'
-          : 'text-neutral-700 hover:text-neutral-900 hover:underline'
+          ? `${base} font-medium text-neutral-900`
+          : `${base} ${muted ? 'text-neutral-500' : 'text-neutral-700'} hover:text-neutral-900 hover:underline`
       }
     >
       {children}
@@ -37,14 +42,23 @@ function NavLink({
 
 export default function NavLinks() {
   return (
-    <nav className="flex flex-wrap items-center gap-4 text-sm">
+    <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
       <NavLink href="/dashboard/schedule">排课</NavLink>
       <NavLink href="/dashboard/students">学生</NavLink>
-      <NavLink href="/dashboard/teach" activePrefix="/dashboard/teach">
-        教务工作台
-      </NavLink>
-      <NavLink href="/dashboard/courses">课程</NavLink>
-      <NavLink href="/dashboard/reports">报告</NavLink>
+      <span className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1">
+        <NavLink href="/dashboard/teach" activePrefix="/dashboard/teach">
+          教务工作台
+        </NavLink>
+        <span aria-hidden className="text-neutral-300">
+          ·
+        </span>
+        <NavLink href="/dashboard/courses" muted>
+          课程
+        </NavLink>
+        <NavLink href="/dashboard/reports" muted>
+          报告
+        </NavLink>
+      </span>
       <NavLink href="/dashboard/reschedule" activePrefix="/dashboard/reschedule">
         改期申请
       </NavLink>

@@ -32,6 +32,11 @@ export default function ReviewPanel({
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<Record<string, ConflictInfo>>({})
+  // Reject is two-step: the 拒绝 button opens an inline box for an OPTIONAL reason (persisted +
+  // surfaced back to the parent in the portal), then 确认拒绝 commits. One box open at a time — a
+  // reviewer works the queue sequentially.
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectNote, setRejectNote] = useState('')
   const { flash, show } = useFlash()
   const router = useRouter()
 
@@ -79,16 +84,25 @@ export default function ReviewPanel({
     })
   }
 
+  function openReject(id: string) {
+    clearRow(id)
+    setRejectNote('')
+    setRejectingId((cur) => (cur === id ? null : id))
+  }
+
   function reject(id: string) {
     clearRow(id)
     setRowPending(id, true)
+    const note = rejectNote.trim()
     startTransition(async () => {
       try {
-        const res = await rejectRescheduleRequest(id)
+        const res = await rejectRescheduleRequest(id, note || undefined)
         if (!res.ok) {
           setErrors((e) => ({ ...e, [id]: res.error }))
           return
         }
+        setRejectingId(null)
+        setRejectNote('')
         show('已拒绝')
         router.refresh()
       } finally {
@@ -144,8 +158,9 @@ export default function ReviewPanel({
                       <button
                         data-testid="reschedule-reject"
                         type="button"
-                        onClick={() => reject(r.id)}
+                        onClick={() => openReject(r.id)}
                         disabled={pendingIds.has(r.id)}
+                        aria-expanded={rejectingId === r.id}
                         className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
                       >
                         拒绝
@@ -153,6 +168,39 @@ export default function ReviewPanel({
                     </div>
                   )}
                 </div>
+                {canReview && rejectingId === r.id && (
+                  <div className="flex flex-col gap-2 rounded border border-red-200 bg-red-50 p-2">
+                    <label className="flex flex-col gap-1 text-xs text-neutral-700">
+                      拒绝原因（选填，将反馈给家长）
+                      <textarea
+                        data-testid="reschedule-reject-note"
+                        rows={2}
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                        maxLength={500}
+                        className="rounded border border-neutral-300 px-2 py-1 text-xs"
+                      />
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        data-testid="reschedule-reject-confirm"
+                        type="button"
+                        onClick={() => reject(r.id)}
+                        disabled={pendingIds.has(r.id)}
+                        className="rounded bg-red-600 px-3 py-1 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        确认拒绝
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRejectingId(null)}
+                        className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {errors[r.id] && <p className="text-xs text-red-600">{errors[r.id]}</p>}
                 {conflict && (
                   <div
