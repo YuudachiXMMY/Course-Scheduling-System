@@ -4,9 +4,19 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createCourse, updateCourse, archiveCourse, type Course } from './actions'
 
-export default function CourseForm({ course }: { course?: Course }) {
+export default function CourseForm({
+  course,
+  alwaysOpen = false,
+  onCreated,
+}: {
+  course?: Course
+  // Workspace 设置 tab renders an edit form expanded (no 编辑 collapse trigger).
+  alwaysOpen?: boolean
+  // Rail create flow: report the new course so the caller can react (select/refresh).
+  onCreated?: (course: Course) => void
+}) {
   const isEdit = Boolean(course)
-  const [open, setOpen] = useState(!isEdit)
+  const [open, setOpen] = useState(!isEdit || alwaysOpen)
   const [title, setTitle] = useState(course?.title ?? '')
   const [subject, setSubject] = useState(course?.subject ?? '')
   const [level, setLevel] = useState(course?.level ?? '')
@@ -40,9 +50,10 @@ export default function CourseForm({ course }: { course?: Course }) {
           setSubject('')
           setLevel('')
           setDuration('60')
+          if (result.ok) onCreated?.(result.course)
         }
         router.refresh()
-        if (isEdit) setOpen(false)
+        if (isEdit && !alwaysOpen) setOpen(false)
       } catch (e) {
         setError(e instanceof Error ? e.message : '保存失败')
       }

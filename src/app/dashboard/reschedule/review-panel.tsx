@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DateTime } from 'luxon'
 import { approveRescheduleRequest, rejectRescheduleRequest } from './actions'
+import { useFlash } from '../_components/use-flash'
 import type { ReviewRow } from './data'
 
 const ZONE = 'Asia/Shanghai'
@@ -27,10 +28,22 @@ export default function ReviewPanel({
   requests: ReviewRow[]
   canReview: boolean
 }) {
-  const [pending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<Record<string, ConflictInfo>>({})
+  const { flash, show } = useFlash()
   const router = useRouter()
+
+  // Per-row pending isolation: acting on one request must not disable the others' buttons.
+  function setRowPending(id: string, on: boolean) {
+    setPendingIds((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
 
   function clearRow(id: string) {
     setErrors((e) => ({ ...e, [id]: '' }))
@@ -43,106 +56,125 @@ export default function ReviewPanel({
 
   function approve(id: string) {
     clearRow(id)
+    setRowPending(id, true)
     startTransition(async () => {
-      const res = await approveRescheduleRequest(id)
-      if (res.ok) {
-        router.refresh()
-        return
-      }
-      if ('conflicts' in res) {
-        setConflicts((c) => ({
-          ...c,
-          [id]: { conflicts: res.conflicts, suggestions: res.suggestions },
-        }))
-      } else {
-        setErrors((e) => ({ ...e, [id]: res.error }))
+      try {
+        const res = await approveRescheduleRequest(id)
+        if (res.ok) {
+          show('已通过')
+          router.refresh()
+          return
+        }
+        if ('conflicts' in res) {
+          setConflicts((c) => ({
+            ...c,
+            [id]: { conflicts: res.conflicts, suggestions: res.suggestions },
+          }))
+        } else {
+          setErrors((e) => ({ ...e, [id]: res.error }))
+        }
+      } finally {
+        setRowPending(id, false)
       }
     })
   }
 
   function reject(id: string) {
     clearRow(id)
+    setRowPending(id, true)
     startTransition(async () => {
-      const res = await rejectRescheduleRequest(id)
-      if (!res.ok) {
-        setErrors((e) => ({ ...e, [id]: res.error }))
-        return
+      try {
+        const res = await rejectRescheduleRequest(id)
+        if (!res.ok) {
+          setErrors((e) => ({ ...e, [id]: res.error }))
+          return
+        }
+        show('已拒绝')
+        router.refresh()
+      } finally {
+        setRowPending(id, false)
       }
-      router.refresh()
     })
   }
 
-  if (requests.length === 0) {
-    return <p className="text-sm text-neutral-500">暂无待处理的改期申请。</p>
-  }
-
   return (
-    <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
-      {requests.map((r) => {
-        const conflict = conflicts[r.id]
-        return (
-          <li
-            key={r.id}
-            data-testid="reschedule-request"
-            data-request-id={r.id}
-            className="flex flex-col gap-2 px-4 py-3 text-sm tabular-nums"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <span className="font-medium">
-                  {r.studentName ?? '学生'} · {r.lessonTitle ?? '课节'}
-                </span>
-                <span className="text-xs text-neutral-500">
-                  现时间：{fmt(r.currentStartAt)} – {fmt(r.currentEndAt)}
-                </span>
-                <span className="text-xs text-neutral-700">
-                  期望：{fmt(r.requestedStartAt)} – {fmt(r.requestedEndAt)}
-                </span>
-                {r.reason && <span className="text-xs text-neutral-500">原因：{r.reason}</span>}
-              </div>
-              {canReview && (
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    data-testid="reschedule-approve"
-                    type="button"
-                    onClick={() => approve(r.id)}
-                    disabled={pending}
-                    className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-                  >
-                    通过
-                  </button>
-                  <button
-                    data-testid="reschedule-reject"
-                    type="button"
-                    onClick={() => reject(r.id)}
-                    disabled={pending}
-                    className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    拒绝
-                  </button>
-                </div>
-              )}
-            </div>
-            {errors[r.id] && <p className="text-xs text-red-600">{errors[r.id]}</p>}
-            {conflict && (
-              <div
-                data-testid="reschedule-conflict"
-                className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800"
+    <div className="flex flex-col gap-2">
+      {flash && (
+        <span aria-live="polite" className="text-xs text-green-700">
+          {flash}
+        </span>
+      )}
+      {requests.length === 0 ? (
+        <p className="text-sm text-neutral-500">暂无待处理的改期申请。</p>
+      ) : (
+        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
+          {requests.map((r) => {
+            const conflict = conflicts[r.id]
+            return (
+              <li
+                key={r.id}
+                data-testid="reschedule-request"
+                data-request-id={r.id}
+                className="flex flex-col gap-2 px-4 py-3 text-sm tabular-nums"
               >
-                <p>该时段与已有课节冲突，申请仍保持待处理：</p>
-                {conflict.conflicts.length > 0 && (
-                  <p className="mt-1">
-                    冲突：{conflict.conflicts.map((c) => c.title ?? '课节').join('、')}
-                  </p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">
+                      {r.studentName ?? '学生'} · {r.lessonTitle ?? '课节'}
+                    </span>
+                    <span className="text-xs text-neutral-500">
+                      现时间：{fmt(r.currentStartAt)} – {fmt(r.currentEndAt)}
+                    </span>
+                    <span className="text-xs text-neutral-700">
+                      期望：{fmt(r.requestedStartAt)} – {fmt(r.requestedEndAt)}
+                    </span>
+                    {r.reason && <span className="text-xs text-neutral-500">原因：{r.reason}</span>}
+                  </div>
+                  {canReview && (
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        data-testid="reschedule-approve"
+                        type="button"
+                        onClick={() => approve(r.id)}
+                        disabled={pendingIds.has(r.id)}
+                        className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+                      >
+                        通过
+                      </button>
+                      <button
+                        data-testid="reschedule-reject"
+                        type="button"
+                        onClick={() => reject(r.id)}
+                        disabled={pendingIds.has(r.id)}
+                        className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        拒绝
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {errors[r.id] && <p className="text-xs text-red-600">{errors[r.id]}</p>}
+                {conflict && (
+                  <div
+                    data-testid="reschedule-conflict"
+                    className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                  >
+                    <p>该时段与已有课节冲突，申请仍保持待处理：</p>
+                    {conflict.conflicts.length > 0 && (
+                      <p className="mt-1">
+                        冲突：{conflict.conflicts.map((c) => c.title ?? '课节').join('、')}
+                      </p>
+                    )}
+                    {conflict.suggestions.length > 0 && (
+                      <p className="mt-1">建议时段：{conflict.suggestions.join('、')}</p>
+                    )}
+                  </div>
                 )}
-                {conflict.suggestions.length > 0 && (
-                  <p className="mt-1">建议时段：{conflict.suggestions.join('、')}</p>
-                )}
-              </div>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
   )
 }

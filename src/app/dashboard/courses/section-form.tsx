@@ -35,13 +35,19 @@ export default function SectionForm({
   courseId,
   defaultTeacherId,
   section,
+  embedded = false,
+  onCreated,
 }: {
   courseId: string
   defaultTeacherId: string
   section?: ClassSection
+  // Workspace: render always-open (settings tab / rail create), no collapse trigger.
+  embedded?: boolean
+  // Rail create flow: report the new section id so the caller can navigate to it.
+  onCreated?: (sectionId: string) => void
 }) {
   const isEdit = Boolean(section)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(Boolean(embedded))
   const [name, setName] = useState(section?.name ?? '')
   const [meetings, setMeetings] = useState<MeetingRow[]>([
     { byDay: 'MO', startTime: '16:00', durationMinutes: '60' },
@@ -135,7 +141,8 @@ export default function SectionForm({
           `已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`,
         )
         router.refresh()
-        if (isEdit) setOpen(false)
+        if (!isEdit) onCreated?.(result.section.id)
+        if (isEdit && !embedded) setOpen(false)
       } catch (e) {
         setError(e instanceof Error ? e.message : '保存失败')
       }
