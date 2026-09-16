@@ -6,6 +6,7 @@ import { auth } from '@/auth/auth'
 import { db } from '@/db'
 import { user as userTable, member, account, student, portalLink } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
+import { isPortalRole } from '@/auth/portal'
 import { env } from '@/env'
 import type { AuthContext } from '@/auth/context'
 
@@ -142,4 +143,107 @@ export async function provisionPortalAccountCore(
   }
 
   return { userId, email }
+}
+
+// --- User-management surface (/dashboard/users) — parallel to provisionPortalAccountCore, but the
+// account-mint and the student-link are DECOUPLED so the tutor can (a) create a parent/student login
+// with no child yet, then (b) assign students to it later (and vice-versa). All three cores are
+// headless (ctx in, no revalidate) and mirror the same tenant/cross-org guards as provisioning above.
+
+// Create a portal login (parent/student) WITHOUT linking any student. Reuses provisionPortalMember,
+// so the same "reuse in-org / refuse foreign email / compensate orphan" guarantees apply. A member
+// with zero portalLinks is a valid state (they simply see nothing until assigned).
+export const createPortalUserSchema = z.object({
+  name: z.string().trim().min(1, '姓名不能为空').max(100),
+  kind: z.enum(['parent', 'student']),
+  loginId: z.string().trim().max(100).optional(), // optional real email; else a placeholder is synthesized
+  password: z.string().min(8, '密码至少 8 位'),
+})
+export type CreatePortalUserInput = z.input<typeof createPortalUserSchema>
+
+export async function createPortalUserCore(
+  ctx: AuthContext,
+  input: CreatePortalUserInput,
+): Promise<{ userId: string; email: string }> {
+  const data = createPortalUserSchema.parse(input)
+  const email =
+    data.loginId && data.loginId.includes('@')
+      ? data.loginId.toLowerCase()
+      : `portal_${nanoid()}@${env.PORTAL_EMAIL_DOMAIN}`
+  const { userId } = await provisionPortalMember({
+    name: data.name,
+    email,
+    password: data.password,
+    orgId: ctx.tenantId,
+    orgRole: data.kind,
+  })
+  return { userId, email }
+}
+
+// Link an EXISTING portal user to a student (idempotent). Powers both "assign a parent to a student"
+// and "assign a student to a parent" (same row, two UI directions).
+export const linkPortalUserSchema = z.object({
+  userId: z.string().trim().min(1),
+  studentId: z.string().trim().min(1),
+  relationship: z.enum(['parent', 'student']).optional(), // default: inferred from the user's member role
+})
+export type LinkPortalUserInput = z.input<typeof linkPortalUserSchema>
+
+export async function linkPortalUserCore(
+  ctx: AuthContext,
+  input: LinkPortalUserInput,
+): Promise<void> {
+  const data = linkPortalUserSchema.parse(input)
+  // 1) The target user MUST already be a member of THIS org. Without this check, any userId could be
+  //    stapled onto a tenant student — the exact cross-tenant injection provisionPortalMember refuses.
+  const [m] = await db
+    .select({ role: member.role })
+    .from(member)
+    .where(and(eq(member.userId, data.userId), eq(member.organizationId, ctx.tenantId)))
+    .limit(1)
+  if (!m) throw new Error('该用户不属于本机构')
+  // 2) The student must live in this tenant (forTenant scopes by tenantId).
+  const s = await forTenant(ctx).findById(student, data.studentId)
+  if (!s) throw new Error('学生不存在')
+  // 3) relationship: explicit input wins; else infer from the member's (possibly comma-multi) role.
+  const relationship: 'parent' | 'student' =
+    data.relationship ??
+    (isPortalRole(m.role) &&
+    m.role
+      .split(',')
+      .map((r) => r.trim())
+      .includes('student')
+      ? 'student'
+      : 'parent')
+  // 4) Idempotent insert — the uq_portal_link_student_user unique index is the backstop.
+  const existing = (await forTenant(ctx).select(
+    portalLink,
+    and(eq(portalLink.studentId, data.studentId), eq(portalLink.userId, data.userId)),
+  )) as unknown[]
+  if (existing.length === 0) {
+    await forTenant(ctx).insert(portalLink, {
+      studentId: data.studentId,
+      userId: data.userId,
+      relationship,
+    })
+  }
+}
+
+// Unlink a portal user from a student. portalLink is a tenant table, but forTenant().delete() only
+// deletes by primary id — here we delete by the (student, user) composite, so we issue db.delete()
+// directly WITH an explicit tenantId predicate (never omit it, or a foreign tenant's row could be hit).
+export async function unlinkPortalUserCore(
+  ctx: AuthContext,
+  userId: string,
+  studentId: string,
+): Promise<void> {
+  await db
+    .delete(portalLink)
+    .where(
+      and(
+        eq(portalLink.tenantId, ctx.tenantId),
+        eq(portalLink.studentId, studentId),
+        eq(portalLink.userId, userId),
+      ),
+    )
 }

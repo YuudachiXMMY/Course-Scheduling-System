@@ -9,7 +9,7 @@ test.describe('Dashboard 入口冒烟', () => {
 
     const nav = [
       { name: '排课', href: '/dashboard/schedule' },
-      { name: '学生', href: '/dashboard/students' },
+      { name: '用户管理', href: '/dashboard/users' },
       { name: '课程', href: '/dashboard/courses' },
       { name: '报告', href: '/dashboard/reports' },
       { name: '改期申请', href: '/dashboard/reschedule' },

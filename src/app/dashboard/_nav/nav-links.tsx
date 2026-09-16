@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import LogoutButton from '../logout-button'
 
-// Top nav with active-state highlighting. Every legacy link is KEPT (so smoke.spec's name→href
-// assertions stay green, and each accessible name stays unique — exactly one link per label). The
-// consolidation is visual: 课程/报告 now fold into a 教务 cluster behind the 教务工作台 workspace as
+// Top nav with active-state highlighting. Each accessible name stays unique — exactly one link per
+// label (smoke.spec asserts name→href for each). 学生 was folded into 用户管理 (/dashboard/users): the
+// old /dashboard/students route now 302-redirects there, and smoke.spec's nav row was updated to match.
+// The consolidation is visual: 课程/报告 now fold into a 教务 cluster behind the 教务工作台 workspace as
 // `muted` secondary destinations, signalling they're managed there. A hard 302 on /dashboard/courses
 // stays deferred until the workspace grows a course/section CREATE surface (today it's read-only nav,
 // so /dashboard/courses is still the only place to create). flex-wrap prevents narrow-screen overflow.
@@ -44,7 +45,9 @@ export default function NavLinks() {
   return (
     <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
       <NavLink href="/dashboard/schedule">排课</NavLink>
-      <NavLink href="/dashboard/students">学生</NavLink>
+      <NavLink href="/dashboard/users" activePrefix="/dashboard/users">
+        用户管理
+      </NavLink>
       <span className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1">
         <NavLink href="/dashboard/teach" activePrefix="/dashboard/teach">
           教务工作台
