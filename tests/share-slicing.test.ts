@@ -119,6 +119,42 @@ describe('sliceLessonsForSections', () => {
     expect(orphan[0].title).toBeNull()
   })
 
+  it('orders kept lessons by startAt ascending regardless of input order', () => {
+    // The DB query has no ORDER BY, so rows can arrive in any order. Feed an out-of-order set
+    // and assert the shared card gets a date-sorted list.
+    const unordered: SliceableLesson[] = [
+      {
+        id: 'jan-20',
+        title: 'x',
+        startAt: new Date('2026-01-20T02:00:00Z'),
+        endAt: new Date('2026-01-20T03:00:00Z'),
+        location: null,
+        sectionId: 'sec-active',
+        status: 'scheduled',
+      },
+      {
+        id: 'jan-05',
+        title: 'x',
+        startAt: new Date('2026-01-05T08:00:00Z'),
+        endAt: new Date('2026-01-05T09:00:00Z'),
+        location: null,
+        sectionId: 'sec-active',
+        status: 'scheduled',
+      },
+      {
+        id: 'jan-12',
+        title: 'x',
+        startAt: new Date('2026-01-12T08:00:00Z'),
+        endAt: new Date('2026-01-12T09:00:00Z'),
+        location: null,
+        sectionId: 'sec-active',
+        status: 'scheduled',
+      },
+    ]
+    const result = sliceLessonsForSections(unordered, ['sec-active'], window)
+    expect(result.map((r) => r.id)).toEqual(['jan-05', 'jan-12', 'jan-20'])
+  })
+
   it('treats the window as half-open [from, to)', () => {
     const boundaryRows: SliceableLesson[] = [
       {
