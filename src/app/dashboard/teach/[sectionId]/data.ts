@@ -9,6 +9,8 @@ import {
   enrollment,
   student,
   lesson,
+  grade,
+  note,
   progressReport,
   rescheduleRequest,
 } from '@/db/schema'
@@ -166,4 +168,121 @@ export async function getSectionReports(ctx: AuthContext, id: string): Promise<R
       narrative: r.narrative,
       createdAt: r.createdAt.toISOString().slice(0, 10),
     }))
+}
+
+// The 排课 tab's inline editor manages ONE lightweight per-(lesson, student) grade row. This sentinel
+// title separates it from future titled assessments (月考/期中); a lesson×student has at most one such
+// row. Lives HERE (server-only, NOT a 'use server' file) because a 'use server' module may only export
+// async functions — grade-actions.ts imports it from here.
+export const QUICK_GRADE_TITLE = '课堂表现'
+
+export interface LessonGradeCell {
+  score: string | null // node-pg returns numeric as string
+  maxScore: string | null
+  comment: string | null
+}
+
+export interface LessonNoteRow {
+  summary: string // shared lesson note (note.studentId = null)
+  comments: Record<string, string> // studentId -> per-student 点评 (note.studentId set)
+  grades: Record<string, LessonGradeCell> // studentId -> 课堂成绩 (grade.title = QUICK_GRADE_TITLE)
+}
+
+// Load the note/grade matrix for a whole section's lessons in one pass. note & grade both hang off
+// lessonId (shared note = studentId null; see upsertSharedNote), so we batch by lessonIds with
+// inArray (mirrors getSectionPendingRescheduleCount / report-data.ts). lessonIds comes from the
+// caller's getSectionLessons result — no re-query of the lesson table.
+export async function getSectionLessonNotes(
+  ctx: AuthContext,
+  lessonIds: string[],
+): Promise<Record<string, LessonNoteRow>> {
+  const byLesson: Record<string, LessonNoteRow> = {}
+  for (const id of lessonIds) byLesson[id] = { summary: '', comments: {}, grades: {} }
+  if (lessonIds.length === 0) return byLesson // inArray([]) is invalid SQL — guard (see report-data.ts)
+
+  const noteRows = (await forTenant(ctx).select(
+    note,
+    inArray(note.lessonId, lessonIds),
+  )) as (typeof note.$inferSelect)[]
+  // Oldest → newest so a later row wins per key (latest edit reflects current state), matching
+  // getLessonNotes in attendance-actions.ts.
+  noteRows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  for (const n of noteRows) {
+    if (!n.lessonId) continue
+    const row = byLesson[n.lessonId]
+    if (!row) continue
+    if (n.studentId) row.comments[n.studentId] = n.body
+    else row.summary = n.body
+  }
+
+  const gradeRows = (await forTenant(ctx).select(
+    grade,
+    inArray(grade.lessonId, lessonIds),
+  )) as (typeof grade.$inferSelect)[]
+  for (const g of gradeRows) {
+    // Only the inline sentinel-title grade belongs in a cell; titled assessments stay out.
+    if (!g.lessonId || g.studentId == null || g.title !== QUICK_GRADE_TITLE) continue
+    const row = byLesson[g.lessonId]
+    if (!row) continue
+    row.grades[g.studentId] = { score: g.score, maxScore: g.maxScore, comment: g.comment }
+  }
+  return byLesson
+}
+
+export interface LessonStudentGradeInput {
+  lessonId: string
+  studentId: string
+  score?: number
+  maxScore?: number
+  comment?: string
+}
+
+// Grade upsert core — shared by the 'use server' action (web) and testable directly with a ctxFor
+// (mirrors report-core.ts). The caller (grade-actions) has already run requireAuthContext +
+// requirePermission + zod; this only touches the DB via forTenant(ctx). One per-(lesson, student)
+// sentinel-title row; select-then-write (grade has no (lesson, student) unique constraint). All three
+// fields empty → the row is deleted (grade is optional). Returns the row, or null when deleted/absent.
+export async function upsertLessonStudentGradeCore(
+  ctx: AuthContext,
+  data: LessonStudentGradeInput,
+): Promise<typeof grade.$inferSelect | null> {
+  const existing = (await forTenant(ctx).select(
+    grade,
+    and(
+      eq(grade.lessonId, data.lessonId),
+      eq(grade.studentId, data.studentId),
+      eq(grade.title, QUICK_GRADE_TITLE),
+    ),
+  )) as (typeof grade.$inferSelect)[]
+
+  const empty = data.score == null && data.maxScore == null && !data.comment
+  if (empty) {
+    // Deleting the grade ROW is allowed; grade's onDelete('restrict') only guards its referenced
+    // student/lesson/section parents, not the grade record itself.
+    if (existing[0]) await forTenant(ctx).delete(grade, existing[0].id)
+    return null
+  }
+
+  const values = {
+    score: data.score != null ? String(data.score) : null, // numeric column stores a string
+    maxScore: data.maxScore != null ? String(data.maxScore) : null,
+    comment: data.comment || null,
+    gradedBy: ctx.userId,
+    gradedAt: new Date(),
+  }
+  if (existing[0]) {
+    const [row] = (await forTenant(ctx).update(
+      grade,
+      existing[0].id,
+      values,
+    )) as (typeof grade.$inferSelect)[]
+    return row
+  }
+  const [row] = (await forTenant(ctx).insert(grade, {
+    studentId: data.studentId,
+    lessonId: data.lessonId,
+    title: QUICK_GRADE_TITLE,
+    ...values,
+  })) as (typeof grade.$inferSelect)[]
+  return row
 }

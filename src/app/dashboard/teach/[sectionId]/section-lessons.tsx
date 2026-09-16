@@ -7,7 +7,8 @@ import LessonDetail from '@/app/dashboard/schedule/lesson-detail'
 import { rescheduleLessonAction } from '@/app/dashboard/schedule/actions'
 import { materializeSectionAction } from '@/app/dashboard/courses/actions'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
-import type { SectionLesson } from './data'
+import LessonNotesInline from './lesson-notes-inline'
+import type { SectionLesson, SectionStudent, LessonNoteRow } from './data'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 
 const ZONE = APP_TIME_ZONE
@@ -33,14 +34,19 @@ interface ConflictInfo {
 export default function SectionLessons({
   sectionId,
   lessons,
+  roster,
+  notes,
   canManage,
 }: {
   sectionId: string
   lessons: SectionLesson[]
+  roster: SectionStudent[]
+  notes: Record<string, LessonNoteRow>
   canManage: boolean
 }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [editId, setEditId] = useState<string | null>(null)
+  const [notesOpenId, setNotesOpenId] = useState<string | null>(null)
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -177,15 +183,25 @@ export default function SectionLessons({
                           {l.location ?? (l.meetingUrl ? '线上' : '—')}
                         </span>
                       </button>
-                      {canManage && (
+                      <div className="flex shrink-0 items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => (editId === l.id ? setEditId(null) : beginEdit(l))}
-                          className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
+                          aria-expanded={notesOpenId === l.id}
+                          onClick={() => setNotesOpenId(notesOpenId === l.id ? null : l.id)}
+                          className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
                         >
-                          改期
+                          {notesOpenId === l.id ? '笔记点评 ▲' : '笔记点评 ▼'}
                         </button>
-                      )}
+                        {canManage && (
+                          <button
+                            type="button"
+                            onClick={() => (editId === l.id ? setEditId(null) : beginEdit(l))}
+                            className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
+                          >
+                            改期
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {editId === l.id && (
@@ -234,6 +250,15 @@ export default function SectionLessons({
                           <p className="mt-1">建议时段：{conflict.suggestions.join('、')}</p>
                         )}
                       </div>
+                    )}
+
+                    {notesOpenId === l.id && (
+                      <LessonNotesInline
+                        lessonId={l.id}
+                        roster={roster}
+                        initial={notes[l.id] ?? { summary: '', comments: {}, grades: {} }}
+                        canManage={canManage}
+                      />
                     )}
                   </li>
                 )
