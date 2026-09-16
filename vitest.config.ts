@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import tsconfigPaths from 'vite-tsconfig-paths'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 // DEVIATION (vitest wiring, not enumerated in the plan):
 //  - vite-tsconfig-paths resolves the `@/*` -> ./src/* alias inside tests.
@@ -16,6 +16,12 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // The unit suite is `tests/**/*.test.ts`; the Playwright E2E suite lives under
+    // `tests/e2e/**/*.spec.ts` and MUST NOT be collected by vitest — those specs call
+    // Playwright's test.describe()/test.use(), which throw "did not expect ... to be
+    // called here" under the vitest runner. Scope to `.test.ts` and hard-exclude e2e.
+    include: ['tests/**/*.test.ts'],
+    exclude: [...configDefaults.exclude, 'tests/e2e/**'],
     // Load .env (DATABASE_URL etc.) so `npm run test` works standalone — vitest,
     // unlike Next, does NOT auto-load .env. In CI / docker the vars are already in
     // the process env and dotenv is a harmless no-op.

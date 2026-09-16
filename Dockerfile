@@ -40,7 +40,13 @@ RUN node_modules/.bin/esbuild scripts/migrate.ts \
       --external:cloudflare:sockets --outfile=dist/migrate.mjs
 
 FROM build AS test
-ENV NODE_ENV=test
+# Re-enable env validation for the test run. The build stage set SKIP_ENV_VALIDATION=1 (build
+# context carries no secrets) and `FROM build` inherits it — but with validation skipped,
+# @t3-oss/env returns raw process.env and NEVER applies zod .default()s. That left
+# PORTAL_EMAIL_DOMAIN (and every other defaulted var) undefined at test runtime, so portal
+# provisioning synthesized `portal_<id>@undefined`, which better-auth rejects → "Invalid email".
+# CI injects the real required env at run time, so validation now passes AND applies defaults.
+ENV NODE_ENV=test SKIP_ENV_VALIDATION=""
 CMD ["npm", "run", "test"]
 
 # P4-6: Debian runtime (NOT alpine) so Playwright can drive SYSTEM chromium; fonts-noto-cjk stops
