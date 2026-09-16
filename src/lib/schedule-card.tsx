@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon'
+import { APP_TIME_ZONE } from './timezone'
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 
 export interface CardLesson {
   id: string
@@ -19,7 +20,7 @@ export interface CardData {
   note?: string
 }
 
-// Lessons are UTC instants → always setZone(Asia/Shanghai) before formatting (mirror ical-feed's Luxon note).
+// Lessons are UTC instants → always setZone(America/Toronto) before formatting (mirror ical-feed's Luxon note).
 function fmt(d: Date) {
   return DateTime.fromJSDate(d, { zone: 'utc' }).setZone(ZONE)
 }

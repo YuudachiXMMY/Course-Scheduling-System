@@ -4,8 +4,9 @@ import { useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DateTime } from 'luxon'
 import { createRescheduleRequest, cancelRescheduleRequest } from './actions'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 
 export interface LessonOption {
   studentId: string
@@ -33,11 +34,11 @@ const STATUS_LABEL: Record<string, string> = {
   canceled: '已取消',
 }
 
-// ISO UTC instant → Asia/Shanghai wall-clock string for a <input type="datetime-local">.
+// ISO UTC instant → America/Toronto wall-clock string for a <input type="datetime-local">.
 function toLocalInput(iso: string): string {
   return DateTime.fromISO(iso, { zone: 'utc' }).setZone(ZONE).toFormat("yyyy-MM-dd'T'HH:mm")
 }
-// Asia/Shanghai wall-clock ("YYYY-MM-DDTHH:mm") → ISO with offset so the server parses the correct
+// America/Toronto wall-clock ("YYYY-MM-DDTHH:mm") → ISO with offset so the server parses the correct
 // instant regardless of its own timezone.
 function fromLocalInput(local: string): string {
   return DateTime.fromISO(local, { zone: ZONE }).toISO() ?? local

@@ -47,7 +47,9 @@ export const classSection = pgTable(
     termEndDate: date('term_end_date', { mode: 'date' }),
     rrule: text('rrule'), // RFC5545 RRULE, NO DTSTART line
     recurrenceDtstart: timestamp('recurrence_dtstart', { withTimezone: true, mode: 'date' }),
-    recurrenceTimezone: text('recurrence_timezone').notNull().default('Asia/Shanghai'),
+    // App default zone — keep in sync with APP_TIME_ZONE in src/lib/timezone.ts (literal here so
+    // drizzle-kit can generate migrations without resolving the app path alias).
+    recurrenceTimezone: text('recurrence_timezone').notNull().default('America/Toronto'),
     defaultDurationMinutes: integer('default_duration_minutes'), // overrides course default
     defaultLocation: text('default_location'),
     defaultMeetingUrl: text('default_meeting_url'), // online-class link (Zoom/腾讯会议) applied to new lessons

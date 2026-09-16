@@ -1,12 +1,13 @@
 import { DateTime } from 'luxon'
 import type { FeedLesson } from '@/lib/ical-feed'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 
 // P6-6: PURE composer for draft_parent_message (no DB, no server-only) so it is directly
-// unit-testable. Formats a student's upcoming lessons (UTC instants → Asia/Shanghai wall-clock)
+// unit-testable. Formats a student's upcoming lessons (UTC instants → America/Toronto wall-clock)
 // plus the read-only share URL into a WeChat-ready Chinese draft. The tutor reviews and sends it
 // manually — this returns text only, nothing is sent.
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 
 export function composeParentMessage(args: {
   studentName: string

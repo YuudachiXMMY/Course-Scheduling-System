@@ -7,6 +7,7 @@ import { forTenant } from '@/db/tenant'
 import { expandRecurrence, type Occurrence } from './recurrence'
 import { buildWeeklyRrule, type Weekday } from './rrule-build'
 import { isExclusionViolation } from './errors'
+import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
 
 export interface MaterializeResult {
@@ -23,7 +24,7 @@ export async function materializeSection(
   const section = (await forTenant(ctx).findById(classSection, sectionId)) as
     typeof classSection.$inferSelect | null
   if (!section) return { inserted: 0, conflicts: 0 }
-  const zone = section.recurrenceTimezone ?? 'Asia/Shanghai'
+  const zone = section.recurrenceTimezone ?? APP_TIME_ZONE
 
   // Multi-slot model (Phase-B): each sectionMeeting is one weekday@time. Falls back to the legacy
   // single section.rrule when a section has no meeting rows (backward compatibility).
