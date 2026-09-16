@@ -85,6 +85,68 @@ export default function LessonNotesInline({
     })
   }
 
+  // 一键保存本节课的所有更改：脏检查后只提交与 `initial` 不同的字段，避免无谓写入，也避免触发
+  // upsertSharedNote / upsertStudentNote 的 body.min(1) 校验（清空 Summary/点评 仍然 out of scope，
+  // 见 saveComment）。成绩沿用 saveGrade 的空串→undefined 规则，所以清空成绩会作为一次更改被删除。
+  // 全部 await Promise.all 后只 show 一次汇总并 router.refresh() 一次（与单元格保存共用同一 initial
+  // 刷新语义）。
+  function saveAll() {
+    const tasks: Promise<unknown>[] = []
+    let saved = 0
+    let skippedEmpty = 0
+
+    // Summary（全班共享笔记）
+    if (summary !== initial.summary) {
+      if (summary.trim()) {
+        tasks.push(upsertSharedNote({ lessonId, body: summary }))
+        saved++
+      } else {
+        skippedEmpty++ // 清空 Summary out of scope
+      }
+    }
+
+    for (const s of roster) {
+      // 学生点评
+      const body = comments[s.id] ?? ''
+      const initialBody = initial.comments[s.id] ?? ''
+      if (body !== initialBody) {
+        if (body.trim()) {
+          tasks.push(upsertStudentNote({ lessonId, studentId: s.id, body }))
+          saved++
+        } else {
+          skippedEmpty++ // 清空点评 out of scope
+        }
+      }
+
+      // 成绩
+      const cell = grades[s.id] ?? { score: '', maxScore: '' }
+      const initialCell = initial.grades[s.id]
+      const initialScore = initialCell?.score ?? ''
+      const initialMaxScore = initialCell?.maxScore ?? ''
+      if (cell.score !== initialScore || cell.maxScore !== initialMaxScore) {
+        const score = cell.score.trim() === '' ? undefined : cell.score
+        const maxScore = cell.maxScore.trim() === '' ? undefined : cell.maxScore
+        tasks.push(upsertLessonStudentGrade({ lessonId, studentId: s.id, score, maxScore }))
+        saved++
+      }
+    }
+
+    if (saved === 0) {
+      show(skippedEmpty > 0 ? '清空笔记/点评暂不支持保存' : '没有需要保存的更改')
+      return
+    }
+
+    startTransition(async () => {
+      await Promise.all(tasks)
+      show(
+        skippedEmpty > 0
+          ? `已保存全部更改（${saved} 项，清空的笔记/点评已跳过）`
+          : `已保存全部更改（${saved} 项）`,
+      )
+      router.refresh()
+    })
+  }
+
   return (
     <div className="mt-1 flex flex-col gap-3 rounded border border-neutral-200 bg-neutral-50 p-3">
       {flash && (
@@ -174,6 +236,19 @@ export default function LessonNotesInline({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {canManage && (
+        <div className="flex justify-end border-t border-neutral-200 pt-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={saveAll}
+            className="rounded bg-neutral-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            一键保存全部更改
+          </button>
         </div>
       )}
     </div>

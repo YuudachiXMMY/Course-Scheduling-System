@@ -43,4 +43,29 @@ test.describe('班级工作台 · 排课行内笔记点评', () => {
       await expect(page.getByText('已保存成绩')).toBeVisible()
     }
   })
+
+  test('一键保存全部更改：Summary + 点评 + 成绩 一次提交', async ({ page, seed }) => {
+    await page.goto(`/dashboard/teach/${seed.sectionA.id}?tab=lessons`)
+
+    const toggle = page.getByRole('button', { name: /笔记点评/ }).first()
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+
+    // 改动 Summary，并在有学生行时改动点评 + 成绩，然后仅点一次「一键保存全部更改」。
+    const summary = page.getByPlaceholder('今天讲了…')
+    await expect(summary).toBeVisible()
+    await summary.fill(`E2E一键保存-${Date.now()}`)
+
+    const studentRows = page.getByTestId('lesson-note-student')
+    if ((await studentRows.count()) > 0) {
+      const row = studentRows.first()
+      await row.locator('textarea').fill(`E2E一键点评-${Date.now()}`)
+      await row.getByPlaceholder('分数').fill('77')
+      await row.getByPlaceholder('满分').fill('100')
+    }
+
+    await page.getByRole('button', { name: '一键保存全部更改', exact: true }).click()
+    // Assert on the green success flash (汇总文案含「已保存全部更改」)，never on global counts.
+    await expect(page.getByText(/已保存全部更改/)).toBeVisible()
+  })
 })
