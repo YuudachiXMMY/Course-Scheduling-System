@@ -22,6 +22,11 @@ export const auth = betterAuth({
         // organization/member, the session hook below sets activeOrganizationId=null, and the
         // dashboard bounces them back to /login forever. Atomic: org + owner member together.
         //
+        // NOTE (race): Better Auth persists the sign-up session a few ms BEFORE this `after` hook
+        // commits, so the FIRST session still captures activeOrganizationId=null (the session hook
+        // ran before the member existed). getAuthContext() self-heals that by falling back to the
+        // user's membership, so the new owner is not stranded on /login. See src/auth/context.ts.
+        //
         // P7a-2: this hook fires for EVERY user creation, including auth.api.createUser (admin path).
         // A provisioned parent/student must NOT get their own org — they are added to the tutor's org
         // via auth.api.addMember (see provisionPortalMember). So self-tenant ONLY for self-signup
