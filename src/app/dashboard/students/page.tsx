@@ -25,9 +25,13 @@ export default async function StudentsPage() {
       </div>
       <StudentForm />
       <div className="flex flex-col gap-2">
-        <h3 className="text-sm font-medium text-neutral-700">在读学生（{active.length}）</h3>
-        <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
-          {active.length === 0 && <li className="px-4 py-3 text-sm text-neutral-500">暂无学生</li>}
+        <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
+          在读学生（{active.length}）
+        </h3>
+        <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
+          {active.length === 0 && (
+            <li className="px-4 py-8 text-center text-sm text-neutral-500">暂无学生</li>
+          )}
           {active.map((s) => (
             <li key={s.id} className="flex flex-col gap-3 px-4 py-3">
               <div className="flex items-center justify-between">
@@ -51,8 +55,10 @@ export default async function StudentsPage() {
       </div>
       {archived.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-neutral-700">已归档（{archived.length}）</h3>
-          <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
+          <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
+            已归档（{archived.length}）
+          </h3>
+          <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
             {archived.map((s) => (
               <li
                 key={s.id}

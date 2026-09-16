@@ -29,6 +29,9 @@ export const rescheduleRequest = pgTable(
     status: rescheduleStatus('status').notNull().default('pending'),
     reviewedById: text('reviewed_by_id'), // teacher user.id
     reviewedAt: timestamp('reviewed_at', { withTimezone: true, mode: 'date' }),
+    // Reviewer's note on a decision (chiefly a reject reason surfaced back to the parent/student).
+    // Nullable: pre-existing rows and approvals carry none.
+    reviewNote: text('review_note'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

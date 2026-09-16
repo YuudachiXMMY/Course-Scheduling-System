@@ -28,10 +28,13 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       <header className="flex flex-col gap-3 border-b border-neutral-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-base font-semibold">课程门户</h1>
         <nav className="flex gap-4 text-sm">
-          <Link href="/portal" className="text-neutral-700 hover:underline">
+          <Link href="/portal" className="text-neutral-700 hover:text-neutral-900 hover:underline">
             我的课表
           </Link>
-          <Link href="/portal/reschedule" className="text-neutral-700 hover:underline">
+          <Link
+            href="/portal/reschedule"
+            className="text-neutral-700 hover:text-neutral-900 hover:underline"
+          >
             改期申请
           </Link>
           <LogoutButton />
@@ -39,7 +42,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
       </header>
       <main className="p-6">{needsConsent ? <ConsentGate /> : children}</main>
       <footer className="px-6 pb-6 text-xs text-neutral-500">
-        <Link href="/privacy" className="underline">
+        <Link href="/privacy" className="underline hover:text-neutral-900">
           数据处理告知
         </Link>
       </footer>

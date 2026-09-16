@@ -4,9 +4,19 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createCourse, updateCourse, archiveCourse, type Course } from './actions'
 
-export default function CourseForm({ course }: { course?: Course }) {
+export default function CourseForm({
+  course,
+  alwaysOpen = false,
+  onCreated,
+}: {
+  course?: Course
+  // Workspace 设置 tab renders an edit form expanded (no 编辑 collapse trigger).
+  alwaysOpen?: boolean
+  // Rail create flow: report the new course so the caller can react (select/refresh).
+  onCreated?: (course: Course) => void
+}) {
   const isEdit = Boolean(course)
-  const [open, setOpen] = useState(!isEdit)
+  const [open, setOpen] = useState(!isEdit || alwaysOpen)
   const [title, setTitle] = useState(course?.title ?? '')
   const [subject, setSubject] = useState(course?.subject ?? '')
   const [level, setLevel] = useState(course?.level ?? '')
@@ -40,9 +50,10 @@ export default function CourseForm({ course }: { course?: Course }) {
           setSubject('')
           setLevel('')
           setDuration('60')
+          if (result.ok) onCreated?.(result.course)
         }
         router.refresh()
-        if (isEdit) setOpen(false)
+        if (isEdit && !alwaysOpen) setOpen(false)
       } catch (e) {
         setError(e instanceof Error ? e.message : '保存失败')
       }
@@ -62,7 +73,7 @@ export default function CourseForm({ course }: { course?: Course }) {
     return (
       <button
         type="button"
-        className="rounded border border-neutral-300 px-3 py-1 text-xs"
+        className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
         onClick={() => setOpen(true)}
       >
         编辑
@@ -71,7 +82,7 @@ export default function CourseForm({ course }: { course?: Course }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded border border-neutral-200 p-4">
+    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4 shadow-sm">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
@@ -104,7 +115,7 @@ export default function CourseForm({ course }: { course?: Course }) {
         <button
           type="button"
           disabled={pending}
-          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
           onClick={submit}
         >
           {isEdit ? '保存' : '添加课程'}
@@ -114,7 +125,7 @@ export default function CourseForm({ course }: { course?: Course }) {
             <button
               type="button"
               disabled={pending}
-              className="rounded border border-neutral-300 px-3 py-1 text-xs"
+              className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
               onClick={() => setOpen(false)}
             >
               取消
@@ -122,7 +133,7 @@ export default function CourseForm({ course }: { course?: Course }) {
             <button
               type="button"
               disabled={pending}
-              className="rounded border border-red-300 px-3 py-1 text-xs text-red-600"
+              className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50"
               onClick={archive}
             >
               归档

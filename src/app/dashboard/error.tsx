@@ -21,7 +21,7 @@ export default function DashboardError({
   }, [error])
 
   return (
-    <section className="flex flex-col items-start gap-4 rounded border border-red-200 bg-red-50 p-6">
+    <section className="flex flex-col items-start gap-4 rounded-lg border border-red-200 bg-red-50 p-6 shadow-sm">
       <div className="flex flex-col gap-1">
         <h2 className="text-base font-semibold text-red-800">页面加载出错</h2>
         <p className="text-sm text-red-700">
@@ -33,14 +33,14 @@ export default function DashboardError({
         <button
           type="button"
           onClick={reset}
-          className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white"
+          className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800"
         >
           重试
         </button>
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700"
+          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           刷新页面
         </button>

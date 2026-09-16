@@ -55,13 +55,13 @@ export default function FeedPanel({
 
   if (!hasFeed || !httpsUrl || !webcalUrl) {
     return (
-      <div className="flex flex-col gap-3 rounded border border-neutral-200 p-4">
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm">
         <p className="text-sm text-neutral-600">尚未生成订阅链接。</p>
         <button
           type="button"
           disabled={pending}
           onClick={create}
-          className="self-start rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+          className="self-start rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
         >
           生成订阅链接
         </button>
@@ -71,7 +71,7 @@ export default function FeedPanel({
   }
 
   return (
-    <div className="flex flex-col gap-4 rounded border border-neutral-200 p-4">
+    <div className="flex flex-col gap-4 rounded-lg border border-neutral-200 p-4 shadow-sm">
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-neutral-500">一键订阅（webcal）</span>
         <div className="flex items-center gap-2">
@@ -82,7 +82,7 @@ export default function FeedPanel({
             type="button"
             disabled={pending}
             onClick={() => copy(webcalUrl)}
-            className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 disabled:opacity-50"
+            className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
           >
             复制
           </button>
@@ -99,7 +99,7 @@ export default function FeedPanel({
             type="button"
             disabled={pending}
             onClick={() => copy(httpsUrl)}
-            className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 disabled:opacity-50"
+            className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
           >
             复制
           </button>
@@ -111,7 +111,7 @@ export default function FeedPanel({
           type="button"
           disabled={pending}
           onClick={rotate}
-          className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 disabled:opacity-50"
+          className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
         >
           重新生成链接
         </button>
@@ -119,7 +119,7 @@ export default function FeedPanel({
           type="button"
           disabled={pending}
           onClick={revoke}
-          className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 disabled:opacity-50"
+          className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
         >
           停用
         </button>

@@ -13,7 +13,7 @@ export default function CourseRestore({ courseId }: { courseId: string }) {
     <button
       type="button"
       disabled={pending}
-      className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 disabled:opacity-50"
+      className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
       onClick={() =>
         startTransition(async () => {
           await restoreCourse(courseId)

@@ -51,7 +51,7 @@ export default function PortalAccountForm({
     return (
       <button
         type="button"
-        className="self-start rounded border border-neutral-300 px-3 py-1 text-xs"
+        className="self-start rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
         onClick={() => setOpen(true)}
       >
         开通登录
@@ -60,7 +60,7 @@ export default function PortalAccountForm({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded border border-neutral-200 p-3">
+    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs">
           账号类型
@@ -104,7 +104,7 @@ export default function PortalAccountForm({
         <button
           type="button"
           disabled={pending}
-          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
           onClick={submit}
         >
           {pending ? '开通中…' : '开通'}
@@ -112,7 +112,7 @@ export default function PortalAccountForm({
         <button
           type="button"
           disabled={pending}
-          className="rounded border border-neutral-300 px-3 py-1 text-xs"
+          className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
           onClick={() => setOpen(false)}
         >
           关闭

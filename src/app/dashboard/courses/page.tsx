@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
 import { listCourses, listSections } from './actions'
@@ -24,6 +25,13 @@ export default async function CoursesPage() {
   return (
     <section className="flex flex-col gap-6">
       <h2 className="text-lg font-semibold">课程</h2>
+      <Link
+        href="/dashboard/teach"
+        className="flex items-center justify-between gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600 hover:bg-neutral-100"
+      >
+        <span>课程与报告已统一到「教务工作台」——在班级内直接管理学生、排课、报告与导出。</span>
+        <span className="shrink-0 font-medium text-neutral-900">前往教务工作台 →</span>
+      </Link>
       <CourseForm />
       <div className="flex flex-col gap-4">
         {activeCourses.length === 0 && (
@@ -32,7 +40,7 @@ export default async function CoursesPage() {
         {activeCourses.map((c) => {
           const courseSections = sections.filter((s) => s.courseId === c.id)
           return (
-            <div key={c.id} className="rounded border border-neutral-200 p-4">
+            <div key={c.id} className="rounded-lg border border-neutral-200 p-4 shadow-sm">
               <div className="mb-2 flex items-start justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-semibold">{c.title}</h3>
@@ -46,7 +54,7 @@ export default async function CoursesPage() {
                 {courseSections.map((s) => (
                   <li
                     key={s.id}
-                    className="flex flex-col gap-1 rounded border border-neutral-100 p-2 text-xs text-neutral-600"
+                    className="flex flex-col gap-1 rounded border border-neutral-100 p-2 text-xs text-neutral-600 tabular-nums"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span>
@@ -61,7 +69,7 @@ export default async function CoursesPage() {
                         />
                         <a
                           href={`/api/export/section/${s.id}`}
-                          className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-neutral-700"
+                          className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-neutral-700 hover:bg-neutral-50"
                         >
                           批量导出(ZIP)
                         </a>
@@ -81,10 +89,10 @@ export default async function CoursesPage() {
 
       {archivedCourses.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-neutral-700">
+          <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
             已归档（{archivedCourses.length}）
           </h3>
-          <ul className="divide-y divide-neutral-200 rounded border border-neutral-200">
+          <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
             {archivedCourses.map((c) => (
               <li
                 key={c.id}

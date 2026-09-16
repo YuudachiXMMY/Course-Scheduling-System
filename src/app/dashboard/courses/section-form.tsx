@@ -35,13 +35,19 @@ export default function SectionForm({
   courseId,
   defaultTeacherId,
   section,
+  embedded = false,
+  onCreated,
 }: {
   courseId: string
   defaultTeacherId: string
   section?: ClassSection
+  // Workspace: render always-open (settings tab / rail create), no collapse trigger.
+  embedded?: boolean
+  // Rail create flow: report the new section id so the caller can navigate to it.
+  onCreated?: (sectionId: string) => void
 }) {
   const isEdit = Boolean(section)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(Boolean(embedded))
   const [name, setName] = useState(section?.name ?? '')
   const [meetings, setMeetings] = useState<MeetingRow[]>([
     { byDay: 'MO', startTime: '16:00', durationMinutes: '60' },
@@ -135,7 +141,8 @@ export default function SectionForm({
           `已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`,
         )
         router.refresh()
-        if (isEdit) setOpen(false)
+        if (!isEdit) onCreated?.(result.section.id)
+        if (isEdit && !embedded) setOpen(false)
       } catch (e) {
         setError(e instanceof Error ? e.message : '保存失败')
       }
@@ -146,7 +153,7 @@ export default function SectionForm({
     return (
       <button
         type="button"
-        className="rounded border border-neutral-300 px-3 py-1 text-xs"
+        className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100"
         onClick={() => setOpen(true)}
       >
         {isEdit ? '编辑' : '+ 新建班级'}
@@ -155,7 +162,7 @@ export default function SectionForm({
   }
 
   return (
-    <div className="flex w-full flex-col gap-2 rounded border border-neutral-200 bg-neutral-50 p-3">
+    <div className="flex w-full flex-col gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-3 shadow-sm">
       <input
         className="rounded border border-neutral-300 px-2 py-1 text-sm"
         placeholder="班级名称（如 周一班）"
@@ -194,7 +201,7 @@ export default function SectionForm({
             <button
               type="button"
               disabled={meetings.length <= 1}
-              className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 disabled:opacity-40"
+              className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
               onClick={() => removeMeeting(i)}
             >
               删除
@@ -203,7 +210,7 @@ export default function SectionForm({
         ))}
         <button
           type="button"
-          className="self-start rounded border border-neutral-300 px-2 py-1 text-xs"
+          className="self-start rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
           onClick={addMeeting}
         >
           + 添加时段
@@ -269,14 +276,14 @@ export default function SectionForm({
         <button
           type="button"
           disabled={pending}
-          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
           onClick={submit}
         >
           {isEdit ? '保存并重新生成课节' : '创建并生成课节'}
         </button>
         <button
           type="button"
-          className="rounded border border-neutral-300 px-3 py-1 text-xs"
+          className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100"
           onClick={() => setOpen(false)}
         >
           取消

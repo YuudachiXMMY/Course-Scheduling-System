@@ -2,13 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import {
-  createReportDraft,
-  updateReportNarrative,
-  approveReport,
-  type ReportResult,
-} from './actions'
+import { createReportDraft, type ReportResult } from './actions'
 import type { ReportRow, StudentOption } from './data'
+import { ReportItem } from './report-item'
 
 export default function ReportPanel({
   students,
@@ -75,7 +71,7 @@ export default function ReportPanel({
     <div className="flex flex-col gap-6">
       <form
         onSubmit={generate}
-        className="flex flex-col gap-3 rounded border border-neutral-200 p-4"
+        className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm"
       >
         <h3 className="text-sm font-medium text-neutral-700">生成报告草稿</h3>
         <div className="flex flex-wrap gap-3">
@@ -113,7 +109,7 @@ export default function ReportPanel({
           <button
             type="submit"
             disabled={pending || students.length === 0}
-            className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
+            className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
           >
             {pending ? '生成中…' : '生成草稿'}
           </button>
@@ -123,7 +119,7 @@ export default function ReportPanel({
 
       <ul className="flex flex-col gap-3">
         {reports.length === 0 && (
-          <li className="rounded border border-neutral-200 px-4 py-3 text-sm text-neutral-500">
+          <li className="rounded-lg border border-neutral-200 px-4 py-8 text-center text-sm text-neutral-500">
             暂无报告
           </li>
         )}
@@ -138,88 +134,5 @@ export default function ReportPanel({
         ))}
       </ul>
     </div>
-  )
-}
-
-function ReportItem({
-  report,
-  studentName,
-  onRun,
-  pending,
-}: {
-  report: ReportRow
-  studentName: string
-  onRun: (fn: () => Promise<ReportResult>) => void
-  pending: boolean
-}) {
-  const [text, setText] = useState(report.narrative ?? '')
-  const approved = report.status === 'approved'
-  const period =
-    report.periodStart && report.periodEnd ? `${report.periodStart} ~ ${report.periodEnd}` : '—'
-
-  return (
-    <li className="flex flex-col gap-3 rounded border border-neutral-200 px-4 py-3">
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col">
-          <span className="text-sm font-medium">{report.title || `${studentName} 进度报告`}</span>
-          <span className="text-xs text-neutral-500">
-            {studentName} · {period}
-          </span>
-        </div>
-        <span
-          className={`rounded px-2 py-0.5 text-xs ${
-            approved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
-          }`}
-        >
-          {approved ? '已定稿' : '草稿'}
-        </span>
-      </div>
-
-      {approved ? (
-        <p className="text-sm whitespace-pre-wrap text-neutral-800">{report.narrative}</p>
-      ) : (
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={6}
-          className="rounded border border-neutral-300 px-2 py-1.5 text-sm"
-        />
-      )}
-
-      <div className="flex flex-wrap gap-2">
-        {!approved && (
-          <>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => onRun(() => updateReportNarrative({ id: report.id, narrative: text }))}
-              className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700 disabled:opacity-50"
-            >
-              保存
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                if (window.confirm('批准后报告将定稿，不可再修改。确定继续？')) {
-                  onRun(() => approveReport(report.id))
-                }
-              }}
-              className="rounded bg-neutral-900 px-3 py-1 text-sm text-white disabled:opacity-50"
-            >
-              批准
-            </button>
-          </>
-        )}
-        <a
-          href={`/api/reports/${report.id}/pdf`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded border border-neutral-300 px-3 py-1 text-sm text-neutral-700"
-        >
-          下载 PDF
-        </a>
-      </div>
-    </li>
   )
 }
