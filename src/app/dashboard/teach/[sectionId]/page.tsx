@@ -25,7 +25,10 @@ export default async function SectionTabPage({
   const { sectionId } = await params
   const sp = await searchParams
   const tab = str(sp.tab) || 'lessons'
-  const key = [tab, str(sp.student), str(sp.period), str(sp.from), str(sp.to)].join('|')
+  // sectionId is part of the key so switching sections (rail links always go to ?tab=lessons, an
+  // unchanged searchParam key) remounts the panel — otherwise the client SectionLessons instance is
+  // reused and its openId/editId leak the previous section's lesson into the new one.
+  const key = [sectionId, tab, str(sp.student), str(sp.period), str(sp.from), str(sp.to)].join('|')
 
   let panel: ReactNode
   switch (tab) {

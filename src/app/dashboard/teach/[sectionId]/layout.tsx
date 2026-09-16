@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { requireAuthContext } from '@/auth/context'
+import { can } from '@/auth/authorize'
 import { getSectionHeader } from './data'
 import TabBar from './tab-bar'
 
@@ -16,6 +17,7 @@ export default async function SectionLayout({
   const { sectionId } = await params
   const ctx = await requireAuthContext()
   const { section, course } = await getSectionHeader(ctx, sectionId)
+  const canManage = can(ctx.role, { course: ['update'] })
 
   return (
     <section className="flex flex-col gap-4">
@@ -25,7 +27,7 @@ export default async function SectionLayout({
           {section.name ?? '（未命名班级）'} · 容量 {section.capacity} 人
         </p>
       </header>
-      <TabBar sectionId={sectionId} />
+      <TabBar sectionId={sectionId} canManage={canManage} />
       {children}
     </section>
   )

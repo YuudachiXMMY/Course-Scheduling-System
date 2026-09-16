@@ -16,7 +16,9 @@ const CAPACITY = 5
 // create form and the inline edit form share the same classes but carry NO course-title text, so
 // filtering by the unique title pins exactly the card we created.
 function courseCard(page: Page) {
-  return page.locator('div.rounded.border.border-neutral-200.p-4').filter({ hasText: courseTitle })
+  return page
+    .locator('div.rounded-lg.border.border-neutral-200.p-4')
+    .filter({ hasText: courseTitle })
 }
 
 function todayISODate(): string {

@@ -44,6 +44,7 @@ export default function SectionLessons({
   const [end, setEnd] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<Record<string, ConflictInfo>>({})
+  const [genError, setGenError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const { flash, show } = useFlash()
   const router = useRouter()
@@ -92,10 +93,16 @@ export default function SectionLessons({
   }
 
   function generate() {
+    setGenError(null)
     startTransition(async () => {
-      const res = await materializeSectionAction(sectionId)
-      show(`已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`)
-      router.refresh()
+      try {
+        const res = await materializeSectionAction(sectionId)
+        show(`已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`)
+        router.refresh()
+      } catch {
+        // materializeSection re-throws genuine DB errors (non-exclusion) — surface, don't swallow.
+        setGenError('生成课节失败，请重试')
+      }
     })
   }
 
@@ -124,6 +131,11 @@ export default function SectionLessons({
           {flash && (
             <span aria-live="polite" className="text-xs text-green-700">
               {flash}
+            </span>
+          )}
+          {genError && (
+            <span aria-live="polite" className="text-xs text-red-600">
+              {genError}
             </span>
           )}
         </div>

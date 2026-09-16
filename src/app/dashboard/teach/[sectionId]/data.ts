@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, gte, inArray, lt, ne } from 'drizzle-orm'
+import { and, eq, gte, inArray, lte, ne } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { notFound } from 'next/navigation'
 import { forTenant } from '@/db/tenant'
@@ -65,15 +65,31 @@ export async function getSectionRoster(ctx: AuthContext, id: string): Promise<Se
 export async function getSectionLessons(ctx: AuthContext, id: string): Promise<SectionLesson[]> {
   const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
   const now = DateTime.now().setZone('Asia/Shanghai')
-  const from = section?.termStartDate ?? now.minus({ days: 60 }).toUTC().toJSDate()
-  const to = section?.termEndDate ?? now.plus({ days: 120 }).toUTC().toJSDate()
+  // term_start/end_date are stored at UTC midnight but the class runs in Asia/Shanghai (UTC midnight
+  // = 08:00 local), so a raw termEndDate upper bound would clip the final day's afternoon/evening
+  // lessons. Mirror materialize.ts's localDayBound: snap to the FULL local calendar day, and use lte
+  // so the read window matches the write window the materializer used.
+  const localDayBound = (d: Date, edge: 'start' | 'end') => {
+    const utc = DateTime.fromJSDate(d, { zone: 'utc' })
+    const local = DateTime.fromObject(
+      { year: utc.year, month: utc.month, day: utc.day },
+      { zone: 'Asia/Shanghai' },
+    )
+    return (edge === 'start' ? local.startOf('day') : local.endOf('day')).toUTC().toJSDate()
+  }
+  const from = section?.termStartDate
+    ? localDayBound(section.termStartDate, 'start')
+    : now.minus({ days: 60 }).toUTC().toJSDate()
+  const to = section?.termEndDate
+    ? localDayBound(section.termEndDate, 'end')
+    : now.plus({ days: 120 }).toUTC().toJSDate()
   const rows = (await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.sectionId, id),
       ne(lesson.status, 'canceled'),
       gte(lesson.startAt, from),
-      lt(lesson.startAt, to),
+      lte(lesson.startAt, to),
     ),
   )) as (typeof lesson.$inferSelect)[]
   const parentTitle = section

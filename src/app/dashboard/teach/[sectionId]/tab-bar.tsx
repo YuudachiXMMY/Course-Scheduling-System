@@ -15,16 +15,25 @@ const TABS = [
   { key: 'settings', label: '设置' },
 ] as const
 
-export default function TabBar({ sectionId }: { sectionId: string }) {
+export default function TabBar({
+  sectionId,
+  canManage,
+}: {
+  sectionId: string
+  canManage: boolean
+}) {
   const sp = useSearchParams()
   const active = sp.get('tab') ?? 'lessons'
+  // 设置 needs course:update; hide it for read-only roles (assistant) instead of showing a dead tab
+  // that only yields a permission-denied message.
+  const tabs = canManage ? TABS : TABS.filter((t) => t.key !== 'settings')
 
   return (
     <nav
       aria-label="班级操作"
       className="flex flex-wrap gap-4 border-b border-neutral-200 pb-2 text-sm"
     >
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const isActive = t.key === active
         return (
           <Link
