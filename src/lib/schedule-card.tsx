@@ -34,6 +34,7 @@ export function ScheduleCard({ data }: { data: CardData }) {
   return (
     <div
       id="card"
+      data-testid="schedule-card"
       style={{
         width: 720,
         boxSizing: 'border-box',

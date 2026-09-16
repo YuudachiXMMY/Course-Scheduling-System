@@ -46,6 +46,25 @@ npm run build       # Next 16 Turbopack -> .next/standalone/server.js
 npm run test        # vitest — tenant-isolation suite (needs a running Postgres)
 ```
 
+### End-to-end (Playwright)
+
+Full user-flow coverage across login/signup, dashboard (schedule, courses, students, reschedule,
+reports, calendar feed), the parent/student portal, and public share links. Runs against the **real
+running app** + a dedicated, auto-seeded fixture tenant in its Postgres.
+
+```bash
+cp .env.e2e.example .env.e2e   # set E2E_DATABASE_URL to the app's DB (docker: host port, often 5433)
+npm run test:e2e               # global-setup seeds the fixture + signs roles in, then runs the suite
+npm run test:e2e:ui            # interactive
+npm run test:e2e:report        # open the last HTML report
+npm run db:seed:e2e            # (re)seed only — idempotent; wipes + recreates the E2E tenant
+```
+
+Requires the app reachable at `E2E_BASE_URL` (default `http://localhost:3000` — e.g. `./dev.sh` or the
+compose stack) and a migrated DB. The seed (`scripts/seed-e2e.ts`) writes ONLY to a dedicated
+`e2e_org_main` tenant + `@e2e.local` accounts, so it is safe against a shared dev database. Spec
+authoring conventions live in [`tests/e2e/AUTHORING.md`](tests/e2e/AUTHORING.md).
+
 ## Containers
 
 ```bash

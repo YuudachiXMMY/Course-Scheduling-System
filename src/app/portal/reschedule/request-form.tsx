@@ -118,6 +118,7 @@ export default function RequestForm({
             <label className="flex flex-col gap-1 text-sm">
               选择课节
               <select
+                data-testid="reschedule-lesson-select"
                 className="rounded border border-neutral-300 px-2 py-1"
                 value={lessonId}
                 onChange={(e) => onPickLesson(e.target.value)}
@@ -133,6 +134,7 @@ export default function RequestForm({
               <label className="flex flex-col gap-1 text-sm">
                 新的开始时间
                 <input
+                  data-testid="reschedule-start-input"
                   type="datetime-local"
                   className="rounded border border-neutral-300 px-2 py-1"
                   value={start}
@@ -142,6 +144,7 @@ export default function RequestForm({
               <label className="flex flex-col gap-1 text-sm">
                 新的结束时间
                 <input
+                  data-testid="reschedule-end-input"
                   type="datetime-local"
                   className="rounded border border-neutral-300 px-2 py-1"
                   value={end}
@@ -152,6 +155,7 @@ export default function RequestForm({
             <label className="flex flex-col gap-1 text-sm">
               原因（选填）
               <textarea
+                data-testid="reschedule-reason"
                 className="rounded border border-neutral-300 px-2 py-1"
                 rows={2}
                 value={reason}
@@ -161,6 +165,7 @@ export default function RequestForm({
             {error && <p className="text-sm text-red-600">{error}</p>}
             <div>
               <button
+                data-testid="reschedule-submit"
                 type="button"
                 onClick={submit}
                 disabled={pending}
@@ -180,7 +185,12 @@ export default function RequestForm({
             <li className="px-4 py-3 text-sm text-neutral-500">暂无申请</li>
           )}
           {requests.map((r) => (
-            <li key={r.id} className="flex items-center justify-between px-4 py-3 text-sm">
+            <li
+              key={r.id}
+              data-testid="reschedule-row"
+              data-status={r.status}
+              className="flex items-center justify-between px-4 py-3 text-sm"
+            >
               <div className="flex flex-col">
                 <span>
                   期望：{fmtDisplay(r.requestedStartAt)} – {fmtDisplay(r.requestedEndAt)}
@@ -193,6 +203,7 @@ export default function RequestForm({
                 </span>
                 {r.status === 'pending' && (
                   <button
+                    data-testid="reschedule-cancel"
                     type="button"
                     onClick={() => cancel(r.id)}
                     disabled={pending}

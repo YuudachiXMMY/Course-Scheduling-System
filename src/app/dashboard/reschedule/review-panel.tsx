@@ -50,7 +50,10 @@ export default function ReviewPanel({
         return
       }
       if ('conflicts' in res) {
-        setConflicts((c) => ({ ...c, [id]: { conflicts: res.conflicts, suggestions: res.suggestions } }))
+        setConflicts((c) => ({
+          ...c,
+          [id]: { conflicts: res.conflicts, suggestions: res.suggestions },
+        }))
       } else {
         setErrors((e) => ({ ...e, [id]: res.error }))
       }
@@ -78,7 +81,12 @@ export default function ReviewPanel({
       {requests.map((r) => {
         const conflict = conflicts[r.id]
         return (
-          <li key={r.id} className="flex flex-col gap-2 px-4 py-3 text-sm">
+          <li
+            key={r.id}
+            data-testid="reschedule-request"
+            data-request-id={r.id}
+            className="flex flex-col gap-2 px-4 py-3 text-sm"
+          >
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-0.5">
                 <span className="font-medium">
@@ -95,6 +103,7 @@ export default function ReviewPanel({
               {canReview && (
                 <div className="flex shrink-0 gap-2">
                   <button
+                    data-testid="reschedule-approve"
                     type="button"
                     onClick={() => approve(r.id)}
                     disabled={pending}
@@ -103,6 +112,7 @@ export default function ReviewPanel({
                     通过
                   </button>
                   <button
+                    data-testid="reschedule-reject"
                     type="button"
                     onClick={() => reject(r.id)}
                     disabled={pending}
@@ -115,7 +125,10 @@ export default function ReviewPanel({
             </div>
             {errors[r.id] && <p className="text-xs text-red-600">{errors[r.id]}</p>}
             {conflict && (
-              <div className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <div
+                data-testid="reschedule-conflict"
+                className="rounded bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              >
                 <p>该时段与已有课节冲突，申请仍保持待处理：</p>
                 {conflict.conflicts.length > 0 && (
                   <p className="mt-1">

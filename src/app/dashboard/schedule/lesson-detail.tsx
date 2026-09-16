@@ -116,7 +116,11 @@ export default function LessonDetail({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30" onClick={onClose}>
+    <div
+      data-testid="lesson-detail-drawer"
+      className="fixed inset-0 z-50 flex justify-end bg-black/30"
+      onClick={onClose}
+    >
       <div
         className="flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -161,6 +165,8 @@ export default function LessonDetail({
           {roster.map((e) => (
             <div
               key={e.studentId}
+              data-testid="attendance-row"
+              data-student-id={e.studentId}
               className="flex items-center justify-between rounded border border-neutral-200 px-3 py-2"
             >
               <span className="text-sm">{e.name}</span>
@@ -234,6 +240,7 @@ export default function LessonDetail({
 
         <div className="mt-auto flex gap-2 border-t border-neutral-200 pt-4">
           <button
+            data-testid="lesson-cancel"
             type="button"
             disabled={pending}
             className="rounded border border-red-300 px-3 py-1 text-xs text-red-600"
