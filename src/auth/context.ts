@@ -28,18 +28,33 @@ export async function getAuthContext(): Promise<AuthContext | null> {
     query: { disableCookieCache: true },
   })
   if (!session?.session) return null
-  const tenantId = session.session.activeOrganizationId
-  if (!tenantId) return null
-  // Re-derive role from the DB member row (a stale/forged cookie cannot grant access):
-  const [m] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(and(eq(member.organizationId, tenantId), eq(member.userId, session.user.id)))
-    .limit(1)
+  const userId = session.user.id
+  const activeOrgId = session.session.activeOrganizationId
+
+  // Re-derive tenant + role from the DB member row (a stale/forged cookie can never grant access —
+  // we only ever return an org the user genuinely has a member row in).
+  //
+  // Self-heal for the sign-up race: on /sign-up/email, Better Auth persists the new session a few ms
+  // BEFORE the user.create.after hook (auth.ts) commits the org + owner member, so session.create.before
+  // finds no membership yet and writes activeOrganizationId=null. That first session would otherwise be
+  // stranded on /login forever (the dashboard/portal layouts bounce a null context). When the session
+  // carries no active org, fall back to the user's default membership so a freshly-signed-up owner still
+  // gets in. Verified via DB timestamps: the session row precedes the member row on sign-up.
+  const [m] = activeOrgId
+    ? await db
+        .select({ tenantId: member.organizationId, role: member.role })
+        .from(member)
+        .where(and(eq(member.organizationId, activeOrgId), eq(member.userId, userId)))
+        .limit(1)
+    : await db
+        .select({ tenantId: member.organizationId, role: member.role })
+        .from(member)
+        .where(eq(member.userId, userId))
+        .limit(1)
   if (!m) return null
   return {
-    userId: session.user.id,
-    tenantId,
+    userId,
+    tenantId: m.tenantId,
     role: m.role,
     isPlatformAdmin: (session.user.role ?? '').split(',').includes('superadmin'),
   }
