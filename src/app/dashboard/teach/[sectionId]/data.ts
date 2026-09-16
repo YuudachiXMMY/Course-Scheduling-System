@@ -12,6 +12,7 @@ import {
   progressReport,
   rescheduleRequest,
 } from '@/db/schema'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { AuthContext } from '@/auth/context'
 import type { ReportRow } from '@/app/dashboard/reports/data'
 
@@ -72,16 +73,16 @@ export async function getSectionRoster(ctx: AuthContext, id: string): Promise<Se
 // features. Canceled tombstones are hidden.
 export async function getSectionLessons(ctx: AuthContext, id: string): Promise<SectionLesson[]> {
   const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
-  const now = DateTime.now().setZone('Asia/Shanghai')
-  // term_start/end_date are stored at UTC midnight but the class runs in Asia/Shanghai (UTC midnight
-  // = 08:00 local), so a raw termEndDate upper bound would clip the final day's afternoon/evening
-  // lessons. Mirror materialize.ts's localDayBound: snap to the FULL local calendar day, and use lte
-  // so the read window matches the write window the materializer used.
+  const now = DateTime.now().setZone(APP_TIME_ZONE)
+  // term_start/end_date are stored at UTC midnight but the class runs in America/Toronto, so a raw
+  // termEndDate upper bound would clip the final day's afternoon/evening lessons. Mirror
+  // materialize.ts's localDayBound: snap to the FULL local calendar day, and use lte so the read
+  // window matches the write window the materializer used.
   const localDayBound = (d: Date, edge: 'start' | 'end') => {
     const utc = DateTime.fromJSDate(d, { zone: 'utc' })
     const local = DateTime.fromObject(
       { year: utc.year, month: utc.month, day: utc.day },
-      { zone: 'Asia/Shanghai' },
+      { zone: APP_TIME_ZONE },
     )
     return (edge === 'start' ? local.startOf('day') : local.endOf('day')).toUTC().toJSDate()
   }

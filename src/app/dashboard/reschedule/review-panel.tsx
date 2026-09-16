@@ -6,8 +6,9 @@ import { DateTime } from 'luxon'
 import { approveRescheduleRequest, rejectRescheduleRequest } from './actions'
 import { useFlash } from '../_components/use-flash'
 import type { ReviewRow } from './data'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 
 function fmt(iso: string | null): string {
   if (!iso) return '—'

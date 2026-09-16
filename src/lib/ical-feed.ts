@@ -5,8 +5,9 @@ import { DateTime } from 'luxon'
 import { and, eq, gte, lt, ne } from 'drizzle-orm'
 import { db } from '@/db'
 import { lesson, classSection, course } from '@/db/schema'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 
-const ZONE = 'Asia/Shanghai'
+const ZONE = APP_TIME_ZONE
 
 export interface FeedLesson {
   id: string
@@ -23,7 +24,7 @@ export function sectionDisplayName(courseTitle: string, sectionName: string | nu
   return sectionName ? `${courseTitle} · ${sectionName}` : courseTitle
 }
 
-// Rolling window in Asia/Shanghai calendar days: [now-8w, now+26w] (P3-6). Reuse the
+// Rolling window in America/Toronto calendar days: [now-8w, now+26w] (P3-6). Reuse the
 // localDayBound idea from materialize.ts — snap to full local days so edge occurrences
 // aren't clipped, then convert to UTC instants for the `lesson.start_at` comparison.
 export function feedWindow(now = new Date()): { from: Date; to: Date } {
@@ -35,7 +36,7 @@ export function feedWindow(now = new Date()): { from: Date; to: Date } {
 }
 
 // P4-4: shorter, WeChat-friendly window for the schedule card / public page — snap to full
-// Asia/Shanghai calendar days over [startOfToday, +4 weeks], then convert to UTC instants for
+// America/Toronto calendar days over [startOfToday, +4 weeks], then convert to UTC instants for
 // the `lesson.start_at` comparison. Kept next to feedWindow so all window helpers live together;
 // the per-student .ics still reuses feedWindow (the fuller subscribe-grade window).
 export function cardWindow(now = new Date()): { from: Date; to: Date } {
@@ -104,12 +105,12 @@ export function buildIcs(lessons: FeedLesson[], opts: { host: string; name?: str
   for (const l of lessons) {
     // DEVIATION from the plan snippet: pass Luxon DateTime, not a native Date. ical-generator
     // formats a native Date with the MACHINE-LOCAL getters (getHours…) even when a timezone is
-    // set — so `08:00Z` would render as the server's local wall-clock, not 16:00 Asia/Shanghai.
+    // set — so `08:00Z` would render as the server's local wall-clock, not the America/Toronto time.
     // A Luxon value triggers `value.setZone(timezone)` internally → correct, machine-TZ-independent.
     const e = cal.createEvent({
       start: DateTime.fromJSDate(l.startAt, { zone: 'utc' }),
       end: DateTime.fromJSDate(l.endAt, { zone: 'utc' }),
-      timezone: ZONE, // → DTSTART;TZID=Asia/Shanghai
+      timezone: ZONE, // → DTSTART;TZID=America/Toronto
       summary: l.title ?? '课节',
       location: l.location ?? undefined,
     })

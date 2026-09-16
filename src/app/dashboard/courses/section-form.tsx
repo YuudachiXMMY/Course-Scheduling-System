@@ -9,6 +9,7 @@ import {
   listSectionMeetings,
   type ClassSection,
 } from './actions'
+import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { Weekday } from '@/lib/rrule-build'
 
 const WEEKDAY_LABELS: { value: Weekday; label: string }[] = [
@@ -130,7 +131,7 @@ export default function SectionForm({
       })),
       termStartDate: termStart,
       termEndDate: termEnd || undefined,
-      timezone: 'Asia/Shanghai',
+      timezone: APP_TIME_ZONE,
       defaultLocation: location || undefined,
       defaultMeetingUrl: meetingUrl || undefined,
     }

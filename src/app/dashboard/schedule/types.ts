@@ -21,5 +21,5 @@ export type ScheduleResult =
       ok: false
       error: 'CONFLICT'
       conflicts: Pick<ConflictSummary, 'id' | 'title'>[]
-      suggestions: string[] // 'HH:mm' local (Asia/Shanghai)
+      suggestions: string[] // 'HH:mm' local (America/Toronto)
     }

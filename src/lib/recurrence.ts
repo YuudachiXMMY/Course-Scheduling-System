@@ -15,7 +15,7 @@ const MAX_WINDOW_MS = 2 * 366 * 24 * 60 * 60 * 1000 // ~2 years
 /**
  * Expand a section's RRULE into concrete UTC occurrences within [windowStart, windowEnd].
  * `rruleText` is an RFC5545 RRULE line WITHOUT DTSTART (as stored). `wallStart` carries the
- * local wall-clock hour/minute of the first occurrence; `zone` is IANA (default Asia/Shanghai).
+ * local wall-clock hour/minute of the first occurrence; `zone` is IANA (app default America/Toronto).
  *
  * rrule is used purely as a FLOATING-time enumerator (P2-1): its Date outputs carry wall-clock
  * components in a UTC-stamped Date, read ONLY with getUTC* getters; Luxon owns all zone conversion.
