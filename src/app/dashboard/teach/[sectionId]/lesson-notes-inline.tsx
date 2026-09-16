@@ -137,13 +137,21 @@ export default function LessonNotesInline({
     }
 
     startTransition(async () => {
-      await Promise.all(tasks)
-      show(
-        skippedEmpty > 0
-          ? `已保存全部更改（${saved} 项，清空的笔记/点评已跳过）`
-          : `已保存全部更改（${saved} 项）`,
-      )
-      router.refresh()
+      // 批量保存:任一 upsert reject 都可能已有其它写入落库（部分成功）。catch 后给出失败提示，
+      // 并在 finally 里始终 router.refresh()——重新拉取 RSC 以呈现真实的已落库状态，避免用户
+      // 误判为"没保存"而重复点击。
+      try {
+        await Promise.all(tasks)
+        show(
+          skippedEmpty > 0
+            ? `已保存全部更改（${saved} 项，清空的笔记/点评已跳过）`
+            : `已保存全部更改（${saved} 项）`,
+        )
+      } catch {
+        show('部分更改保存失败，请重试')
+      } finally {
+        router.refresh()
+      }
     })
   }
 
