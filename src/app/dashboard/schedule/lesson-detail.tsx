@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useId, useRef, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   getLessonRoster,
@@ -38,6 +38,55 @@ export default function LessonDetail({
   const [msg, setMsg] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+  // B24：把详情抽屉升级为合规模态。panelRef 用于打开时把焦点移入 + 实现 Tab 焦点陷阱；
+  // onClose 用 ref 引用最新值，让下方焦点 effect 只在挂载/卸载（= 打开/关闭）各跑一次。
+  const panelRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  const titleId = useId()
+
+  // 每次渲染把最新的 onClose 同步进 ref，供下方"只挂载/卸载各跑一次"的焦点 effect 里的 Escape 读取，
+  // 从而无需把 onClose 放进该 effect 的依赖（否则父组件每次重渲都会重新抢焦点）。
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
+
+  // B24：进入时记录来源焦点并把焦点移入对话框；Escape 关闭；Tab / Shift+Tab 在对话框内循环，
+  // 不逸出到背后页面；卸载（关闭）时把焦点归还给打开抽屉前的元素，形成完整的焦点管理闭环。
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    const panel = panelRef.current
+    panel?.focus()
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        onCloseRef.current()
+        return
+      }
+      if (e.key !== 'Tab' || !panel) return
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      previouslyFocused?.focus()
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -122,11 +171,18 @@ export default function LessonDetail({
       onClick={onClose}
     >
       <div
-        className="cs-enter-panel flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="cs-enter-panel flex h-full w-full max-w-md flex-col gap-4 overflow-y-auto bg-white p-6 shadow-xl outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold">课节详情</h3>
+          <h3 id={titleId} className="text-base font-semibold">
+            课节详情
+          </h3>
           <button
             type="button"
             className="text-sm text-neutral-500 hover:text-neutral-900"
@@ -139,12 +195,14 @@ export default function LessonDetail({
         <div className="flex flex-col gap-2">
           <h4 className="text-sm font-medium text-neutral-700">上课地点 / 网课链接</h4>
           <input
+            aria-label="上课地点"
             className="rounded border border-neutral-300 px-2 py-1 text-sm"
             placeholder="上课地点（教室 / 线下地址）"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
           <input
+            aria-label="网课链接"
             className="rounded border border-neutral-300 px-2 py-1 text-sm"
             placeholder="网课链接（Zoom / 腾讯会议）https://…"
             value={meetingUrl}
@@ -198,6 +256,7 @@ export default function LessonDetail({
         <div className="flex flex-col gap-2">
           <h4 className="text-sm font-medium text-neutral-700">本节课笔记（全班共享）</h4>
           <textarea
+            aria-label="本节课笔记（全班共享）"
             className="min-h-20 rounded border border-neutral-300 px-2 py-1 text-sm"
             placeholder="今天讲了…"
             value={sharedNote}
@@ -220,6 +279,7 @@ export default function LessonDetail({
               <div key={e.studentId} className="flex flex-col gap-1">
                 <span className="text-xs text-neutral-600">{e.name}</span>
                 <textarea
+                  aria-label={`给 ${e.name} 的本节课点评`}
                   className="min-h-14 rounded border border-neutral-300 px-2 py-1 text-sm"
                   placeholder={`给 ${e.name} 的本节课点评…`}
                   value={comments[e.studentId] ?? ''}

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { and, eq, gte, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { DateTime } from 'luxon'
-import { requireAuthContext, type AuthContext } from '@/auth/context'
+import { requireAuthContext, AuthError, type AuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
 import { actorOwnsSectionById, sectionIdsForActor, isWholeTenantActor } from '@/auth/scope'
 import { db } from '@/db'
@@ -77,21 +77,38 @@ export async function updateCourse(id: string, input: CourseInput): Promise<Cour
   return { ok: true, course: row as Course }
 }
 
-export async function archiveCourse(id: string) {
+// 归档/恢复同样返回判别式 {ok,error}（镜像 create/updateCourse 与 portal-actions）：抛出的 Server
+// Action 错误在生产会被 Next.js 脱敏成不透明的 "React error #441"，因此把权限失败（如 assistant
+// 越权点击的 FORBIDDEN）与库层错误都 catch 后作为数据返回，中文文案才能到达客户端内联提示而非静默失败。
+export async function archiveCourse(id: string): Promise<CourseResult> {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { course: ['update'] })
-  const [row] = await forTenant(ctx).update(course, id, { isArchived: true })
-  revalidatePath('/dashboard/courses')
-  return row
+  try {
+    requirePermission(ctx, { course: ['update'] })
+    const [row] = await forTenant(ctx).update(course, id, { isArchived: true })
+    if (!row) return { ok: false, error: '课程不存在或不属于当前机构' }
+    revalidatePath('/dashboard/courses')
+    return { ok: true, course: row as Course }
+  } catch (e) {
+    console.error('archiveCourse failed', e)
+    if (e instanceof AuthError) return { ok: false, error: '无权归档该课程' }
+    return { ok: false, error: e instanceof Error ? e.message : '归档失败' }
+  }
 }
 
 // Un-archive: mirror of archiveCourse so an archived course template can be brought back.
-export async function restoreCourse(id: string) {
+export async function restoreCourse(id: string): Promise<CourseResult> {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { course: ['update'] })
-  const [row] = await forTenant(ctx).update(course, id, { isArchived: false })
-  revalidatePath('/dashboard/courses')
-  return row
+  try {
+    requirePermission(ctx, { course: ['update'] })
+    const [row] = await forTenant(ctx).update(course, id, { isArchived: false })
+    if (!row) return { ok: false, error: '课程不存在或不属于当前机构' }
+    revalidatePath('/dashboard/courses')
+    return { ok: true, course: row as Course }
+  } catch (e) {
+    console.error('restoreCourse failed', e)
+    if (e instanceof AuthError) return { ok: false, error: '无权恢复该课程' }
+    return { ok: false, error: e instanceof Error ? e.message : '恢复失败' }
+  }
 }
 
 /* ---------- Section ---------- */

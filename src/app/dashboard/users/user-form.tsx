@@ -55,7 +55,13 @@ export default function UserForm() {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm"
+    >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs">
           账号类型
@@ -71,12 +77,14 @@ export default function UserForm() {
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="显示名"
+          aria-label="显示名"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="登录邮箱（选填，留空自动生成）"
+          aria-label="登录邮箱"
           value={loginId}
           onChange={(e) => setLoginId(e.target.value)}
         />
@@ -84,6 +92,7 @@ export default function UserForm() {
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="密码（至少 8 位）"
+          aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
@@ -99,16 +108,17 @@ export default function UserForm() {
           // MEDIUM fix: this email is an EXISTING member of this org — no account was created and the
           // password entered above was IGNORED. Do not claim "已新建" or imply a new password was set.
           <p className="text-xs text-amber-700">
-            该邮箱已是本机构账号，<span className="font-medium">未新建、密码未修改</span>。登录邮箱：
-            <span className="font-mono">{email}</span>；如需把它关联到学生，请用下方各账号的「关联学生…」。
+            该邮箱已是本机构账号，<span className="font-medium">未新建、密码未修改</span>
+            。登录邮箱：
+            <span className="font-mono">{email}</span>
+            ；如需把它关联到学生，请用下方各账号的「关联学生…」。
           </p>
         ))}
       <div className="flex gap-2">
         <button
-          type="button"
+          type="submit"
           disabled={pending}
           className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-          onClick={submit}
         >
           {pending ? '新建中…' : '新建'}
         </button>
@@ -121,6 +131,6 @@ export default function UserForm() {
           关闭
         </button>
       </div>
-    </div>
+    </form>
   )
 }

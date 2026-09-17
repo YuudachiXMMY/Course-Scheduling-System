@@ -60,7 +60,13 @@ export default function StaffForm({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm"
+    >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {roleOptions.length > 1 && (
           <label className="flex flex-col gap-1 text-xs">
@@ -81,12 +87,14 @@ export default function StaffForm({
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="显示名"
+          aria-label="显示名"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="登录邮箱"
+          aria-label="登录邮箱"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
@@ -94,6 +102,7 @@ export default function StaffForm({
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="密码（至少 8 位）"
+          aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
@@ -107,10 +116,9 @@ export default function StaffForm({
       )}
       <div className="flex gap-2">
         <button
-          type="button"
+          type="submit"
           disabled={pending}
           className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-          onClick={submit}
         >
           {pending ? '新建中…' : '新建'}
         </button>
@@ -123,6 +131,6 @@ export default function StaffForm({
           关闭
         </button>
       </div>
-    </div>
+    </form>
   )
 }

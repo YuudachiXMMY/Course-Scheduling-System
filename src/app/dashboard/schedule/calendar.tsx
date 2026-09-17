@@ -113,16 +113,24 @@ export default function ScheduleCalendar({
   function handleDrop(info: EventDropArg) {
     setNotice(null)
     startTransition(async () => {
-      const res = await rescheduleLessonAction({
-        id: info.event.id,
-        startAt: info.event.start!,
-        endAt: info.event.end ?? info.event.start!,
-      })
-      if (!res.ok) {
+      try {
+        const res = await rescheduleLessonAction({
+          id: info.event.id,
+          startAt: info.event.start!,
+          endAt: info.event.end ?? info.event.start!,
+        })
+        if (!res.ok) {
+          info.revert()
+          setNotice(`时间冲突，可用时段：${res.suggestions.join('、') || '当天已排满'}`)
+        } else {
+          setEvents((prev) => prev.map((e) => (e.id === res.event.id ? res.event : e)))
+        }
+      } catch {
+        // rescheduleLessonCore 对"课节不存在/无权/缺教师/排他约束竞态 ConflictError"是 throw 而非
+        // 返回 {ok:false}；抛错会在到达 revert 前中断回调，而 FullCalendar 已乐观移动了事件块。
+        // 因此 catch 分支同样调用 info.revert() 把事件块归位，避免 UI 与 DB 静默不一致。
         info.revert()
-        setNotice(`时间冲突，可用时段：${res.suggestions.join('、') || '当天已排满'}`)
-      } else {
-        setEvents((prev) => prev.map((e) => (e.id === res.event.id ? res.event : e)))
+        setNotice('改期失败，请稍后重试或刷新页面')
       }
     })
   }

@@ -62,7 +62,13 @@ export default function PortalAccountForm({
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm"
+    >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-xs">
           账号类型
@@ -78,12 +84,14 @@ export default function PortalAccountForm({
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder={`显示名（默认「${studentName}」）`}
+          aria-label="显示名"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="登录邮箱（选填，留空自动生成）"
+          aria-label="登录邮箱"
           value={loginId}
           onChange={(e) => setLoginId(e.target.value)}
         />
@@ -91,6 +99,7 @@ export default function PortalAccountForm({
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="密码（至少 8 位）"
+          aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="new-password"
@@ -107,16 +116,16 @@ export default function PortalAccountForm({
           // created and the password entered above was IGNORED. The student is now linked, but do not
           // claim "已开通" or imply a new password was set. Mirrors users/user-form.tsx.
           <p className="text-xs text-amber-700">
-            该邮箱已是本机构账号，已关联到该学生；<span className="font-medium">未新建、密码未修改</span>
+            该邮箱已是本机构账号，已关联到该学生；
+            <span className="font-medium">未新建、密码未修改</span>
             。原有登录邮箱：<span className="font-mono">{email}</span>（沿用其既有密码）。
           </p>
         ))}
       <div className="flex gap-2">
         <button
-          type="button"
+          type="submit"
           disabled={pending}
           className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-          onClick={submit}
         >
           {pending ? '开通中…' : '开通'}
         </button>
@@ -129,6 +138,6 @@ export default function PortalAccountForm({
           关闭
         </button>
       </div>
-    </div>
+    </form>
   )
 }

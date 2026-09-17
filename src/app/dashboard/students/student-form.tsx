@@ -18,10 +18,19 @@ export default function StudentForm({ student }: { student?: Student }) {
     setError(null)
     startTransition(async () => {
       try {
+        // B29: create/update 现在返回判别式 {ok,error}（不再抛业务/校验错误）——按 res.ok 分支。
         if (isEdit && student) {
-          await updateStudent(student.id, { name, parentWechat, schoolGrade })
+          const res = await updateStudent(student.id, { name, parentWechat, schoolGrade })
+          if (!res.ok) {
+            setError(res.error)
+            return
+          }
         } else {
-          await createStudent({ name, parentWechat, schoolGrade })
+          const res = await createStudent({ name, parentWechat, schoolGrade })
+          if (!res.ok) {
+            setError(res.error)
+            return
+          }
           setName('')
           setParentWechat('')
           setSchoolGrade('')
@@ -29,6 +38,7 @@ export default function StudentForm({ student }: { student?: Student }) {
         router.refresh()
         if (isEdit) setOpen(false)
       } catch (e) {
+        // requireAuthContext/requirePermission 等框架级错误仍会抛——兜底提示。
         setError(e instanceof Error ? e.message : '保存失败')
       }
     })
@@ -36,10 +46,19 @@ export default function StudentForm({ student }: { student?: Student }) {
 
   function archive() {
     if (!student) return
+    setError(null)
     startTransition(async () => {
-      await archiveStudent(student.id)
-      router.refresh()
-      setOpen(false)
+      try {
+        const res = await archiveStudent(student.id)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
+        router.refresh()
+        setOpen(false)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '归档失败')
+      }
     })
   }
 
@@ -56,23 +75,32 @@ export default function StudentForm({ student }: { student?: Student }) {
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4 shadow-sm">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4 shadow-sm"
+    >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="姓名"
+          aria-label="姓名"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="家长微信"
+          aria-label="家长微信"
           value={parentWechat}
           onChange={(e) => setParentWechat(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="年级"
+          aria-label="年级"
           value={schoolGrade}
           onChange={(e) => setSchoolGrade(e.target.value)}
         />
@@ -80,10 +108,9 @@ export default function StudentForm({ student }: { student?: Student }) {
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
         <button
-          type="button"
+          type="submit"
           disabled={pending}
           className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-          onClick={submit}
         >
           {isEdit ? '保存' : '添加学生'}
         </button>
@@ -108,6 +135,6 @@ export default function StudentForm({ student }: { student?: Student }) {
           </>
         )}
       </div>
-    </div>
+    </form>
   )
 }

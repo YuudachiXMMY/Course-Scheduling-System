@@ -164,10 +164,12 @@ export default function LessonNotesInline({
       )}
 
       <div className="flex flex-col gap-1">
-        <h5 className="text-xs font-medium text-neutral-700">本节课笔记（全班共享 · Summary）</h5>
+        {/* B32: 父页面标题为 h2，本组内联标题原为 h5（跳过 h3/h4）——降为 h3 保持层级连续。 */}
+        <h3 className="text-xs font-medium text-neutral-700">本节课笔记（全班共享 · Summary）</h3>
         <textarea
           className="min-h-16 rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder="今天讲了…"
+          aria-label="本节课笔记（全班共享）"
           value={summary}
           readOnly={!canManage}
           onChange={(e) => setSummary(e.target.value)}
@@ -186,7 +188,7 @@ export default function LessonNotesInline({
 
       {roster.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h5 className="text-xs font-medium text-neutral-700">学生点评 & 成绩</h5>
+          <h3 className="text-xs font-medium text-neutral-700">学生点评 & 成绩</h3>
           {roster.map((s) => (
             <div
               key={s.id}
@@ -195,9 +197,11 @@ export default function LessonNotesInline({
               className="flex flex-col gap-1 rounded border border-neutral-200 bg-white p-2"
             >
               <span className="text-xs text-neutral-600">{s.name}</span>
+              {/* B34: 逐生表单控件补可访问名称（含学生名），否则屏幕阅读器只念到 placeholder，多生时无法区分。 */}
               <textarea
                 className="min-h-12 rounded border border-neutral-300 px-2 py-1 text-sm"
                 placeholder={`给 ${s.name} 的本节课点评…`}
+                aria-label={`给 ${s.name} 的点评`}
                 value={comments[s.id] ?? ''}
                 readOnly={!canManage}
                 onChange={(e) => setComments((prev) => ({ ...prev, [s.id]: e.target.value }))}
@@ -208,6 +212,7 @@ export default function LessonNotesInline({
                   type="number"
                   className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm tabular-nums"
                   placeholder="分数"
+                  aria-label={`${s.name} 的成绩分数`}
                   value={grades[s.id]?.score ?? ''}
                   readOnly={!canManage}
                   onChange={(e) => setGradeField(s.id, 'score', e.target.value)}
@@ -217,6 +222,7 @@ export default function LessonNotesInline({
                   type="number"
                   className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm tabular-nums"
                   placeholder="满分"
+                  aria-label={`${s.name} 的成绩满分`}
                   value={grades[s.id]?.maxScore ?? ''}
                   readOnly={!canManage}
                   onChange={(e) => setGradeField(s.id, 'maxScore', e.target.value)}

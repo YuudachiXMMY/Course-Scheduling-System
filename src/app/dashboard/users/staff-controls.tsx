@@ -24,6 +24,17 @@ export function StaffRoleControl({
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
+  // B36: `role` 由 useState(currentRole) 播种，仅挂载时生效。router.refresh() 后父级重渲染传入新的
+  // currentRole（例如另一处并发改了此人角色），但本地 `role` 会停留在旧值 → UI 与已落库状态不一致。
+  // 用「渲染期按 userId/currentRole 重新同步」的官方模式（避免 set-state-in-effect 的级联渲染告警）：
+  // 记录上一次的 userId/currentRole，二者变化时立即回落到服务端值（成功路径下与乐观值一致，为 no-op）。
+  const [prevKey, setPrevKey] = useState(`${userId}:${currentRole}`)
+  const key = `${userId}:${currentRole}`
+  if (key !== prevKey) {
+    setPrevKey(key)
+    setRole(currentRole)
+  }
+
   function change(next: string) {
     if (next === role) return
     const prev = role

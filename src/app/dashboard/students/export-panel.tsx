@@ -15,6 +15,7 @@ export default function ExportPanel({
 }) {
   const [pending, startTransition] = useTransition()
   const [msg, setMsg] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   const shareUrl = token ? `${shareOrigin}/s/${token}` : null
@@ -30,34 +31,51 @@ export default function ExportPanel({
     }
   }
 
+  // B30: share-actions 在归属/权限失败时会「抛」（生产被 React #441 脱敏）。startTransition 内的
+  // await 若无 try/catch，rejection 会冒泡到最近的错误边界。逐个包裹并把失败落到 setError 呈现。
   function createOrCopy() {
     if (shareUrl) {
       void copy(shareUrl)
       return
     }
+    setError(null)
     startTransition(async () => {
-      const { token: created } = await getOrCreateShare(studentId)
-      await copy(`${shareOrigin}/s/${created}`)
-      setMsg('已生成并复制分享链接')
-      router.refresh()
+      try {
+        const { token: created } = await getOrCreateShare(studentId)
+        await copy(`${shareOrigin}/s/${created}`)
+        setMsg('已生成并复制分享链接')
+        router.refresh()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '生成分享链接失败')
+      }
     })
   }
 
   function rotate() {
     if (!window.confirm('重新生成后，旧链接会立即失效。确定继续？')) return
+    setError(null)
     startTransition(async () => {
-      await rotateShare(studentId)
-      setMsg('已重新生成链接')
-      router.refresh()
+      try {
+        await rotateShare(studentId)
+        setMsg('已重新生成链接')
+        router.refresh()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '重新生成失败')
+      }
     })
   }
 
   function revoke() {
     if (!window.confirm('停用后，该分享链接会立即失效。确定继续？')) return
+    setError(null)
     startTransition(async () => {
-      await revokeShare(studentId)
-      setMsg('已停用分享')
-      router.refresh()
+      try {
+        await revokeShare(studentId)
+        setMsg('已停用分享')
+        router.refresh()
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '停用失败')
+      }
     })
   }
 
@@ -131,6 +149,7 @@ export default function ExportPanel({
       )}
 
       {msg && <p className="text-xs text-green-700">{msg}</p>}
+      {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   )
 }
