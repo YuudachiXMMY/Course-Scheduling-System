@@ -161,23 +161,27 @@ export const createPortalUserSchema = z.object({
 })
 export type CreatePortalUserInput = z.input<typeof createPortalUserSchema>
 
+// `created` distinguishes a freshly-minted login (a new user + membership, password applied) from an
+// idempotent REUSE of an email that is already a member of this org (no new user, password IGNORED).
+// The caller MUST surface that difference — claiming "已新建" for a reuse is the PR#32 MEDIUM: it tells
+// the tutor a password was set on an account whose password was never touched. See user-form.tsx.
 export async function createPortalUserCore(
   ctx: AuthContext,
   input: CreatePortalUserInput,
-): Promise<{ userId: string; email: string }> {
+): Promise<{ userId: string; email: string; created: boolean }> {
   const data = createPortalUserSchema.parse(input)
   const email =
     data.loginId && data.loginId.includes('@')
       ? data.loginId.toLowerCase()
       : `portal_${nanoid()}@${env.PORTAL_EMAIL_DOMAIN}`
-  const { userId } = await provisionPortalMember({
+  const { userId, created } = await provisionPortalMember({
     name: data.name,
     email,
     password: data.password,
     orgId: ctx.tenantId,
     orgRole: data.kind,
   })
-  return { userId, email }
+  return { userId, email, created }
 }
 
 // Link an EXISTING portal user to a student (idempotent). Powers both "assign a parent to a student"
