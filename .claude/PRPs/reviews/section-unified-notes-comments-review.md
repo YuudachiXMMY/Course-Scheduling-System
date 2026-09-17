@@ -1,11 +1,13 @@
 # Code Review: 班级工作台「排课」Tab 行内统一管理笔记/点评/成绩
 
 **Reviewed**: 2026-09-16
-**Branch**: feat/section-unified-notes-comments
-**Mode**: Local (uncommitted changes)
+**Author**: YuudachiXMMY (Jadyn Wu)
+**Branch**: feat/section-unified-notes-comments → main
+**PR**: #30 (https://github.com/YuudachiXMMY/Course-Scheduling-System/pull/30) · head `3744099`
+**Mode**: PR Review(承接同分支 Local Review;内容一致)
 **Decision**: APPROVE — 无 Critical/High;Medium(M1)已修复,余下 Low 可选
 
-> 更新:M1 已修复(`lesson-notes-inline.tsx` 三个 save handler 保存成功后新增 `router.refresh()`,并订正文件头注释)。typecheck / lint 复核通过。
+> 更新:M1 已修复(`lesson-notes-inline.tsx` 三个 save handler 保存成功后新增 `router.refresh()`,并订正文件头注释)。PR 复核:typecheck / lint 通过,单测全量 114/114 通过。
 
 ## Summary
 安全与租户隔离扎实(全部走 `forTenant(ctx)`、`requirePermission(lesson:update)`、zod 校验、无原始 SQL/密钥/注入面),类型/lint/单测全绿。主要问题是**行内编辑器的状态回源**:保存后不刷新,父组件 `notes` prop 在首屏后被冻结,折叠再展开会显示保存前的旧值(数据已正确落库,仅 UI 误导)。
@@ -48,7 +50,7 @@ None
 |---|---|
 | Type check (`tsc --noEmit`) | Pass |
 | Lint (`eslint .`) | Pass |
-| Unit tests (`vitest tests/section-notes.test.ts`) | Pass (5/5) |
+| Unit tests (`vitest run` 全量) | Pass (114/114,含本特性 5 项) |
 | Build (`next build`) | Skipped(typecheck 已覆盖;db:generate 前已确认零迁移) |
 | E2E | Blocked(陈旧 :3000 容器,详见实现报告) |
 
