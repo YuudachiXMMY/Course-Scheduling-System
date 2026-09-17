@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import type { AuthContext } from '@/auth/context'
 import { forTenant } from '@/db/tenant'
@@ -68,20 +68,41 @@ export async function createNotificationCore(
   }
 }
 
-// All notifications addressed to the current user (newest-first ordering is applied in the data layer).
+// Newest-first, capped at NOTIFICATION_PAGE_SIZE. Ordering + limit run in SQL (idx_notification_tenant_
+// user_read covers the userId scan) so a long-lived recipient's full history is never loaded into memory.
+export const NOTIFICATION_PAGE_SIZE = 100
 export async function listNotificationsForUserCore(ctx: AuthContext): Promise<Notification[]> {
-  return (await forTenant(ctx).select(
-    notification,
-    eq(notification.userId, ctx.userId),
-  )) as Notification[]
+  return (await forTenant(ctx)
+    .select(notification, eq(notification.userId, ctx.userId))
+    .orderBy(desc(notification.createdAt))
+    .limit(NOTIFICATION_PAGE_SIZE)) as Notification[]
 }
 
+// SQL COUNT(*), not a row fetch — this runs on EVERY dashboard/portal layout render (the unread badge),
+// so it must stay O(1)-payload regardless of how many notifications the user has accumulated.
 export async function unreadCountForUserCore(ctx: AuthContext): Promise<number> {
-  const rows = (await forTenant(ctx).select(
+  return forTenant(ctx).count(
     notification,
     and(eq(notification.userId, ctx.userId), isNull(notification.readAt)),
+  )
+}
+
+// Retention: the reminder scan writes a row per (lesson, offset, recipient) and nothing else ever
+// deletes them, so the table would grow unbounded. The cron prunes anything older than
+// NOTIFICATION_RETENTION_DAYS — a 90-day-old notification is stale by any measure (its deep-linked
+// lesson has long passed) — keeping the table bounded. `now` is injected for testability. Returns the
+// number of rows removed.
+export const NOTIFICATION_RETENTION_DAYS = 90
+export async function pruneOldNotificationsCore(
+  ctx: AuthContext,
+  now: Date = new Date(),
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+  const removed = (await forTenant(ctx).deleteWhere(
+    notification,
+    lt(notification.createdAt, cutoff),
   )) as Notification[]
-  return rows.length
+  return removed.length
 }
 
 // Mark one notification read. Defense-in-depth: a user may only mark their OWN — a foreign id

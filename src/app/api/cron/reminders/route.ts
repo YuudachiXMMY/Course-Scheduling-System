@@ -3,6 +3,7 @@ import { env } from '@/env'
 import { db } from '@/db'
 import { organization } from '@/db/schema'
 import { runReminderScanCore } from '@/lib/reminder-core'
+import { pruneOldNotificationsCore } from '@/lib/notification-core'
 import type { AuthContext } from '@/auth/context'
 
 // P7b: reminder-dispatch cron. Triggered by an EXTERNAL scheduler (Coolify Scheduled Task) hitting
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
   // legitimate here. Every subsequent per-tenant read goes through forTenant(synthesized ctx).
   const orgs = await db.select({ id: organization.id }).from(organization)
   let created = 0
+  let pruned = 0
   for (const o of orgs) {
     const ctx: AuthContext = {
       userId: 'system',
@@ -35,10 +37,12 @@ export async function POST(req: Request) {
     }
     try {
       created += (await runReminderScanCore(ctx, now)).created
+      // Bound table growth: drop this tenant's notifications older than the retention window.
+      pruned += await pruneOldNotificationsCore(ctx, now)
     } catch (e) {
       // Per-tenant isolation: one bad tenant must not abort the whole batch.
       console.error('reminder scan failed', o.id, e)
     }
   }
-  return Response.json({ ok: true, created })
+  return Response.json({ ok: true, created, pruned })
 }
