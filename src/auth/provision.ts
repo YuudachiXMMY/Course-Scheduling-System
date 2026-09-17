@@ -103,7 +103,7 @@ export async function provisionPortalMember(args: {
 export async function provisionPortalAccountCore(
   ctx: AuthContext,
   input: ProvisionPortalInput,
-): Promise<{ userId: string; email: string }> {
+): Promise<{ userId: string; email: string; created: boolean }> {
   const data = provisionSchema.parse(input)
 
   const s = (await forTenant(ctx).findById(student, data.studentId)) as
@@ -142,7 +142,11 @@ export async function provisionPortalAccountCore(
     throw e
   }
 
-  return { userId, email }
+  // `created` mirrors createPortalUserCore: false means the email was ALREADY a member of this org
+  // (reused — e.g. a real-email parent linked to a SECOND child), so no account was minted and the
+  // password above was IGNORED. The caller MUST NOT claim "已开通/请连同密码转交" for a reuse (PR#32
+  // MEDIUM). The student link itself is still (idempotently) created regardless. See portal-account-form.tsx.
+  return { userId, email, created }
 }
 
 // --- User-management surface (/dashboard/users) — parallel to provisionPortalAccountCore, but the
@@ -161,23 +165,27 @@ export const createPortalUserSchema = z.object({
 })
 export type CreatePortalUserInput = z.input<typeof createPortalUserSchema>
 
+// `created` distinguishes a freshly-minted login (a new user + membership, password applied) from an
+// idempotent REUSE of an email that is already a member of this org (no new user, password IGNORED).
+// The caller MUST surface that difference — claiming "已新建" for a reuse is the PR#32 MEDIUM: it tells
+// the tutor a password was set on an account whose password was never touched. See user-form.tsx.
 export async function createPortalUserCore(
   ctx: AuthContext,
   input: CreatePortalUserInput,
-): Promise<{ userId: string; email: string }> {
+): Promise<{ userId: string; email: string; created: boolean }> {
   const data = createPortalUserSchema.parse(input)
   const email =
     data.loginId && data.loginId.includes('@')
       ? data.loginId.toLowerCase()
       : `portal_${nanoid()}@${env.PORTAL_EMAIL_DOMAIN}`
-  const { userId } = await provisionPortalMember({
+  const { userId, created } = await provisionPortalMember({
     name: data.name,
     email,
     password: data.password,
     orgId: ctx.tenantId,
     orgRole: data.kind,
   })
-  return { userId, email }
+  return { userId, email, created }
 }
 
 // Link an EXISTING portal user to a student (idempotent). Powers both "assign a parent to a student"

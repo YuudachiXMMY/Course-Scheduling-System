@@ -106,8 +106,8 @@ visible text**: `getByRole('button', { name: '提交申请' })`, `getByLabel('�
   `page.on('dialog', (d) => d.accept())` (or `d.dismiss()` to test cancel).
 - **Server Actions ≠ REST**: most mutations POST to the current page URL with a `Next-Action` header,
   not a semantic endpoint. Assert on the resulting UI change (`await expect(getByText(...)).toBeVisible()`),
-  not `waitForResponse('/api/…')`. Only `/api/auth/*` (login/signup) and `/api/export|reports|calendar`
-  are real URLs.
+  not `waitForResponse('/api/…')`. Only `/api/auth/*` (login; self-service sign-up is disabled) and
+  `/api/export|reports|calendar` are real URLs.
 - **Rate limiter**: Better Auth throttles `/api/auth/sign-in/*` (production). Use storageState; avoid
   UI login except in `auth/` specs (the `LoginPage` POM already retries).
 - **Clipboard**: copy buttons use `navigator.clipboard`. Either grant permission
@@ -133,7 +133,7 @@ Wrap with `test.fixme(true, '…reason (issue #)')`, don't delete:
 tests/e2e/
   fixtures/   test.ts (seed fixture + contextForRole), seed-constants.ts, seed-data.ts, e2e-config.ts
   pages/      *.page.ts  (Page Objects — reuse LoginPage; add per-area POMs here)
-  auth/       login/signup/logout (project auth-flows)
+  auth/       login/logout (project auth-flows; self-service signup removed)
   public/     share link (project public)
   dashboard/  staff area (project staff)
   portal/     parent/student portal (project portal)

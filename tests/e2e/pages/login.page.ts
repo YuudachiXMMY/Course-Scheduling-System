@@ -8,7 +8,6 @@ export class LoginPage {
   readonly email: Locator
   readonly password: Locator
   readonly submit: Locator
-  readonly signupLink: Locator
 
   constructor(page: Page) {
     this.page = page
@@ -16,7 +15,6 @@ export class LoginPage {
     this.email = page.getByLabel('邮箱')
     this.password = page.getByLabel('密码')
     this.submit = page.getByRole('button', { name: '登录' })
-    this.signupLink = page.getByRole('link', { name: '注册' })
   }
 
   async goto() {

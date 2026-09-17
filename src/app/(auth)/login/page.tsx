@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { authClient } from '@/auth/client'
 
 export default function LoginPage() {
@@ -60,12 +59,6 @@ export default function LoginPage() {
       >
         {pending ? '登录中…' : '登录'}
       </button>
-      <p className="text-sm text-neutral-500">
-        还没有账号？{' '}
-        <Link href="/signup" className="underline hover:text-neutral-900">
-          注册
-        </Link>
-      </p>
     </form>
   )
 }

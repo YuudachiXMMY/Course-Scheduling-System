@@ -15,7 +15,7 @@ import {
 // survive Next.js's production redaction of thrown Server-Action messages (React #441) — mirrors
 // students/portal-actions.ts.
 export type CreateUserResult =
-  | { ok: true; userId: string; email: string }
+  | { ok: true; userId: string; email: string; created: boolean }
   | { ok: false; error: string }
 export type MutResult = { ok: true } | { ok: false; error: string }
 

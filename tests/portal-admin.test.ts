@@ -100,6 +100,36 @@ describe('user-management cores — create / link / unlink (DB integration)', ()
     expect(links).toHaveLength(0) // decoupled — no student bound yet
   })
 
+  // PR#32 MEDIUM regression: re-creating with an email that is ALREADY a member of this org must be a
+  // no-op that reports created=false (NOT a fresh account with the new password). The membership stays
+  // a single row and its role is never rewritten — so the UI can honestly say "未新建、密码未修改".
+  it('createPortalUserCore reports created=false and does not mint/rewrite on an in-org email reuse', async () => {
+    const loginId = 'reuse_users@x.com'
+    const first = await createPortalUserCore(ownerCtx(), {
+      name: '家长-复用',
+      kind: 'parent',
+      loginId,
+      password: 'portal-password-123',
+    })
+    tracked.push(first.userId)
+    expect(first.created).toBe(true)
+    expect(first.email).toBe(loginId)
+
+    // Second call, SAME real email → resolves to the same in-org member: no new user, password ignored.
+    const second = await createPortalUserCore(ownerCtx(), {
+      name: '家长-复用-改名',
+      kind: 'student', // even a different kind must NOT rewrite the existing member's role
+      loginId,
+      password: 'a-totally-different-password-999',
+    })
+    expect(second.created).toBe(false)
+    expect(second.userId).toBe(first.userId)
+
+    const mems = await db.select().from(member).where(eq(member.userId, first.userId))
+    expect(mems).toHaveLength(1) // still exactly one membership
+    expect(mems[0].role).toBe('parent') // role from the FIRST create, unchanged by the reuse
+  })
+
   it('linkPortalUserCore is idempotent and links one account to many students', async () => {
     const r = await createPortalUserCore(ownerCtx(), {
       name: '家长-李',
