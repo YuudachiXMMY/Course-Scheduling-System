@@ -37,7 +37,7 @@ test.describe('学生管理', () => {
   test('新建学生后出现在「在读学生」列表', async ({ page }) => {
     const name = `E2E临时-新建-${Date.now()}`
     const wechat = `wx-${Date.now()}`
-    await page.goto('/dashboard/students')
+    await page.goto('/dashboard/users?tab=students')
     await expect(page.getByRole('heading', { name: '学生', exact: true })).toBeVisible()
 
     await createStudent(page, { name, wechat, grade: '初二' })
@@ -52,7 +52,7 @@ test.describe('学生管理', () => {
     const name = `E2E临时-编辑-${Date.now()}`
     const grade = '初一'
     const newWechat = `wx改-${Date.now()}`
-    await page.goto('/dashboard/students')
+    await page.goto('/dashboard/users?tab=students')
     await createStudent(page, { name, wechat: `wx初始-${Date.now()}`, grade })
 
     // Edit: open the row's inline form, change 家长微信, save. Scope every locator to the row so it
@@ -79,7 +79,7 @@ test.describe('学生管理', () => {
 
   test('为学生生成分享链接（复制成功提示 + 复制分享链接按钮）', async ({ page }) => {
     const name = `E2E临时-分享-${Date.now()}`
-    await page.goto('/dashboard/students')
+    await page.goto('/dashboard/users?tab=students')
     await createStudent(page, { name, grade: '高一' })
 
     const row = activeRow(page, name)
@@ -95,7 +95,7 @@ test.describe('学生管理', () => {
 
   test('为学生开通门户登录并显示登录邮箱', async ({ page }) => {
     const name = `E2E临时-开通-${Date.now()}`
-    await page.goto('/dashboard/students')
+    await page.goto('/dashboard/users?tab=students')
     // Fresh, uniquely-named student → the synthesized login email is unique (portal_<nanoid>@…),
     // so this never clashes with the seeded portal accounts.
     await createStudent(page, { name, grade: '初三' })
