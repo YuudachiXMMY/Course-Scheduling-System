@@ -83,8 +83,15 @@ export async function materializeSection(
     // Legacy single-RRULE path. Derive wall-clock parts of recurrenceDtstart in the zone, then expand.
     const duration = section.defaultDurationMinutes ?? 60
     const dt = DateTime.fromJSDate(section.recurrenceDtstart!).setZone(zone)
+    // B46: the stored rrule may embed UNTIL as an ABSOLUTE UTC instant (older sectionRecurrenceColumns
+    // did termEnd@23:59:59.toUTC()). expandRecurrence enumerates in FLOATING wall-clock, so rrule.js
+    // compares that absolute-UTC UNTIL against floating candidates — for a zone east of UTC the UNTIL
+    // lands earlier in the day than an evening class and silently drops the term's final occurrence
+    // (e.g. Asia/Shanghai Mon 19:00 on term-end day). windowStart/windowEnd already clip via between(),
+    // so strip UNTIL and let the floating-domain window bound the range.
+    const rruleFloating = section.rrule!.replace(/;?\bUNTIL=[^;]*/i, '')
     occurrences = expandRecurrence({
-      rruleText: section.rrule!,
+      rruleText: rruleFloating,
       wallStart: { year: dt.year, month: dt.month, day: dt.day, hour: dt.hour, minute: dt.minute },
       zone,
       durationMinutes: duration,
@@ -94,8 +101,27 @@ export async function materializeSection(
   }
   if (!occurrences.length) return { inserted: 0, conflicts: 0 }
 
+  // B47: a rescheduled lesson keeps its ORIGINAL RECURRENCE-ID (originalStartAt) even though its startAt
+  // moved. After a pattern change, the NEW pattern's occurrence for that logical week has a DIFFERENT
+  // originalStartAt, so onConflictDoNothing (keyed on originalStartAt) won't suppress it — producing a
+  // SECOND lesson in a week that already holds the rescheduled exception (their times don't overlap, so
+  // the GiST constraint doesn't fire either). Dedupe by ISO week (in the section zone): skip any new
+  // occurrence whose week already contains an exception lesson (keyed by the exception's original slot).
+  const existingLessons = (await forTenant(ctx).select(
+    lesson,
+    eq(lesson.sectionId, section.id),
+  )) as (typeof lesson.$inferSelect)[]
+  const isoWeek = (d: Date) => DateTime.fromJSDate(d).setZone(zone).toFormat("kkkk'W'WW")
+  const exceptionWeeks = new Set(
+    existingLessons
+      .filter((l) => l.isException)
+      .map((l) => isoWeek(l.originalStartAt ?? l.startAt)),
+  )
+  const freshOccurrences = occurrences.filter((o) => !exceptionWeeks.has(isoWeek(o.originalStartAt)))
+  if (!freshOccurrences.length) return { inserted: 0, conflicts: 0 }
+
   // Denormalize section.teacherId → lesson.teacherId (else GiST/conflict silently exempts the row).
-  const rows = occurrences.map((o) => ({
+  const rows = freshOccurrences.map((o) => ({
     tenantId: ctx.tenantId, // assert every row carries the verified tenant (bulk-insert exemption)
     sectionId: section.id,
     teacherId: section.teacherId,

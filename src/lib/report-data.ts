@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, gte, inArray, lte } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lte, or } from 'drizzle-orm'
 import { forTenant } from '@/db/tenant'
 import { attendance, enrollment, grade, lesson, note, student } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
@@ -27,9 +27,17 @@ export async function getReportData(
     typeof student.$inferSelect | null
   if (!s) throw new Error('学生不存在或不属于当前机构')
 
+  // B51: include every section the student was enrolled in whose active span OVERLAPS the report window
+  // [from, to] — not only the sections they are CURRENTLY active in. Otherwise a student who transferred
+  // or completed mid-period (status 'dropped'/'completed', droppedAt set) silently loses that section's
+  // lessons/attendance/grades from the report. Overlap = enrolled by `to` AND not dropped before `from`.
   const enrollments = (await forTenant(ctx).select(
     enrollment,
-    and(eq(enrollment.studentId, studentId), eq(enrollment.status, 'active')),
+    and(
+      eq(enrollment.studentId, studentId),
+      lte(enrollment.enrolledAt, window.to),
+      or(isNull(enrollment.droppedAt), gte(enrollment.droppedAt, window.from)),
+    ),
   )) as (typeof enrollment.$inferSelect)[]
   const sectionIds = [...new Set(enrollments.map((e) => e.sectionId))]
 
@@ -72,9 +80,12 @@ export async function getReportData(
   })
 
   // Student-scoped notes for the AI to summarize (most-recent first, capped for prompt size).
+  // B50: ONLY visibility='shared' notes may reach the parent-facing LLM prompt. 'internal' notes are the
+  // teacher's private record (e.g. "家庭情况复杂，谨慎沟通") and must NEVER be summarized into a report a
+  // family reads — the report-prompt has no way to know a note was confidential once it is in the prompt.
   const noteRows = (await forTenant(ctx).select(
     note,
-    eq(note.studentId, studentId),
+    and(eq(note.studentId, studentId), eq(note.visibility, 'shared')),
   )) as (typeof note.$inferSelect)[]
   const notes = noteRows
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

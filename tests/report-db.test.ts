@@ -96,7 +96,15 @@ describe('progress reports — DB integration (report-core + report-data)', () =
       schoolGrade: '初二',
     })) as { id: string }[]
     studentId = st.id
-    await forTenant(ctx).insert(enrollment, { studentId, sectionId, status: 'active' })
+    // enrolledAt BEFORE the report window (Feb 1) so the active enrollment overlaps March (B51: report
+    // data is scoped by enrollment/period overlap, not defaultNow()). Realistic: the student was already
+    // enrolled when the reported period began.
+    await forTenant(ctx).insert(enrollment, {
+      studentId,
+      sectionId,
+      status: 'active',
+      enrolledAt: new Date(Date.UTC(2026, 1, 1)),
+    })
 
     const [le1] = (await forTenant(ctx).insert(lesson, {
       sectionId,
