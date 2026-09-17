@@ -12,7 +12,11 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: 'pg', schema }), // provider 'pg' = Postgres dialect (works with postgres.js)
-  emailAndPassword: { enabled: true, requireEmailVerification: false }, // MVP: owner/teacher only
+  // Self-service sign-up is CLOSED: this is a single-operator install. disableSignUp makes the
+  // /sign-up/email endpoint reject every request (EMAIL_PASSWORD_SIGN_UP_DISABLED) — verified present
+  // in better-auth 1.7.4. It does NOT affect auth.api.createUser (/admin/create-user), so the env
+  // admin seed and any future staff/portal provisioning keep minting accounts server-side.
+  emailAndPassword: { enabled: true, requireEmailVerification: false, disableSignUp: true },
   advanced: { database: { generateId: () => nanoid() } }, // R3: align auth ids with app nanoid PKs
   session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   databaseHooks: {
