@@ -6,6 +6,7 @@ import { getAuthContext } from '@/auth/context'
 import { isPortalRole } from '@/auth/portal'
 import { forTenant } from '@/db/tenant'
 import { portalLink } from '@/db/schema'
+import { unreadCountForUserCore } from '@/lib/notification-core'
 import LogoutButton from '@/app/dashboard/logout-button'
 import ConsentGate from './consent-gate'
 
@@ -22,6 +23,9 @@ export default async function PortalLayout({ children }: { children: ReactNode }
     eq(portalLink.userId, ctx.userId),
   )) as (typeof portalLink.$inferSelect)[]
   const needsConsent = links.length > 0 && links.some((l) => !l.consentedAt)
+  // Unread badge lives in the layout (always visible), NOT a page — pages render inside the consent
+  // gate and would be hidden until consent. ctx is available here (Server Component).
+  const unread = await unreadCountForUserCore(ctx)
 
   return (
     <div className="min-h-dvh">
@@ -36,6 +40,20 @@ export default async function PortalLayout({ children }: { children: ReactNode }
             className="text-neutral-700 hover:text-neutral-900 hover:underline"
           >
             改期申请
+          </Link>
+          <Link
+            href="/portal/notifications"
+            className="text-neutral-700 hover:text-neutral-900 hover:underline"
+          >
+            通知
+            {unread > 0 && (
+              <span
+                aria-hidden
+                className="ml-1 inline-block rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white"
+              >
+                {unread}
+              </span>
+            )}
           </Link>
           <LogoutButton />
         </nav>

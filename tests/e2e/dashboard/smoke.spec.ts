@@ -13,6 +13,7 @@ test.describe('Dashboard 入口冒烟', () => {
       { name: '课程', href: '/dashboard/courses' },
       { name: '报告', href: '/dashboard/reports' },
       { name: '改期申请', href: '/dashboard/reschedule' },
+      { name: '通知', href: '/dashboard/notifications' },
       { name: '日历订阅', href: '/dashboard/calendar' },
     ]
     for (const link of nav) {
