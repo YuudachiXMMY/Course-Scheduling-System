@@ -103,7 +103,7 @@ export async function provisionPortalMember(args: {
 export async function provisionPortalAccountCore(
   ctx: AuthContext,
   input: ProvisionPortalInput,
-): Promise<{ userId: string; email: string }> {
+): Promise<{ userId: string; email: string; created: boolean }> {
   const data = provisionSchema.parse(input)
 
   const s = (await forTenant(ctx).findById(student, data.studentId)) as
@@ -142,7 +142,11 @@ export async function provisionPortalAccountCore(
     throw e
   }
 
-  return { userId, email }
+  // `created` mirrors createPortalUserCore: false means the email was ALREADY a member of this org
+  // (reused — e.g. a real-email parent linked to a SECOND child), so no account was minted and the
+  // password above was IGNORED. The caller MUST NOT claim "已开通/请连同密码转交" for a reuse (PR#32
+  // MEDIUM). The student link itself is still (idempotently) created regardless. See portal-account-form.tsx.
+  return { userId, email, created }
 }
 
 // --- User-management surface (/dashboard/users) — parallel to provisionPortalAccountCore, but the

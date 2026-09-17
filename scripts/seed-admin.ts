@@ -85,9 +85,16 @@ export async function seedAdmin(opts: SeedAdminOptions = {}): Promise<SeedAdminR
       created = true
     }
 
-    // 3) Ensure the PLATFORM super admin role (user.role) — direct write; setRole needs a session.
+    // 3) Set the PLATFORM super admin role (user.role) — direct write; setRole needs a session.
     //    getAuthContext reads session.user.role at login, so the role takes effect on next sign-in.
-    await db.update(user).set({ role: 'superadmin' }).where(eq(user.id, userId))
+    //    ONLY on the mint of a NEW user: the seed BOOTSTRAPS the first admin on a fresh DB, it does not
+    //    re-assert the role forever. The docker entrypoint re-runs this on every boot; writing role
+    //    unconditionally would silently RE-PROMOTE an account an operator deliberately demoted via the
+    //    UI (the exact idempotency violation this guard removes — a re-seed of an existing account now
+    //    changes nothing: no password, no name, no role). Re-provisioning a fresh DB still promotes.
+    if (created) {
+      await db.update(user).set({ role: 'superadmin' }).where(eq(user.id, userId))
+    }
 
     // 4) Ensure exactly one owner membership in the default org (headerless addMember, no duplicates).
     const [m] = await db

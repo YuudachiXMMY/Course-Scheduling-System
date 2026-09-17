@@ -20,6 +20,7 @@ export default function PortalAccountForm({
   const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [email, setEmail] = useState<string | null>(null)
+  const [created, setCreated] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
@@ -40,6 +41,7 @@ export default function PortalAccountForm({
         return
       }
       setEmail(res.email)
+      setCreated(res.created)
       setName('')
       setLoginId('')
       setPassword('')
@@ -95,11 +97,20 @@ export default function PortalAccountForm({
         />
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
-      {email && (
-        <p className="text-xs text-green-700">
-          已开通！登录邮箱：<span className="font-mono">{email}</span>（请连同密码转交家长/学生）
-        </p>
-      )}
+      {email &&
+        (created ? (
+          <p className="text-xs text-green-700">
+            已开通！登录邮箱：<span className="font-mono">{email}</span>（请连同密码转交家长/学生）
+          </p>
+        ) : (
+          // MEDIUM fix (PR#32 class): this email was ALREADY a member of this org — no account was
+          // created and the password entered above was IGNORED. The student is now linked, but do not
+          // claim "已开通" or imply a new password was set. Mirrors users/user-form.tsx.
+          <p className="text-xs text-amber-700">
+            该邮箱已是本机构账号，已关联到该学生；<span className="font-medium">未新建、密码未修改</span>
+            。原有登录邮箱：<span className="font-mono">{email}</span>（沿用其既有密码）。
+          </p>
+        ))}
       <div className="flex gap-2">
         <button
           type="button"

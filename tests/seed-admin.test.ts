@@ -72,6 +72,19 @@ describe('seed-admin — default org + super admin (DB integration)', () => {
     expect(orgsAfter[0].name).toBe('播种默认机构') // NOT renamed on re-seed
   })
 
+  it('does NOT re-promote a manually demoted admin on re-seed (role idempotency)', async () => {
+    // Ensure the seed account exists (idempotent), then demote it as an operator would via the UI.
+    await seedAdmin({ email: EMAIL, password: PASSWORD, orgId: ORG, orgName: '播种默认机构' })
+    await db.update(user).set({ role: 'user' }).where(eq(user.email, EMAIL))
+
+    // A plain container restart re-runs the seed. It must NOT silently re-promote the demoted account.
+    const r = await seedAdmin({ email: EMAIL, password: PASSWORD, orgId: ORG, orgName: '播种默认机构' })
+    expect(r.status).toBe('existing')
+
+    const [u] = await db.select({ role: user.role }).from(user).where(eq(user.email, EMAIL))
+    expect(u.role).toBe('user') // stays demoted — re-seed is a true no-op on an existing role
+  })
+
   it('skips (no throw) when ADMIN_EMAIL / ADMIN_PASSWORD are absent', async () => {
     // Empty strings force the skip branch regardless of the ambient env.
     const r = await seedAdmin({ email: '', password: '', orgId: ORG })

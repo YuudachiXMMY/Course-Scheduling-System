@@ -13,7 +13,7 @@ export type { ProvisionPortalInput }
 // Chinese business errors ("该邮箱已被其他账号占用", "密码至少 8 位", …) survive Next.js's production
 // redaction of thrown Server-Action messages (React #441) and reach the tutor's form intact.
 export type ProvisionResult =
-  | { ok: true; userId: string; email: string }
+  | { ok: true; userId: string; email: string; created: boolean }
   | { ok: false; error: string }
 
 export async function provisionPortalAccount(
