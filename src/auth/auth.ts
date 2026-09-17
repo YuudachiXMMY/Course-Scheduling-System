@@ -72,7 +72,19 @@ export const auth = betterAuth({
     },
   },
   plugins: [
-    organization({ ac, roles: orgRoles, creatorRole: 'owner' }),
+    organization({
+      ac,
+      roles: orgRoles,
+      creatorRole: 'owner',
+      // B42: registration is closed (disableSignUp) and staff roles are granted only through the tiered
+      // RBAC in staff-authz. Tenants are provisioned SERVER-SIDE only — the user.create.after hook above
+      // (self-signup, itself gated) and provision.ts (auth.api.addMember). Without these two guards any
+      // authenticated principal — including a read-only portal parent/student — could POST
+      // /api/auth/organization/create, be written in as creatorRole:'owner', and getAuthContext() would
+      // return role:'owner' on their next request, bypassing closed registration + tiered RBAC entirely.
+      allowUserToCreateOrganization: async () => false,
+      organizationLimit: 0,
+    }),
     adminPlugin({
       ac: adminAc,
       roles: adminRoles,

@@ -105,6 +105,28 @@ export async function approveRescheduleRequestCore(
   if (!req.requestedStartAt || !req.requestedEndAt) throw new Error('申请缺少目标时间')
   await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
 
+  // B19/B20: atomically CLAIM the request (pending → approved) BEFORE moving the lesson. A single
+  // guarded UPDATE is the compare-and-set: if a concurrent approve/reject/cancel already transitioned
+  // it, 0 rows come back and we bail — so we can never move a lesson yet record the request as rejected,
+  // nor fire a duplicate outcome notification (the two-approver race in the review).
+  const [claimed] = (await forTenant(ctx).updateWhere(
+    rescheduleRequest,
+    requestId,
+    eq(rescheduleRequest.status, 'pending'),
+    { status: 'approved', reviewedById: ctx.userId, reviewedAt: new Date() },
+  )) as RescheduleRequestRow[]
+  if (!claimed) throw new Error('申请已处理')
+
+  // Compensating rollback: if the move can't happen, release the claim back to pending so the request is
+  // reviewable again — never a stuck 'approved' whose lesson never actually moved.
+  const releaseClaim = async () => {
+    await forTenant(ctx).update(rescheduleRequest, requestId, {
+      status: 'pending',
+      reviewedById: null,
+      reviewedAt: null,
+    })
+  }
+
   let result
   try {
     result = await rescheduleLessonCore(ctx, {
@@ -113,6 +135,7 @@ export async function approveRescheduleRequestCore(
       endAt: req.requestedEndAt,
     })
   } catch (e) {
+    await releaseClaim()
     // GiST race (23P01) → rescheduleLessonCore throws ConflictError. Treat like a soft conflict:
     // leave the request pending so the reviewer retries with a different time.
     if (e instanceof ConflictError)
@@ -121,6 +144,7 @@ export async function approveRescheduleRequestCore(
   }
 
   if (!result.ok) {
+    await releaseClaim()
     return {
       ok: false,
       error: 'CONFLICT',
@@ -129,27 +153,16 @@ export async function approveRescheduleRequestCore(
     }
   }
 
-  const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
-    status: 'approved',
-    reviewedById: ctx.userId,
-    reviewedAt: new Date(),
-  })
   // P7b: notify the requester + teacher that the reschedule was approved. Side effect only — a
   // notification failure must NOT undo the approval (which already moved the lesson).
   try {
     const movedLesson = (await forTenant(ctx).findById(lesson, req.lessonId)) as
       typeof lesson.$inferSelect | null
-    if (movedLesson)
-      await notifyRescheduleOutcomeCore(
-        ctx,
-        updated as RescheduleRequestRow,
-        movedLesson,
-        'approved',
-      )
+    if (movedLesson) await notifyRescheduleOutcomeCore(ctx, claimed, movedLesson, 'approved')
   } catch (e) {
     console.error('notify reschedule approved failed', e)
   }
-  return { ok: true, request: updated as RescheduleRequestRow, event: result.event }
+  return { ok: true, request: claimed, event: result.event }
 }
 
 // Optional reviewer note (a reject reason). Trimmed + capped to mirror the request's own `reason`
@@ -169,12 +182,20 @@ export async function rejectRescheduleRequestCore(
   if (!req) throw new Error('申请不存在')
   if (req.status !== 'pending') throw new Error('申请已处理')
   await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
-  const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
-    status: 'rejected',
-    reviewedById: ctx.userId,
-    reviewedAt: new Date(),
-    reviewNote: parsedNote && parsedNote.length > 0 ? parsedNote : null,
-  })
+  // B19/B20: atomic compare-and-set — reject only if STILL pending, else 0 rows = a concurrent
+  // transition already won (no double-notify, no contradictory status).
+  const [updated] = (await forTenant(ctx).updateWhere(
+    rescheduleRequest,
+    requestId,
+    eq(rescheduleRequest.status, 'pending'),
+    {
+      status: 'rejected',
+      reviewedById: ctx.userId,
+      reviewedAt: new Date(),
+      reviewNote: parsedNote && parsedNote.length > 0 ? parsedNote : null,
+    },
+  )) as RescheduleRequestRow[]
+  if (!updated) throw new Error('申请已处理')
   // P7b: notify the requester + teacher of the rejection (no lesson move — use the request's lesson
   // for context). Side effect only — never let it throw out of the core.
   try {
@@ -200,8 +221,13 @@ export async function cancelRescheduleRequestCore(
   if (!req) throw new Error('申请不存在')
   if (req.requestedById !== ctx.userId) throw new Error('无权取消该申请')
   if (req.status !== 'pending') throw new Error('申请已处理')
-  const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
-    status: 'canceled',
-  })
+  // B19/B20: atomic compare-and-set — cancel only if STILL pending (a race with an approve/reject loses).
+  const [updated] = (await forTenant(ctx).updateWhere(
+    rescheduleRequest,
+    requestId,
+    eq(rescheduleRequest.status, 'pending'),
+    { status: 'canceled' },
+  )) as RescheduleRequestRow[]
+  if (!updated) throw new Error('申请已处理')
   return updated as RescheduleRequestRow
 }

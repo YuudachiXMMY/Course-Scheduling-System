@@ -1,5 +1,6 @@
 import 'server-only'
 import type { AuthContext } from '@/auth/context'
+import { requireConsent } from '@/auth/portal'
 import { listNotificationsForUserCore } from '@/lib/notification-core'
 
 // Serializable notification row for the client boundary — every Date is an ISO string | null.
@@ -16,6 +17,7 @@ export interface NotificationRow {
 // Row scope is userId-based: the core filters on ctx.userId, so a parent/student sees ONLY their own
 // notifications (created for their portalLink.userId at dispatch time). Newest-first.
 export async function listNotifications(ctx: AuthContext): Promise<NotificationRow[]> {
+  await requireConsent(ctx) // 服务端同意门复检：读个人通知前必须已同意
   const rows = await listNotificationsForUserCore(ctx)
   return rows
     .map((r) => ({

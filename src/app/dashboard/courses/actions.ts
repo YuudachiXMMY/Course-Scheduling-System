@@ -6,9 +6,10 @@ import { revalidatePath } from 'next/cache'
 import { DateTime } from 'luxon'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
-import { actorOwnsSectionById, sectionIdsForActor } from '@/auth/scope'
+import { actorOwnsSectionById, sectionIdsForActor, isWholeTenantActor } from '@/auth/scope'
+import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
-import { course, classSection, sectionMeeting, lesson } from '@/db/schema'
+import { course, classSection, sectionMeeting, lesson, member } from '@/db/schema'
 import { buildWeeklyRrule, type Weekday, WEEKDAYS } from '@/lib/rrule-build'
 import { materializeSection } from '@/lib/materialize'
 import { APP_TIME_ZONE } from '@/lib/timezone'
@@ -229,6 +230,9 @@ async function clearFutureScheduledLessons(ctx: AuthContext, sectionId: string) 
 export async function listSectionMeetings(sectionId: string): Promise<SectionMeeting[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['read'] })
+  // 工作流 E: mirror updateSection/materializeSectionAction — a section-scoped teacher may only read the
+  // weekly schedule of a section they teach, not any same-tenant section by guessed id.
+  if (!(await actorOwnsSectionById(ctx, sectionId))) return []
   return (await forTenant(ctx).select(
     sectionMeeting,
     eq(sectionMeeting.sectionId, sectionId),
@@ -247,6 +251,21 @@ export async function createSection(input: SectionInput): Promise<CreateSectionR
   // courseId must belong to this tenant (composite FK enforces it too, but check for a clean error).
   const parent = await forTenant(ctx).findById(course, data.courseId)
   if (!parent) return { ok: false, error: '课程不存在或不属于当前机构' }
+
+  // B8: never trust the client-supplied teacherId. classSection.teacherId has no DB FK and drives
+  // sectionIdsForActor, so a section-scoped teacher could otherwise plant a section under a colleague's
+  // id (mirrors updateSection's H1, which strips teacherId on edit). Force it to themselves; a
+  // whole-tenant actor may assign a DIFFERENT teacher, but only a real member of this org.
+  if (!isWholeTenantActor(ctx)) {
+    data.teacherId = ctx.userId
+  } else if (data.teacherId !== ctx.userId) {
+    const [m] = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(and(eq(member.userId, data.teacherId), eq(member.organizationId, ctx.tenantId)))
+      .limit(1)
+    if (!m) return { ok: false, error: '指定的教师不属于当前机构' }
+  }
 
   const [row] = await forTenant(ctx).insert(classSection, {
     courseId: data.courseId,

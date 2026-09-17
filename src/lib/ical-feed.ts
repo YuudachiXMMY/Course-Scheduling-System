@@ -48,10 +48,18 @@ export function cardWindow(now = new Date()): { from: Date; to: Date } {
 }
 
 // P3-2 EXCEPTION: NO AuthContext here. The public feed route has already resolved a
-// capability `token` to this `tenantId` (a verified capability). Scope STRICTLY by that
-// tenantId — never by a request param. Do NOT use forTenant() (it requires a principal).
-// This is the ONLY sanctioned public read path; it is confined to this file.
-export async function getFeedLessons(tenantId: string): Promise<FeedLesson[]> {
+// capability `token` to this feed's (`tenantId`, `teacherId`) owner dimension (a verified
+// capability). Scope STRICTLY by those — never by a request param. Do NOT use forTenant()
+// (it requires a principal). This is the ONLY sanctioned public read path; it is confined to this file.
+//
+// 评审 Slice D（B6/B45）收敛：`teacherId` 为 feed 行的归属维度——
+//   - teacherId 非空（section-scoped 教师自己的 feed）→ 只返回该教师所教 section 的课次；
+//   - teacherId 为 null（whole-tenant staff 的租户级 feed）→ 维持全租户课次（既有行为）。
+// 借用已有的 lesson→section inner join，直接按 classSection.teacherId 过滤，避免多取一次 sectionId。
+export async function getFeedLessons(
+  tenantId: string,
+  teacherId?: string | null,
+): Promise<FeedLesson[]> {
   const { from, to } = feedWindow()
   // Join section → course so each event carries a real name ("课程名 · 班级名") instead of the
   // generic "课节". Both FKs are NOT NULL, so the inner joins never drop a lesson row.
@@ -77,6 +85,8 @@ export async function getFeedLessons(tenantId: string): Promise<FeedLesson[]> {
     .where(
       and(
         eq(lesson.tenantId, tenantId),
+        // 归属收敛：非空 teacherId 时只取该教师所教 section 的课次；null → 不加此条件（全租户）。
+        teacherId ? eq(classSection.teacherId, teacherId) : undefined,
         gte(lesson.startAt, from),
         lt(lesson.startAt, to),
         ne(lesson.status, 'canceled'),

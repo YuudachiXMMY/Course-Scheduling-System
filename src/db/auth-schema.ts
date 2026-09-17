@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -102,6 +102,12 @@ export const member = pgTable(
     createdAt: timestamp("created_at").notNull(),
   },
   (table) => [
+    // B43: exactly one membership row per (org, user). The app writes member.role DIRECTLY (bypassing
+    // Better Auth's session-bound setRole), so a retry / race / repeated addMember could otherwise
+    // insert a SECOND row. The RBAC read path (context.ts .limit(1), no ORDER BY) would then return
+    // either row non-deterministically — a demoted admin whose stale 'admin' row survived could still
+    // resolve to admin. NOTE: this is a MANUAL hardening — re-add it if `pnpm auth:generate` regenerates.
+    uniqueIndex("uq_member_org_user").on(table.organizationId, table.userId),
     index("member_organizationId_idx").on(table.organizationId),
     index("member_userId_idx").on(table.userId),
   ],

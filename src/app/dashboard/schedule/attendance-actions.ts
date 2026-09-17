@@ -20,6 +20,10 @@ export interface RosterEntry {
 export async function getLessonRoster(lessonId: string): Promise<RosterEntry[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['read'] })
+  // 工作流 E: mirror the write paths (upsertAttendance/upsertSharedNote/upsertStudentNote) — a
+  // section-scoped teacher or a portal account may only read a lesson they own. requirePermission
+  // checks the coarse role; forTenant checks only the tenant. Neither is a row-level ownership check.
+  if (!(await actorOwnsLesson(ctx, lessonId))) return []
   const lrow = (await forTenant(ctx).findById(lesson, lessonId)) as
     typeof lesson.$inferSelect | null
   if (!lrow) return []
@@ -101,6 +105,8 @@ export async function upsertAttendance(input: z.input<typeof attendanceSchema>) 
 export async function listAttendance(lessonId: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['read'] })
+  // 工作流 E: row-level ownership guard, mirrors upsertAttendance (see getLessonRoster).
+  if (!(await actorOwnsLesson(ctx, lessonId))) return []
   return (await forTenant(ctx).select(
     attendance,
     eq(attendance.lessonId, lessonId),
@@ -119,6 +125,9 @@ export interface LessonNotes {
 export async function getLessonNotes(lessonId: string): Promise<LessonNotes> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['read'] })
+  // 工作流 E: row-level ownership guard, mirrors upsertSharedNote/upsertStudentNote (see getLessonRoster).
+  // Private per-student teacher notes must never leak to a foreign teacher or a portal account.
+  if (!(await actorOwnsLesson(ctx, lessonId))) return { shared: '', perStudent: {} }
   const rows = (await forTenant(ctx).select(
     note,
     eq(note.lessonId, lessonId),

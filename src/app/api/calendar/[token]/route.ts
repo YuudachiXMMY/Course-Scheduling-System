@@ -18,7 +18,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     .limit(1)
   if (!feed) return new Response('Not found', { status: 404 })
 
-  const lessons = await getFeedLessons(feed.tenantId)
+  // 评审 Slice D（B6/B45）：按 feed 行的归属维度取数——feed.teacherId 非空（section-scoped 教师自己的
+  // feed）只含该教师的课次；为 null（whole-tenant feed）维持全租户。切断"任一 token 泄露全租户课表"。
+  const lessons = await getFeedLessons(feed.tenantId, feed.teacherId)
   const host = new URL(env.NEXT_PUBLIC_APP_URL).host
   const body = buildIcs(lessons, { host, name: feed.label ?? '课程排课' })
 
