@@ -1,9 +1,11 @@
 'use server'
 
 import { z } from 'zod'
+import { inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsStudent, studentIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 
@@ -34,7 +36,13 @@ export async function createStudent(input: CreateStudentInput) {
 export async function listStudents(): Promise<Student[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['list'] })
-  return (await forTenant(ctx).select(student)) as Student[] // only THIS tenant's rows
+  // 工作流 E: a teacher sees only students actively enrolled in the sections they teach; whole-tenant
+  // staff see every student. This centralizes the confinement, so every caller (users tabs, courses
+  // page, the section roster picker) inherits it.
+  const scope = await studentIdsForActor(ctx)
+  if (scope === 'all') return (await forTenant(ctx).select(student)) as Student[] // only THIS tenant's rows
+  if (scope.length === 0) return []
+  return (await forTenant(ctx).select(student, inArray(student.id, scope))) as Student[]
 }
 
 export async function getStudent(id: string): Promise<Student | null> {
@@ -53,6 +61,8 @@ export type UpdateStudentInput = z.input<typeof updateStudentSchema>
 export async function updateStudent(id: string, input: UpdateStudentInput) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  // 工作流 E: a section-scoped teacher may only edit a student they teach.
+  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权修改该学生')
   const data = updateStudentSchema.parse(input)
   const [row] = await forTenant(ctx).update(student, id, {
     name: data.name,
@@ -67,6 +77,7 @@ export async function updateStudent(id: string, input: UpdateStudentInput) {
 export async function archiveStudent(id: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权归档该学生')
   const [row] = await forTenant(ctx).update(student, id, { status: 'archived' })
   revalidatePath('/dashboard/students')
   return row
@@ -76,6 +87,7 @@ export async function archiveStudent(id: string) {
 export async function restoreStudent(id: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权恢复该学生')
   const [row] = await forTenant(ctx).update(student, id, { status: 'active' })
   revalidatePath('/dashboard/students')
   return row

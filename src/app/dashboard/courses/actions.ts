@@ -1,11 +1,12 @@
 'use server'
 
 import { z } from 'zod'
-import { and, eq, gte } from 'drizzle-orm'
+import { and, eq, gte, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { DateTime } from 'luxon'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsSectionById, sectionIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { course, classSection, sectionMeeting, lesson } from '@/db/schema'
 import { buildWeeklyRrule, type Weekday, WEEKDAYS } from '@/lib/rrule-build'
@@ -97,7 +98,13 @@ export async function restoreCourse(id: string) {
 export async function listSections(): Promise<ClassSection[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['list'] })
-  return (await forTenant(ctx).select(classSection)) as ClassSection[]
+  // 工作流 E: a teacher sees only the sections they teach; owner/admin/assistant/superadmin see all.
+  const scope = await sectionIdsForActor(ctx)
+  if (scope !== 'all' && scope.length === 0) return []
+  return (await forTenant(ctx).select(
+    classSection,
+    scope === 'all' ? undefined : inArray(classSection.id, scope),
+  )) as ClassSection[]
 }
 
 const weekdayEnum = z.enum(WEEKDAYS as [Weekday, ...Weekday[]])
@@ -253,6 +260,12 @@ export async function createSection(input: SectionInput): Promise<CreateSectionR
 export async function updateSection(id: string, input: SectionInput): Promise<CreateSectionResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['update'] })
+  // 工作流 E: a section-scoped teacher may only edit a section they teach — updateSection rewrites the
+  // recurrence/meetings AND wipes future auto-lessons (clearFutureScheduledLessons below), so a guessed
+  // same-tenant sectionId must never reach it. Checked BEFORE parse so an unowned section never leaks
+  // validation detail. Whole-tenant staff bypass via actorOwnsSectionById.
+  if (!(await actorOwnsSectionById(ctx, id))) return { ok: false, error: '无权修改该班级' }
+
   const parsed = sectionSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
@@ -280,6 +293,8 @@ export async function updateSection(id: string, input: SectionInput): Promise<Cr
 export async function materializeSectionAction(sectionId: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['create'] })
+  // 工作流 E: a section-scoped teacher may only materialize lessons for a section they teach.
+  if (!(await actorOwnsSectionById(ctx, sectionId))) throw new Error('无权生成该班级课节')
   const res = await materializeSection(ctx, sectionId)
   revalidatePath('/dashboard/schedule')
   return res

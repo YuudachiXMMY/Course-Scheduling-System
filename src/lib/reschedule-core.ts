@@ -5,6 +5,7 @@ import type { AuthContext } from '@/auth/context'
 import { forTenant } from '@/db/tenant'
 import { rescheduleRequest, lesson, enrollment } from '@/db/schema'
 import { assertLinkedToStudent } from '@/auth/portal'
+import { actorOwnsSection } from '@/auth/scope'
 import { rescheduleLessonCore } from '@/lib/schedule-core'
 import { ConflictError } from '@/lib/errors'
 import type { CalendarEvent } from '@/app/dashboard/schedule/types'
@@ -76,6 +77,18 @@ export async function createRescheduleRequestCore(
   return row as RescheduleRequestRow
 }
 
+// 工作流 E: reviewing a reschedule request is a teacher action on the request's lesson. The pending
+// queue is tenant-wide, so without this any teacher could approve (move) or reject another teacher's
+// lesson via a guessed requestId. A section-scoped teacher may only review requests against a lesson of
+// a section they teach; whole-tenant staff + superadmin bypass via actorOwnsSection.
+async function assertReviewerOwnsRequestLesson(ctx: AuthContext, lessonId: string): Promise<void> {
+  const target = (await forTenant(ctx).findById(lesson, lessonId)) as
+    | typeof lesson.$inferSelect
+    | null
+  if (!target) throw new Error('课节不存在')
+  if (!actorOwnsSection(ctx, { teacherId: target.teacherId })) throw new Error('无权处理该申请')
+}
+
 // Teacher/admin approve: move the lesson via rescheduleLessonCore (same conflict check + GiST backstop
 // as the calendar UI). Only flip the request to 'approved' when the move succeeds; on a soft CONFLICT
 // or a GiST race, leave it 'pending' and surface the conflict so the reviewer can pick another time.
@@ -90,6 +103,7 @@ export async function approveRescheduleRequestCore(
   if (!req) throw new Error('申请不存在')
   if (req.status !== 'pending') throw new Error('申请已处理')
   if (!req.requestedStartAt || !req.requestedEndAt) throw new Error('申请缺少目标时间')
+  await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
 
   let result
   try {
@@ -139,6 +153,7 @@ export async function rejectRescheduleRequestCore(
   )) as RescheduleRequestRow | null
   if (!req) throw new Error('申请不存在')
   if (req.status !== 'pending') throw new Error('申请已处理')
+  await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
   const [updated] = await forTenant(ctx).update(rescheduleRequest, requestId, {
     status: 'rejected',
     reviewedById: ctx.userId,

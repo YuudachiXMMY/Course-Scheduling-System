@@ -1,5 +1,6 @@
 import 'server-only'
 import type { AuthContext } from '@/auth/context'
+import { actorOwnsStudent } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { progressReport } from '@/db/schema'
 import { getReportData } from '@/lib/report-data'
@@ -24,6 +25,8 @@ export async function createReportDraftCore(
   ctx: AuthContext,
   input: CreateReportInput,
 ): Promise<Report> {
+  // 工作流 E: a section-scoped teacher may only draft a report for a student in a section they teach.
+  if (!(await actorOwnsStudent(ctx, input.studentId))) throw new Error('无权为该学生创建报告')
   const data = await getReportData(ctx, input.studentId, {
     from: input.periodStart,
     to: input.periodEnd,
@@ -51,6 +54,7 @@ export async function updateReportNarrativeCore(
 ): Promise<Report> {
   const existing = (await forTenant(ctx).findById(progressReport, id)) as Report | null
   if (!existing) throw new Error('报告不存在')
+  if (!(await actorOwnsStudent(ctx, existing.studentId))) throw new Error('无权修改该报告')
   if (existing.status === 'approved') throw new Error('报告已定稿，不可修改')
   const [row] = (await forTenant(ctx).update(progressReport, id, { narrative })) as Report[]
   return row
@@ -59,6 +63,7 @@ export async function updateReportNarrativeCore(
 export async function approveReportCore(ctx: AuthContext, id: string): Promise<Report> {
   const existing = (await forTenant(ctx).findById(progressReport, id)) as Report | null
   if (!existing) throw new Error('报告不存在')
+  if (!(await actorOwnsStudent(ctx, existing.studentId))) throw new Error('无权定稿该报告')
   if (existing.status === 'approved') throw new Error('报告已定稿')
   // Freeze the numbers at approval time (M1): recompute once from the live DB over the report's
   // period, then store the snapshot so the finalized PDF is reproducible even if attendance/grades
@@ -86,6 +91,9 @@ export async function getReportViewModel(
 ): Promise<ReportPdfModel | null> {
   const r = (await forTenant(ctx).findById(progressReport, id)) as Report | null
   if (!r) return null
+  // 工作流 E: null (→ route 404) if a section-scoped teacher requests a report whose student is not in
+  // a section they teach — the /api/reports/[reportId]/pdf route bypasses the RSC layout guard.
+  if (!(await actorOwnsStudent(ctx, r.studentId))) return null
   const data =
     r.status === 'approved' && r.statsSnapshot
       ? r.statsSnapshot

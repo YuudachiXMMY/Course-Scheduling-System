@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsStudent } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { shareLink } from '@/db/schema'
 import { getActiveShare, ensureActiveShare } from '@/app/dashboard/students/share-data'
@@ -19,6 +20,8 @@ type Share = typeof shareLink.$inferSelect
 export async function getOrCreateShare(studentId: string): Promise<{ token: string }> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['read'] })
+  // 工作流 E: a section-scoped teacher may only mint a public /s/{token} for a student they teach.
+  if (!(await actorOwnsStudent(ctx, studentId))) throw new Error('无权分享该学生课表')
 
   const share = await ensureActiveShare(ctx, studentId)
   revalidatePath('/dashboard/students')
@@ -30,6 +33,7 @@ export async function getOrCreateShare(studentId: string): Promise<{ token: stri
 export async function rotateShare(studentId: string): Promise<{ token: string }> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, studentId))) throw new Error('无权分享该学生课表')
 
   const existing = await getActiveShare(ctx, studentId)
   const token = nanoid(32)
@@ -52,6 +56,7 @@ export async function rotateShare(studentId: string): Promise<{ token: string }>
 export async function revokeShare(studentId: string): Promise<{ ok: true }> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, studentId))) throw new Error('无权分享该学生课表')
 
   const existing = await getActiveShare(ctx, studentId)
   if (existing) {

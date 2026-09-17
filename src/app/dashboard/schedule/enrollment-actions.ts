@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsSection } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { enrollment, classSection } from '@/db/schema'
 
@@ -22,6 +23,9 @@ export async function enrollStudent(input: z.input<typeof enrollSchema>) {
   const section = (await forTenant(ctx).findById(classSection, data.sectionId)) as
     typeof classSection.$inferSelect | null
   if (!section) throw new Error('班级不存在')
+  // 工作流 E: a teacher may only manage the roster of sections they teach (defence-in-depth — the UI
+  // never offers a foreign section, but a direct action call must not enroll into another teacher's class).
+  if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
 
   const existing = (await forTenant(ctx).select(
     enrollment,
@@ -67,6 +71,14 @@ export async function unenrollStudent(input: z.input<typeof enrollSchema>) {
   requirePermission(ctx, { course: ['update'] })
   const data = enrollSchema.parse(input)
 
+  // 工作流 E: same roster confinement as enrollStudent — a teacher may only drop students from their
+  // own sections. A foreign (or cross-tenant) section id resolves to null → 404-equivalent no-op.
+  const section = (await forTenant(ctx).findById(classSection, data.sectionId)) as
+    | typeof classSection.$inferSelect
+    | null
+  if (!section) throw new Error('班级不存在')
+  if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
+
   const rows = (await forTenant(ctx).select(
     enrollment,
     and(
@@ -85,6 +97,11 @@ export async function unenrollStudent(input: z.input<typeof enrollSchema>) {
 export async function listSectionEnrollments(sectionId: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['read'] })
+  // 工作流 E: a teacher may only read the roster of sections they teach. A foreign/cross-tenant id → [].
+  const section = (await forTenant(ctx).findById(classSection, sectionId)) as
+    | typeof classSection.$inferSelect
+    | null
+  if (!section || !actorOwnsSection(ctx, section)) return []
   return (await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, sectionId), eq(enrollment.status, 'active')),
