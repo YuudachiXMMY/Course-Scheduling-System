@@ -32,6 +32,17 @@ export const env = createEnv({
     // P7a-10: domain for synthesized placeholder emails when provisioning WeChat-only (no-email)
     // parent/student portal accounts (e.g. portal_<nanoid>@portal.local). Use a domain you control.
     PORTAL_EMAIL_DOMAIN: z.string().min(1).default('portal.local'),
+    // Env-seeded default super admin (scripts/seed-admin.ts, run by docker entrypoint after migrate).
+    // ADMIN_EMAIL/ADMIN_PASSWORD are OPTIONAL so the app still boots without them — the seed simply
+    // skips-with-warning. But because self-service signup is disabled, a FIRST deploy that omits them
+    // has nobody who can log in; docker-compose therefore requires them via ${ADMIN_EMAIL:?…}. The
+    // ORG_* + NAME values have sensible defaults and are applied at runtime (seed runs post-build,
+    // where zod .default()s take effect — skipValidation only bypasses defaults during `next build`).
+    ADMIN_EMAIL: z.email().optional(),
+    ADMIN_PASSWORD: z.string().min(8).optional(),
+    ADMIN_NAME: z.string().min(1).default('管理员'),
+    DEFAULT_ORG_NAME: z.string().min(1).default('默认机构'),
+    DEFAULT_ORG_ID: z.string().min(1).default('org_default'),
   },
   client: { NEXT_PUBLIC_APP_URL: z.url() },
   experimental__runtimeEnv: { NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL },

@@ -38,6 +38,14 @@ RUN node_modules/.bin/esbuild scripts/migrate.ts \
       --bundle --platform=node --format=esm --target=node24 \
       --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
       --external:cloudflare:sockets --outfile=dist/migrate.mjs
+# Self-contained admin seed: bundle better-auth + drizzle + postgres into one .mjs. Unlike migrate,
+# seed-admin reuses @/db & @/auth/auth, which transitively `import 'server-only'` — the extra
+# --conditions=react-server resolves that to an empty module (same trick as db:seed:e2e) so the bundle
+# runs under plain Node. The createRequire banner covers CJS deps' dynamic require() (better-auth/postgres).
+RUN node_modules/.bin/esbuild scripts/seed-admin.ts \
+      --bundle --platform=node --format=esm --target=node24 --conditions=react-server \
+      --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
+      --external:cloudflare:sockets --outfile=dist/seed-admin.mjs
 
 FROM build AS test
 # Re-enable env validation for the test run. The build stage set SKIP_ENV_VALIDATION=1 (build
@@ -70,6 +78,7 @@ COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright ./node_modu
 COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright-core ./node_modules/playwright-core
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/dist/migrate.mjs ./dist/migrate.mjs
+COPY --from=build --chown=nextjs:nodejs /app/dist/seed-admin.mjs ./dist/seed-admin.mjs
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=build --chown=nextjs:nodejs /app/docker/entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh

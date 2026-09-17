@@ -48,6 +48,16 @@ services:
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
       MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M3}
       MINIMAX_BASE_URL: ${MINIMAX_BASE_URL:-https://api.minimaxi.com/v1}
+      # Env-seeded default super admin. REQUIRED on first deploy: self-service signup is disabled, so
+      # the entrypoint seed is the ONLY way to get a login — without these it skips and nobody can log
+      # in. Injected here because the standalone runtime does NOT read .env. Re-deploys never change an
+      # existing admin's password. ADMIN_EMAIL/ADMIN_PASSWORD use the same `:?` refuse-to-boot guard as
+      # POSTGRES_PASSWORD/BETTER_AUTH_SECRET above.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?set ADMIN_EMAIL in .env — signup is disabled, the first admin must be seeded}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set a strong ADMIN_PASSWORD in .env}
+      ADMIN_NAME: ${ADMIN_NAME:-管理员}
+      DEFAULT_ORG_NAME: ${DEFAULT_ORG_NAME:-默认机构}
+      DEFAULT_ORG_ID: ${DEFAULT_ORG_ID:-org_default}
     ports:
       - '3000:3000'
   test:

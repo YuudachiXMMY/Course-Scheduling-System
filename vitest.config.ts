@@ -22,6 +22,12 @@ export default defineConfig({
     // called here" under the vitest runner. Scope to `.test.ts` and hard-exclude e2e.
     include: ['tests/**/*.test.ts'],
     exclude: [...configDefaults.exclude, 'tests/e2e/**'],
+    // Run test FILES sequentially. The DB-integration suites all share ONE Postgres and clean up by
+    // broad predicates (e.g. `delete from user where email like 'portal_%@portal.local'`), so under
+    // file parallelism one file's cleanup can delete another file's in-flight rows mid-provision —
+    // Better Auth's non-transactional createUser then hits an account_user_id FK violation. Serialising
+    // files removes that cross-file race deterministically (a few seconds slower, always green).
+    fileParallelism: false,
     // Load .env (DATABASE_URL etc.) so `npm run test` works standalone — vitest,
     // unlike Next, does NOT auto-load .env. In CI / docker the vars are already in
     // the process env and dotenv is a harmless no-op.
