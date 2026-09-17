@@ -41,13 +41,15 @@ function NavLink({
   )
 }
 
-export default function NavLinks() {
+export default function NavLinks({ canManageUsers }: { canManageUsers: boolean }) {
   return (
     <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
       <NavLink href="/dashboard/schedule">排课</NavLink>
-      <NavLink href="/dashboard/users" activePrefix="/dashboard/users">
-        用户管理
-      </NavLink>
+      {canManageUsers && (
+        <NavLink href="/dashboard/users" activePrefix="/dashboard/users">
+          用户管理
+        </NavLink>
+      )}
       <span className="flex items-center gap-2 rounded-full bg-neutral-100 px-3 py-1">
         <NavLink href="/dashboard/teach" activePrefix="/dashboard/teach">
           教务工作台
