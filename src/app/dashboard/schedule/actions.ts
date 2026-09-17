@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, gte, ne } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsLesson, actorOwnsSectionById } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { lesson } from '@/db/schema'
 import {
@@ -42,6 +43,8 @@ export async function rescheduleLessonAction(
 export async function cancelLessonAction(id: string): Promise<{ ok: true }> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
+  // 工作流 E: a section-scoped teacher may only cancel a lesson of a section they teach.
+  if (!(await actorOwnsLesson(ctx, id))) throw new Error('无权取消该课节')
   // Tombstone (P2-8): keep the row so re-materialization can't resurrect it.
   await forTenant(ctx).update(lesson, id, { status: 'canceled' })
   revalidatePath('/dashboard/schedule')
@@ -73,6 +76,8 @@ export async function updateLessonAction(
     return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
   }
   const data = parsed.data
+  // 工作流 E: a section-scoped teacher may only edit a lesson of a section they teach.
+  if (!(await actorOwnsLesson(ctx, data.id))) return { ok: false, error: '无权修改该课节' }
   const [row] = await forTenant(ctx).update(lesson, data.id, {
     location: data.location ?? null,
     meetingUrl: data.meetingUrl ?? null,
@@ -99,6 +104,9 @@ export async function getLessonMeta(lessonId: string): Promise<LessonMeta | null
 export async function cancelSeriesAction(sectionId: string): Promise<{ canceled: number }> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
+  // 工作流 E: a section-scoped teacher may only bulk-cancel a section they teach — this destroys every
+  // future lesson of the section, so a guessed same-tenant sectionId must never reach the loop.
+  if (!(await actorOwnsSectionById(ctx, sectionId))) throw new Error('无权取消该班级排课')
   // Cancel all future, non-canceled lessons of the section — stay on the forTenant spine (no raw db.*).
   const rows = (await forTenant(ctx).select(
     lesson,

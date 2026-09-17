@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsLesson } from '@/auth/scope'
 import { upsertLessonStudentGradeCore } from './data'
 
 // Thin web wrapper over the grade core in data.ts (mirrors reports/actions.ts → report-core):
@@ -23,6 +24,8 @@ export async function upsertLessonStudentGrade(input: z.input<typeof gradeSchema
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
   const data = gradeSchema.parse(input)
+  // 工作流 E: a section-scoped teacher may only grade a lesson they teach.
+  if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权录入该课节成绩')
   const row = await upsertLessonStudentGradeCore(ctx, data)
   revalidatePath('/dashboard/schedule')
   return row

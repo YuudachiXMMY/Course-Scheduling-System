@@ -1,5 +1,6 @@
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsStudent } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
@@ -22,6 +23,12 @@ export async function GET(_req: Request, { params }: { params: Promise<{ student
   const s = (await forTenant(ctx).findById(student, studentId)) as
     typeof student.$inferSelect | null
   if (!s) return new Response('Not found', { status: 404 })
+  // 工作流 E: a plain teacher may only export a student ACTIVELY enrolled in a section they teach — a
+  // guessed same-tenant studentId 404s BEFORE ensureActiveShare, so it can never mint a persistent
+  // public /s/{token} for another teacher's student. This route bypasses the RSC layout guard, so it
+  // must enforce ownership itself; whole-tenant staff + superadmin bypass via actorOwnsStudent. 404
+  // (not 403) so it can't probe student existence.
+  if (!(await actorOwnsStudent(ctx, studentId))) return new Response('Not found', { status: 404 })
 
   const share = await ensureActiveShare(ctx, studentId)
   const shareUrl = `${env.NEXT_PUBLIC_APP_URL}/s/${share.token}`

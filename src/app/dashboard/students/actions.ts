@@ -5,7 +5,7 @@ import { inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
-import { studentIdsForActor } from '@/auth/scope'
+import { actorOwnsStudent, studentIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 
@@ -61,6 +61,8 @@ export type UpdateStudentInput = z.input<typeof updateStudentSchema>
 export async function updateStudent(id: string, input: UpdateStudentInput) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  // 工作流 E: a section-scoped teacher may only edit a student they teach.
+  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权修改该学生')
   const data = updateStudentSchema.parse(input)
   const [row] = await forTenant(ctx).update(student, id, {
     name: data.name,
@@ -75,6 +77,7 @@ export async function updateStudent(id: string, input: UpdateStudentInput) {
 export async function archiveStudent(id: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权归档该学生')
   const [row] = await forTenant(ctx).update(student, id, { status: 'archived' })
   revalidatePath('/dashboard/students')
   return row
@@ -84,6 +87,7 @@ export async function archiveStudent(id: string) {
 export async function restoreStudent(id: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权恢复该学生')
   const [row] = await forTenant(ctx).update(student, id, { status: 'active' })
   revalidatePath('/dashboard/students')
   return row

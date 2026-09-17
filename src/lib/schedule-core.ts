@@ -2,6 +2,7 @@ import 'server-only'
 import { z } from 'zod'
 import { DateTime } from 'luxon'
 import type { AuthContext } from '@/auth/context'
+import { actorOwnsSection } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { lesson, classSection } from '@/db/schema'
 import { checkTeacherConflict } from '@/lib/conflict'
@@ -67,6 +68,9 @@ export async function scheduleLessonCore(
     | typeof classSection.$inferSelect
     | null
   if (!section) throw new Error('班级不存在或不属于当前机构')
+  // 工作流 E: a section-scoped teacher may only schedule into a section they teach (shared by the
+  // dashboard Server Action AND the MCP tool, so both paths are covered here).
+  if (!actorOwnsSection(ctx, section)) throw new Error('无权在该班级排课')
   const teacherId = section.teacherId
   if (!teacherId) throw new Error('班级尚未指定教师，无法排课')
 
@@ -106,6 +110,9 @@ export async function rescheduleLessonCore(
   const existing = (await forTenant(ctx).findById(lesson, data.id)) as typeof lesson.$inferSelect | null
   if (!existing) throw new Error('课节不存在')
   if (!existing.teacherId) throw new Error('课节缺少教师信息')
+  // 工作流 E: a section-scoped teacher may only move a lesson of a section they teach (lesson.teacherId
+  // is denormalized from the section). Also gates approveRescheduleRequestCore, which moves via here.
+  if (!actorOwnsSection(ctx, { teacherId: existing.teacherId })) throw new Error('无权修改该课节')
 
   const check = await checkTeacherConflict(ctx, {
     teacherId: existing.teacherId,

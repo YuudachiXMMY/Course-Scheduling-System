@@ -171,11 +171,14 @@ describe('reschedule-request workflow — DB integration', () => {
       requestedStartAt: at(16),
       requestedEndAt: at(17),
     })
-    const res = await approveRescheduleRequestCore(ctxFor(org, ownerUserId, 'teacher'), req.id)
+    // 工作流 E: a section-scoped teacher may only review a request against a lesson they teach — lessonA's
+    // section is taught by `teacherId`, so the reviewing teacher must be that teacher (owner/admin review
+    // any lesson via the whole-tenant bypass; covered by the ownerCtx() cases below).
+    const res = await approveRescheduleRequestCore(ctxFor(org, teacherId, 'teacher'), req.id)
     expect(res.ok).toBe(true)
     if (res.ok) {
       expect(res.request.status).toBe('approved')
-      expect(res.request.reviewedById).toBe(ownerUserId)
+      expect(res.request.reviewedById).toBe(teacherId)
       expect(res.request.reviewedAt).toBeInstanceOf(Date)
       expect(new Date(res.event.start).getTime()).toBe(at(16).getTime())
     }

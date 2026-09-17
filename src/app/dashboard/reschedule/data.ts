@@ -2,6 +2,7 @@ import 'server-only'
 import { eq } from 'drizzle-orm'
 import type { AuthContext } from '@/auth/context'
 import { forTenant } from '@/db/tenant'
+import { actorOwnsSection, isWholeTenantActor } from '@/auth/scope'
 import { rescheduleRequest, lesson, student } from '@/db/schema'
 
 // Serializable review row for the teacher's pending-requests list. Dates → ISO for the client
@@ -32,11 +33,16 @@ export async function listRescheduleRequests(
     eq(rescheduleRequest.status, status),
   )) as (typeof rescheduleRequest.$inferSelect)[]
 
+  // 工作流 E: the pending queue is tenant-wide, so a section-scoped teacher must only see requests
+  // against lessons they teach; whole-tenant staff + superadmin see the whole tenant's queue.
+  const wholeTenant = isWholeTenantActor(ctx)
+
   const out: ReviewRow[] = []
   for (const r of reqs) {
     const l = (await forTenant(ctx).findById(lesson, r.lessonId)) as
       | typeof lesson.$inferSelect
       | null
+    if (!wholeTenant && !(l && actorOwnsSection(ctx, { teacherId: l.teacherId }))) continue
     const s = r.studentId
       ? ((await forTenant(ctx).findById(student, r.studentId)) as typeof student.$inferSelect | null)
       : null

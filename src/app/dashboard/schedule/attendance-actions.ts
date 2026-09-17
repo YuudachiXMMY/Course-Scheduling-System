@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsLesson } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { attendance, note, enrollment, student, lesson } from '@/db/schema'
 
@@ -67,6 +68,8 @@ export async function upsertAttendance(input: z.input<typeof attendanceSchema>) 
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
   const data = attendanceSchema.parse(input)
+  // 工作流 E: a section-scoped teacher may only record attendance for a lesson they teach.
+  if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权记录该课节考勤')
 
   const existing = (await forTenant(ctx).select(
     attendance,
@@ -141,6 +144,8 @@ export async function upsertSharedNote(input: z.input<typeof sharedNoteSchema>) 
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
   const data = sharedNoteSchema.parse(input)
+  // 工作流 E: a section-scoped teacher may only write a note on a lesson they teach.
+  if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权编辑该课节笔记')
 
   const existing = (await forTenant(ctx).select(
     note,
@@ -176,6 +181,8 @@ export async function upsertStudentNote(input: z.input<typeof studentNoteSchema>
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
   const data = studentNoteSchema.parse(input)
+  // 工作流 E: a section-scoped teacher may only write a comment on a lesson they teach.
+  if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权编辑该课节点评')
 
   const existing = (await forTenant(ctx).select(
     note,
