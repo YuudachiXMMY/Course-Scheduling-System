@@ -8,6 +8,7 @@ import { assertLinkedToStudent } from '@/auth/portal'
 import { actorOwnsSection } from '@/auth/scope'
 import { rescheduleLessonCore } from '@/lib/schedule-core'
 import { ConflictError } from '@/lib/errors'
+import { notifyRescheduleOutcomeCore } from '@/lib/notification-core'
 import type { CalendarEvent } from '@/app/dashboard/schedule/types'
 
 // Phase 7a — reschedule-REQUEST workflow (modeled on report-core): parent/student create a request;
@@ -83,8 +84,7 @@ export async function createRescheduleRequestCore(
 // a section they teach; whole-tenant staff + superadmin bypass via actorOwnsSection.
 async function assertReviewerOwnsRequestLesson(ctx: AuthContext, lessonId: string): Promise<void> {
   const target = (await forTenant(ctx).findById(lesson, lessonId)) as
-    | typeof lesson.$inferSelect
-    | null
+    typeof lesson.$inferSelect | null
   if (!target) throw new Error('课节不存在')
   if (!actorOwnsSection(ctx, { teacherId: target.teacherId })) throw new Error('无权处理该申请')
 }
@@ -134,6 +134,21 @@ export async function approveRescheduleRequestCore(
     reviewedById: ctx.userId,
     reviewedAt: new Date(),
   })
+  // P7b: notify the requester + teacher that the reschedule was approved. Side effect only — a
+  // notification failure must NOT undo the approval (which already moved the lesson).
+  try {
+    const movedLesson = (await forTenant(ctx).findById(lesson, req.lessonId)) as
+      typeof lesson.$inferSelect | null
+    if (movedLesson)
+      await notifyRescheduleOutcomeCore(
+        ctx,
+        updated as RescheduleRequestRow,
+        movedLesson,
+        'approved',
+      )
+  } catch (e) {
+    console.error('notify reschedule approved failed', e)
+  }
   return { ok: true, request: updated as RescheduleRequestRow, event: result.event }
 }
 
@@ -160,6 +175,16 @@ export async function rejectRescheduleRequestCore(
     reviewedAt: new Date(),
     reviewNote: parsedNote && parsedNote.length > 0 ? parsedNote : null,
   })
+  // P7b: notify the requester + teacher of the rejection (no lesson move — use the request's lesson
+  // for context). Side effect only — never let it throw out of the core.
+  try {
+    const reqLesson = (await forTenant(ctx).findById(lesson, req.lessonId)) as
+      typeof lesson.$inferSelect | null
+    if (reqLesson)
+      await notifyRescheduleOutcomeCore(ctx, updated as RescheduleRequestRow, reqLesson, 'rejected')
+  } catch (e) {
+    console.error('notify reschedule rejected failed', e)
+  }
   return updated as RescheduleRequestRow
 }
 

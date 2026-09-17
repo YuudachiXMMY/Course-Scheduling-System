@@ -29,6 +29,9 @@ services:
         NODE_VERSION: 24.21.0-alpine
         # M5: NEXT_PUBLIC_APP_URL is baked in at build time — supply the real public origin here.
         NEXT_PUBLIC_APP_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+        # P7b: VAPID public key is INLINED into the client bundle at build. Public key is safe to
+        # expose. Empty default keeps the build working (Web Push simply stays disabled) when unset.
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -58,6 +61,15 @@ services:
       ADMIN_NAME: ${ADMIN_NAME:-管理员}
       DEFAULT_ORG_NAME: ${DEFAULT_ORG_NAME:-默认机构}
       DEFAULT_ORG_ID: ${DEFAULT_ORG_ID:-org_default}
+      # P7b: reminder cron secret + Web Push (VAPID). All optional (empty default → treated as unset
+      # via emptyStringAsUndefined) so the container boots without a scheduler / push configured.
+      # CRON_SECRET gates POST /api/cron/reminders; VAPID_* enable best-effort push. The
+      # NEXT_PUBLIC_ copy is also injected at runtime for any server path that reads it.
+      CRON_SECRET: ${CRON_SECRET:-}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
     ports:
       - '3000:3000'
   test:

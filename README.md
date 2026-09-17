@@ -87,5 +87,25 @@ docker compose --profile test run --rm test # migrate + tenant-isolation tests i
 
 - App: **Dockerfile build pack**, exposes port `3000`, push-to-deploy, auto Let's Encrypt via Traefik.
 - Postgres: a **separate managed PostgreSQL 17** resource; enable S3 backups (cron `0 */4 * * *`, retention ≥ 7).
-- Env vars set as **secrets**: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`.
+- Env vars set as **secrets**: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`. Optional
+  (Phase 7b, reminders + Web Push): `CRON_SECRET`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, and the
+  build ARG `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (same value as `VAPID_PUBLIC_KEY`; inlined into the client bundle at build).
 - Migrations run on container boot from `docker/entrypoint.sh` (bundled `dist/migrate.mjs`).
+
+### Reminders (Phase 7b — Coolify Scheduled Task)
+
+Lesson reminders (24h + 1h before each lesson) are dispatched by an **external scheduler**, not an in-process
+timer (which would die/duplicate on redeploy). Add a **Scheduled Task** on the App resource that curls the secret-gated
+loopback route:
+
+```
+# every 5 minutes — the dedupeKey makes overlapping/retried runs idempotent
+*/5 * * * *   curl -fsS -X POST -H "x-cron-secret: $CRON_SECRET" http://127.0.0.1:3000/api/cron/reminders
+```
+
+- Generate the secret: `openssl rand -base64 48` → set as `CRON_SECRET`. A missing/mismatched header returns `401`.
+- **Web Push (optional):** generate a VAPID keypair with `npx web-push generate-vapid-keys`, set `VAPID_PUBLIC_KEY` /
+  `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` (server secrets) and `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (build ARG, = public key).
+  Push is best-effort; the in-app notification center is the source of truth and works with VAPID unset.
+- **iOS caveat:** Safari delivers Web Push only to a PWA that has been **installed** (Add to Home Screen) — the UI nudges
+  install first; the in-app center remains the primary channel everywhere.

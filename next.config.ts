@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   // P4-7: keep Turbopack from bundling these — they spawn child binaries / use dynamic require;
   // marked external they load from node_modules at runtime and trace into .next/standalone. qrcode
   // is pure-JS and bundles fine, so it stays out of this list.
-  serverExternalPackages: ['playwright', 'archiver'],
+  serverExternalPackages: ['playwright', 'archiver', 'web-push'],
   // playwright-core loads browsers.json via a runtime-computed path that Next's static output-file
   // tracing can't see, so the traced standalone copy is incomplete and the PNG/ZIP export routes
   // 500 at import ("Cannot find module .../playwright-core/browsers.json"). Force the full packages

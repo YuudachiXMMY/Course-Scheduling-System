@@ -43,9 +43,26 @@ export const env = createEnv({
     ADMIN_NAME: z.string().min(1).default('管理员'),
     DEFAULT_ORG_NAME: z.string().min(1).default('默认机构'),
     DEFAULT_ORG_ID: z.string().min(1).default('org_default'),
+    // P7b: shared secret guarding /api/cron/* (constant-time Bearer compare). OPTIONAL so the app
+    // boots without a scheduler configured — the cron route stays inert (401) until set.
+    CRON_SECRET: z.string().min(32).optional(), // generate: openssl rand -base64 48
+    // P7b: Web Push (VAPID). ALL OPTIONAL — push is best-effort and the app runs fully with them
+    // unset (sendPushToUserCore no-ops; the in-app notification row is always written).
+    // Generate a keypair: npx web-push generate-vapid-keys
+    VAPID_PUBLIC_KEY: z.string().min(1).optional(),
+    VAPID_PRIVATE_KEY: z.string().min(1).optional(),
+    VAPID_SUBJECT: z.string().min(1).default('mailto:admin@example.com'),
   },
-  client: { NEXT_PUBLIC_APP_URL: z.url() },
-  experimental__runtimeEnv: { NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL },
+  client: {
+    NEXT_PUBLIC_APP_URL: z.url(),
+    // P7b: VAPID public key, inlined into the client bundle at build (same value as VAPID_PUBLIC_KEY).
+    // When unset the subscribe button hides and subscribeToPush() returns null.
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: z.string().optional(),
+  },
+  experimental__runtimeEnv: {
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
+  },
   emptyStringAsUndefined: true,
   // DEVIATION: allow container builds (no secrets in the build context) to skip validation.
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,

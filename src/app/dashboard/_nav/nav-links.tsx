@@ -41,7 +41,13 @@ function NavLink({
   )
 }
 
-export default function NavLinks({ canManageUsers }: { canManageUsers: boolean }) {
+export default function NavLinks({
+  canManageUsers,
+  unreadCount,
+}: {
+  canManageUsers: boolean
+  unreadCount: number
+}) {
   return (
     <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
       <NavLink href="/dashboard/schedule">排课</NavLink>
@@ -66,6 +72,17 @@ export default function NavLinks({ canManageUsers }: { canManageUsers: boolean }
       </span>
       <NavLink href="/dashboard/reschedule" activePrefix="/dashboard/reschedule">
         改期申请
+      </NavLink>
+      <NavLink href="/dashboard/notifications" activePrefix="/dashboard/notifications">
+        通知
+        {unreadCount > 0 && (
+          <span
+            aria-hidden
+            className="ml-1 inline-block rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white"
+          >
+            {unreadCount}
+          </span>
+        )}
       </NavLink>
       <NavLink href="/dashboard/calendar">日历订阅</NavLink>
       <LogoutButton />
