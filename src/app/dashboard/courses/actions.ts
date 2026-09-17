@@ -1,11 +1,12 @@
 'use server'
 
 import { z } from 'zod'
-import { and, eq, gte } from 'drizzle-orm'
+import { and, eq, gte, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { DateTime } from 'luxon'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { sectionIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { course, classSection, sectionMeeting, lesson } from '@/db/schema'
 import { buildWeeklyRrule, type Weekday, WEEKDAYS } from '@/lib/rrule-build'
@@ -97,7 +98,13 @@ export async function restoreCourse(id: string) {
 export async function listSections(): Promise<ClassSection[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['list'] })
-  return (await forTenant(ctx).select(classSection)) as ClassSection[]
+  // 工作流 E: a teacher sees only the sections they teach; owner/admin/assistant/superadmin see all.
+  const scope = await sectionIdsForActor(ctx)
+  if (scope !== 'all' && scope.length === 0) return []
+  return (await forTenant(ctx).select(
+    classSection,
+    scope === 'all' ? undefined : inArray(classSection.id, scope),
+  )) as ClassSection[]
 }
 
 const weekdayEnum = z.enum(WEEKDAYS as [Weekday, ...Weekday[]])

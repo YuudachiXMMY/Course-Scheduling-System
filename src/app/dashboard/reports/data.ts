@@ -1,6 +1,7 @@
 import 'server-only'
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { forTenant } from '@/db/tenant'
+import { studentIdsForActor } from '@/auth/scope'
 import { progressReport, student } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 
@@ -25,12 +26,19 @@ const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
 export async function getReportsPageData(
   ctx: AuthContext,
 ): Promise<{ reports: ReportRow[]; students: StudentOption[] }> {
+  // 工作流 E: a teacher's report list + student picker are confined to their roster (students actively
+  // enrolled in the sections they teach); whole-tenant staff see everything. Empty scope → nothing.
+  const scope = await studentIdsForActor(ctx)
+  if (scope !== 'all' && scope.length === 0) return { reports: [], students: [] }
   const rows = (await forTenant(ctx).select(
     progressReport,
+    scope === 'all' ? undefined : inArray(progressReport.studentId, scope),
   )) as (typeof progressReport.$inferSelect)[]
   const students = (await forTenant(ctx).select(
     student,
-    eq(student.status, 'active'),
+    scope === 'all'
+      ? eq(student.status, 'active')
+      : and(eq(student.status, 'active'), inArray(student.id, scope)),
   )) as (typeof student.$inferSelect)[]
 
   const reports: ReportRow[] = rows

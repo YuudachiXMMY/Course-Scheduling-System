@@ -15,6 +15,7 @@ import {
   rescheduleRequest,
 } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
+import { actorOwnsSection } from '@/auth/scope'
 import type { AuthContext } from '@/auth/context'
 import type { ReportRow } from '@/app/dashboard/reports/data'
 
@@ -49,6 +50,10 @@ export async function getSectionHeader(
 ): Promise<{ section: Section; course: Course }> {
   const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
   if (!section) notFound()
+  // 工作流 E: a teacher may only open sections they teach — a guessed/foreign (same-tenant) section id
+  // 404s just like a cross-tenant one. This loader runs in teach/[sectionId]/layout.tsx, so it gates the
+  // ENTIRE per-section workspace (all tabs). owner/admin/assistant/superadmin bypass (actorOwnsSection).
+  if (!actorOwnsSection(ctx, section)) notFound()
   const parent = (await forTenant(ctx).findById(course, section.courseId)) as Course | null
   if (!parent) notFound()
   return { section, course: parent }

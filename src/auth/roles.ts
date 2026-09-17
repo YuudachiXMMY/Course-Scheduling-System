@@ -13,6 +13,11 @@ export type StaffRole = (typeof STAFF_ROLES)[number]
 // The "admin tier" — a member whose management is reserved for a super admin (see assertCanManageRole).
 export const ADMIN_TIER_ROLES = ['owner', 'admin'] as const
 
+// The staff roles that see the WHOLE tenant's sections/students: owner/admin manage everything,
+// assistant is a tenant-wide helper. A member holding ONLY the teacher role is instead confined to the
+// sections they teach (see src/auth/scope.ts); the platform superadmin bypasses this at the ctx level.
+export const WHOLE_TENANT_ROLES = ['owner', 'admin', 'assistant'] as const
+
 const ROLE_LABELS: Record<string, string> = {
   owner: '负责人',
   admin: '管理员',
@@ -36,4 +41,20 @@ export function roleLabel(role: string): string {
 export function isAdminRole(role: string): boolean {
   const roles = role.split(',').map((r) => r.trim())
   return roles.some((r) => (ADMIN_TIER_ROLES as readonly string[]).includes(r))
+}
+
+// True if ANY of the member's (comma-multi) roles grants whole-tenant visibility (owner/admin/assistant).
+export function hasWholeTenantRole(role: string): boolean {
+  const roles = role.split(',').map((r) => r.trim())
+  return roles.some((r) => (WHOLE_TENANT_ROLES as readonly string[]).includes(r))
+}
+
+// True if the member is confined to the sections they teach: holds the teacher role and NO wider staff
+// role. (parent/student never reach a dashboard scope, so they classify as false here.)
+export function isSectionScopedRole(role: string): boolean {
+  if (hasWholeTenantRole(role)) return false
+  return role
+    .split(',')
+    .map((r) => r.trim())
+    .includes('teacher')
 }

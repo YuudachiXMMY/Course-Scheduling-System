@@ -1,9 +1,11 @@
 'use server'
 
 import { z } from 'zod'
+import { inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { studentIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { progressReport } from '@/db/schema'
 import {
@@ -103,5 +105,12 @@ export async function approveReport(id: string): Promise<ReportResult> {
 export async function listReports(): Promise<Report[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { report: ['list'] })
-  return (await forTenant(ctx).select(progressReport)) as Report[]
+  // 工作流 E: confine a teacher to their roster's reports (same scope as getReportsPageData) — this
+  // action has no caller today, but scoping it keeps the confinement airtight if it is ever wired up.
+  const scope = await studentIdsForActor(ctx)
+  if (scope !== 'all' && scope.length === 0) return []
+  return (await forTenant(ctx).select(
+    progressReport,
+    scope === 'all' ? undefined : inArray(progressReport.studentId, scope),
+  )) as Report[]
 }

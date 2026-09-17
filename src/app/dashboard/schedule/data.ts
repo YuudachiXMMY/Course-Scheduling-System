@@ -2,6 +2,7 @@ import 'server-only'
 import { and, eq, gte, inArray, lt, ne } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { forTenant } from '@/db/tenant'
+import { sectionIdsForActor } from '@/auth/scope'
 import { lesson, classSection, course, enrollment, student } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { AuthContext } from '@/auth/context'
@@ -16,9 +17,18 @@ export async function listLessonsInRange(
   const from = range?.from ?? now.startOf('month').minus({ weeks: 1 }).toUTC().toJSDate()
   const to = range?.to ?? now.endOf('month').plus({ weeks: 1 }).toUTC().toJSDate()
 
+  // 工作流 E: confine lessons to the actor's sections (teacher → only their own sections' lessons).
+  // and() ignores an undefined operand, so 'all' adds no predicate; an empty section list short-circuits.
+  const scope = await sectionIdsForActor(ctx)
+  if (scope !== 'all' && scope.length === 0) return []
   const rows = (await forTenant(ctx).select(
     lesson,
-    and(gte(lesson.startAt, from), lt(lesson.startAt, to), ne(lesson.status, 'canceled')),
+    and(
+      gte(lesson.startAt, from),
+      lt(lesson.startAt, to),
+      ne(lesson.status, 'canceled'),
+      scope === 'all' ? undefined : inArray(lesson.sectionId, scope),
+    ),
   )) as (typeof lesson.$inferSelect)[]
   if (rows.length === 0) return []
 

@@ -1,9 +1,11 @@
 'use server'
 
 import { z } from 'zod'
+import { inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { studentIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 
@@ -34,7 +36,13 @@ export async function createStudent(input: CreateStudentInput) {
 export async function listStudents(): Promise<Student[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['list'] })
-  return (await forTenant(ctx).select(student)) as Student[] // only THIS tenant's rows
+  // 工作流 E: a teacher sees only students actively enrolled in the sections they teach; whole-tenant
+  // staff see every student. This centralizes the confinement, so every caller (users tabs, courses
+  // page, the section roster picker) inherits it.
+  const scope = await studentIdsForActor(ctx)
+  if (scope === 'all') return (await forTenant(ctx).select(student)) as Student[] // only THIS tenant's rows
+  if (scope.length === 0) return []
+  return (await forTenant(ctx).select(student, inArray(student.id, scope))) as Student[]
 }
 
 export async function getStudent(id: string): Promise<Student | null> {
