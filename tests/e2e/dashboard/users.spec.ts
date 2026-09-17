@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '../fixtures/test'
 
-// 用户管理 (/dashboard/users) — owner storageState → full student:* + member:create, so both tabs show.
-// Every test is self-contained: it creates its own uniquely-named rows and asserts only on those,
-// never on global counts (the suite shares one DB, workers:1).
+// 用户管理 (/dashboard/users) — owner storageState → member:create, so all four management tabs show
+// (owner also passes the admin+ page gate). Every test is self-contained: it creates its own uniquely-named
+// rows and asserts only on those, never on global counts (the suite shares one DB, workers:1).
 
 function portalAccountsList(page: Page) {
   return page.locator('h3', { hasText: '门户账号' }).locator('xpath=./following-sibling::ul[1]')
@@ -10,15 +10,34 @@ function portalAccountsList(page: Page) {
 function accountRow(page: Page, name: string) {
   return portalAccountsList(page).locator('li').filter({ hasText: name })
 }
+function teachersList(page: Page) {
+  return page.locator('h3', { hasText: '教师 / 助教' }).locator('xpath=./following-sibling::ul[1]')
+}
 
 test.describe('用户管理', () => {
-  test('页面含用户管理标题与学生/家长两个 Tab', async ({ page }) => {
+  test('页面含用户管理标题与学生/家长/教师/管理员四个 Tab', async ({ page }) => {
     await page.goto('/dashboard/users')
     await expect(page.getByRole('heading', { name: '用户管理', exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: '学生', exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: '家长', exact: true })).toBeVisible()
+    for (const tab of ['学生', '家长', '教师', '管理员']) {
+      await expect(page.getByRole('link', { name: tab, exact: true })).toBeVisible()
+    }
     // Default tab is students → its section heading renders.
     await expect(page.getByRole('heading', { name: '学生', exact: true })).toBeVisible()
+  })
+
+  test('教师 Tab 新建教师账号并显示登录邮箱', async ({ page }) => {
+    const name = `E2E临时-教师-${Date.now()}`
+    const email = `e2e_teacher_${Date.now()}@x.com`
+    await page.goto('/dashboard/users?tab=teachers')
+    await page.getByRole('button', { name: '新建账号' }).click()
+    await page.getByPlaceholder('显示名').fill(name)
+    await page.getByPlaceholder('登录邮箱').fill(email)
+    await page.getByPlaceholder('密码（至少 8 位）').fill('E2eStaffPw1')
+    await page.getByRole('button', { name: '新建', exact: true }).click()
+
+    await expect(page.getByText(/已新建账号！登录邮箱：/)).toBeVisible()
+    // The new teacher surfaces in the 教师 / 助教 list (router.refresh re-fetches).
+    await expect(teachersList(page).locator('li').filter({ hasText: name })).toBeVisible()
   })
 
   test('家长 Tab 新建门户账号并显示登录邮箱', async ({ page }) => {

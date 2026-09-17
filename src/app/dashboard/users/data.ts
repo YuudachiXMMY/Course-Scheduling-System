@@ -42,3 +42,30 @@ export async function listPortalUsers(ctx: AuthContext): Promise<PortalUserRow[]
   }
   return portalUsers.map((u) => ({ ...u, students: linksByUser.get(u.userId) ?? [] }))
 }
+
+export type StaffRow = {
+  userId: string
+  name: string
+  email: string
+  role: string
+  banned: boolean
+}
+
+// List every STAFF login (owner/admin/teacher/assistant) in the org — the inverse of listPortalUsers.
+// Same member-direct query (member is keyed by organizationId = tenantId), filtered by `!isPortalRole`
+// so a comma-multi role is classified correctly (an inArray on member.role would miss composites). The
+// `banned` flag drives the 停用/启用 control on the teachers/admins tabs.
+export async function listStaff(ctx: AuthContext): Promise<StaffRow[]> {
+  const rows = await db
+    .select({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      role: member.role,
+      banned: user.banned,
+    })
+    .from(member)
+    .innerJoin(user, eq(user.id, member.userId))
+    .where(eq(member.organizationId, ctx.tenantId))
+  return rows.filter((r) => !isPortalRole(r.role)).map((r) => ({ ...r, banned: r.banned ?? false }))
+}
