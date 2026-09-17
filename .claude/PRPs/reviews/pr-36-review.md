@@ -75,3 +75,31 @@ None（无本 PR 引入的可利用高危;下方 LOW#1 的写路径越权为 pre
 | `src/app/dashboard/schedule/enrollment-actions.ts` | Modified（花名册写路径归属守卫） |
 | `src/app/dashboard/teach/[sectionId]/data.ts` | Modified（`getSectionHeader` 归属守卫） |
 | `tests/rbac-teacher-scope.test.ts` | Added（6 例 DB 集成测试） |
+
+---
+
+## 修复记录（2026-09-17，随后追加提交）
+
+在 `solve medium` 修复过程中,对最终 diff 做了**对抗式独立核验**(3 视角并行:可绕过性 / 回归 / 测试有效性),核验确认 M1 的 `requireOwnedSection` 正确且无绕过、无回归,但**发现了两处此前未覆盖的同类高危路径**(与本 feature 同源、由 teach export-panel 直接链接的 API 路由,绕过 RSC layout 守卫),已一并闭合。
+
+### M1 — 已解决
+新增 `requireOwnedSection(ctx, id)` 数据层守卫(findById + `actorOwnsSection` + `notFound()`,返回 section 复用),下沉进 `getSectionHeader` / `getSectionRoster` / `getSectionLessons` / `getSectionPendingRescheduleCount`;`getSectionReports` 加**显式自守卫**(不再仅靠 `getSectionRoster` 传递);`getSectionLessonNotes` 按 lessonIds、下游于已守卫的 `getSectionLessons`,补注释。归属校验不再仅依赖 layout 单一收口,直调加载器也 404。
+
+### 🔴 新发现并修复的两处 HIGH（对抗式核验产出,超出原 M1/M2 范围）
+- **`GET /api/reports/section/[sectionId]/route.ts`** — 仅 `report:['read']` + 租户存在性检查,无 `actorOwnsSection`。普通教师(角色含 `report:read`)改 URL 里的 sectionId 即可下载他班学生的**已定稿报告 PDF**。**修复**:findById 后加 `if (!actorOwnsSection(ctx, section)) return 404`。
+- **`GET /api/export/section/[sectionId]/route.ts`** — 仅 `student:['read'],lesson:['read']` + 租户存在性检查。教师可读他班花名册+课表(PNG/ICS),且第 66 行 `ensureActiveShare` 在 GET 上为他班学生**铸造持久公开分享 token**。**修复**:同样加 `actorOwnsSection` 404 守卫。
+- 二者均返回 404(非 403)以不泄露 section 存在性;`owner/admin/assistant/superadmin` 经 `actorOwnsSection` 放行。
+
+### M2 — 已解决（覆盖扩展至 12 例)
+`tests/rbac-teacher-scope.test.ts` 由 6 例扩至 12 例:
+- 数据层守卫:`getSectionHeader`/`getSectionRoster`/`getSectionLessons`/`getSectionReports`/`getSectionPendingRescheduleCount` — 本人 section 解析、猜他班 id → `NEXT_NOT_FOUND`、owner+超管放行(seed 一节课使 lessons 正向断言非空)。
+- **写路径守卫**(lens-3 标记的最高风险未覆盖面):`enrollStudent`/`unenrollStudent` 对他班 → `无权管理该班级`;`listSectionEnrollments` 他班 → `[]`、本班 → 真实花名册。经 `vi.mock('@/auth/context')`(`importActual` 保留 `AuthError`,仅覆盖 `requireAuthContext`)驱动 'use server' action。
+- `next/navigation`/`next/cache` 以确定性 mock 解耦魔改 Next 运行时。
+
+### 未修复(明确文档化为后续)
+- **API 路由缺 handler 级测试**:两个 route 因导入重型 puppeteer/PDF 依赖(`renderCardPng`/`renderReportPdf`),在 vitest 单测里加载不现实;守卫复用的 `actorOwnsSection` 已单测,与本仓库「测数据层、不测 route handler」惯例一致。
+- **`getSectionLessonNotes` 同租户他班**:该加载器按 lessonIds、结构上无法在本层校验 section 归属,安全性依赖调用方 `lessons-panel` 从已守卫的 `getSectionLessons` 取 lessonIds(注释锁定,未加测试)。
+- **grade/note 写路径**(原 L1)、`lesson/materialize/reschedule` 更广写路径授权审计仍作专项 follow-up。
+
+### 验证(修复后重跑)
+typecheck 0 · lint 0 · **151 tests 全绿**(22 文件,+6 新增)· `next build` 成功。

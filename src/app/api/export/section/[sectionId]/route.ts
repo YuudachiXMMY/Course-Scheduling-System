@@ -2,6 +2,7 @@ import { ZipArchive } from 'archiver'
 import { and, eq, inArray } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { actorOwnsSection } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { classSection, enrollment, student } from '@/db/schema'
 import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
@@ -33,6 +34,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   const section = (await forTenant(ctx).findById(classSection, sectionId)) as
     typeof classSection.$inferSelect | null
   if (!section) return new Response('Not found', { status: 404 })
+  // 工作流 E: a plain teacher may only export sections they teach — a guessed same-tenant sectionId 404s
+  // (never another teacher's roster, schedules, or a fresh public /s/{token} minted for their students).
+  // This route bypasses the RSC layout guard, so it must enforce ownership itself; whole-tenant staff +
+  // superadmin bypass via actorOwnsSection. 404 (not 403) so it can't probe section existence.
+  if (!actorOwnsSection(ctx, section)) return new Response('Not found', { status: 404 })
 
   const enrollments = (await forTenant(ctx).select(
     enrollment,

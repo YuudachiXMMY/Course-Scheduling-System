@@ -42,24 +42,32 @@ export interface SectionStudent {
   name: string
 }
 
-// The `[sectionId]` segment guard: a stale / cross-tenant id resolves to teach/not-found.tsx (which
-// renders inside teach/layout.tsx, so the rail is preserved).
+// 工作流 E — per-section access guard at the DATA layer (not only teach/[sectionId]/layout.tsx). Loads the
+// section and 404s unless the actor owns it: a teacher → only sections they teach; owner/admin/assistant/
+// superadmin → any (actorOwnsSection). Every per-section loader below calls this so ownership is enforced
+// INDEPENDENTLY of Next.js layout/child render ordering — a guessed (same-tenant) or stale/cross-tenant id
+// can never leak a roster/lessons/reports through a loader reached outside the layout, and the guard holds
+// even on this repo's patched Next.js. Returns the section so callers needing it (term dates, course
+// title) don't re-query. A stale / cross-tenant id resolves to teach/not-found.tsx (rendered inside
+// teach/layout.tsx, so the rail is preserved).
+async function requireOwnedSection(ctx: AuthContext, id: string): Promise<Section> {
+  const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
+  if (!section || !actorOwnsSection(ctx, section)) notFound()
+  return section
+}
+
 export async function getSectionHeader(
   ctx: AuthContext,
   id: string,
 ): Promise<{ section: Section; course: Course }> {
-  const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
-  if (!section) notFound()
-  // 工作流 E: a teacher may only open sections they teach — a guessed/foreign (same-tenant) section id
-  // 404s just like a cross-tenant one. This loader runs in teach/[sectionId]/layout.tsx, so it gates the
-  // ENTIRE per-section workspace (all tabs). owner/admin/assistant/superadmin bypass (actorOwnsSection).
-  if (!actorOwnsSection(ctx, section)) notFound()
+  const section = await requireOwnedSection(ctx, id)
   const parent = (await forTenant(ctx).findById(course, section.courseId)) as Course | null
   if (!parent) notFound()
   return { section, course: parent }
 }
 
 export async function getSectionRoster(ctx: AuthContext, id: string): Promise<SectionStudent[]> {
+  await requireOwnedSection(ctx, id) // 工作流 E: enforce section ownership here, not only via the layout
   const enrolls = (await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, id), eq(enrollment.status, 'active')),
@@ -79,7 +87,7 @@ export async function getSectionRoster(ctx: AuthContext, id: string): Promise<Se
 // lessons stay reachable from the 排课 tab — a future-only list would strand the drawer's retrospective
 // features. Canceled tombstones are hidden.
 export async function getSectionLessons(ctx: AuthContext, id: string): Promise<SectionLesson[]> {
-  const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
+  const section = await requireOwnedSection(ctx, id) // 工作流 E: ownership guard (non-null section)
   const now = DateTime.now().setZone(APP_TIME_ZONE)
   // term_start/end_date are stored at UTC midnight but the class runs in America/Toronto, so a raw
   // termEndDate upper bound would clip the final day's afternoon/evening lessons. Mirror
@@ -93,10 +101,10 @@ export async function getSectionLessons(ctx: AuthContext, id: string): Promise<S
     )
     return (edge === 'start' ? local.startOf('day') : local.endOf('day')).toUTC().toJSDate()
   }
-  const from = section?.termStartDate
+  const from = section.termStartDate
     ? localDayBound(section.termStartDate, 'start')
     : now.minus({ days: 60 }).toUTC().toJSDate()
-  const to = section?.termEndDate
+  const to = section.termEndDate
     ? localDayBound(section.termEndDate, 'end')
     : now.plus({ days: 120 }).toUTC().toJSDate()
   const rows = (await forTenant(ctx).select(
@@ -108,9 +116,8 @@ export async function getSectionLessons(ctx: AuthContext, id: string): Promise<S
       lte(lesson.startAt, to),
     ),
   )) as (typeof lesson.$inferSelect)[]
-  const parentTitle = section
-    ? (((await forTenant(ctx).findById(course, section.courseId)) as Course | null)?.title ?? null)
-    : null
+  const parentTitle =
+    ((await forTenant(ctx).findById(course, section.courseId)) as Course | null)?.title ?? null
   const nowMs = Date.now()
   return rows
     .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
@@ -134,6 +141,7 @@ export async function getSectionPendingRescheduleCount(
   ctx: AuthContext,
   id: string,
 ): Promise<number> {
+  await requireOwnedSection(ctx, id) // 工作流 E: ownership guard (called from the layout, but self-sufficient)
   const lessons = (await forTenant(ctx).select(
     lesson,
     eq(lesson.sectionId, id),
@@ -153,6 +161,7 @@ export async function getSectionPendingRescheduleCount(
 // THIS section's active roster. `report.sectionId` is nullable provenance — we filter by roster
 // membership, not by that column, so a student's report shows under every section they're enrolled in.
 export async function getSectionReports(ctx: AuthContext, id: string): Promise<ReportRow[]> {
+  await requireOwnedSection(ctx, id) // 工作流 E: self-contained ownership guard, not only transitive via getSectionRoster
   const roster = await getSectionRoster(ctx, id)
   const rosterIds = new Set(roster.map((r) => r.id))
   if (rosterIds.size === 0) return []
@@ -196,7 +205,8 @@ export interface LessonNoteRow {
 // Load the note/grade matrix for a whole section's lessons in one pass. note & grade both hang off
 // lessonId (shared note = studentId null; see upsertSharedNote), so we batch by lessonIds with
 // inArray (mirrors getSectionPendingRescheduleCount / report-data.ts). lessonIds comes from the
-// caller's getSectionLessons result — no re-query of the lesson table.
+// caller's getSectionLessons result — no re-query of the lesson table, and section ownership is already
+// enforced there (requireOwnedSection), so these lessonIds are always the actor's own section's.
 export async function getSectionLessonNotes(
   ctx: AuthContext,
   lessonIds: string[],
