@@ -4,6 +4,7 @@ import { db } from '@/db'
 import { course, classSection, student, enrollment, lesson } from '@/db/schema'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { sectionIdsForActor, studentIdsForActor, actorOwnsSection } from '@/auth/scope'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // The per-section loaders in teach/[sectionId]/data.ts 404 via next/navigation's notFound() for a foreign
 // section. Mock it to a deterministic throw (mirrors report-db.test.ts's vi.mock) so the DATA-LAYER guard
@@ -80,10 +81,12 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
+  await unseedOrg(org)
 }
 
 beforeAll(async () => {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_scope', tenantId: org, title: '作用域课程' })
   await db.insert(classSection).values([
     { id: sA1, tenantId: org, courseId: 'c_scope', name: 'A1', teacherId: teacherA, capacity: 5 },

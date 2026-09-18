@@ -5,10 +5,11 @@ import { forTenant } from '@/db/tenant'
 import { pushSubscription } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import { saveSubscriptionCore } from '@/lib/push-core'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // SEC2 + CR8: saveSubscriptionCore must be an ownership-scoped, ATOMIC upsert keyed by
-// (tenant, USER, endpoint). push_subscription has NO foreign keys, so this suite only needs the
-// domain table itself — a unique tenantId keeps its rows isolated from other suites.
+// (tenant, USER, endpoint). push_subscription's only FK is DB1's tenant_id -> organization, so this
+// suite seeds one org and keys its rows on a unique tenantId to stay isolated from other suites.
 const ctxFor = (tenantId: string, userId: string): AuthContext => ({
   tenantId,
   userId,
@@ -40,10 +41,14 @@ const rowsForEndpoint = () =>
 
 const cleanup = async () => {
   await db.delete(pushSubscription).where(eq(pushSubscription.tenantId, org))
+  await unseedOrg(org)
 }
 
 describe('saveSubscriptionCore — 订阅归属与原子 upsert (SEC2/CR8)', () => {
-  beforeAll(cleanup)
+  beforeAll(async () => {
+    await cleanup()
+    await seedOrg(org)
+  })
   afterAll(cleanup)
 
   it('SEC2：同租户另一用户提交相同 endpoint 不能接管/删除他人的订阅行', async () => {

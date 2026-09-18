@@ -26,16 +26,19 @@ export const enrollment = pgTable(
     uniqueIndex('uq_enrollment_student_section')
       .on(t.tenantId, t.studentId, t.sectionId)
       .where(sql`${t.status} = 'active'`),
+    // DB6: enrollment carries drop/status history — align with the H1 retention policy (attendance /
+    // grade / payment all use restrict). Deleting a student or section that still has enrollment rows is
+    // now blocked; retire via soft-delete (student.status='archived' / classSection.isArchived) instead.
     foreignKey({
       columns: [t.tenantId, t.studentId],
       foreignColumns: [student.tenantId, student.id],
       name: 'fk_enrollment_student',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     foreignKey({
       columns: [t.tenantId, t.sectionId],
       foreignColumns: [classSection.tenantId, classSection.id],
       name: 'fk_enrollment_section',
-    }).onDelete('cascade'),
+    }).onDelete('restrict'),
     index('idx_enrollment_tenant_section').on(t.tenantId, t.sectionId),
     index('idx_enrollment_tenant_student').on(t.tenantId, t.studentId),
   ],

@@ -119,9 +119,12 @@ export async function listSections(): Promise<ClassSection[]> {
   // 工作流 E: a teacher sees only the sections they teach; owner/admin/assistant/superadmin see all.
   const scope = await sectionIdsForActor(ctx)
   if (scope !== 'all' && scope.length === 0) return []
+  // DB4: exclude soft-deleted (archived) sections from the browse list. Direct-by-id reads
+  // (findById) intentionally keep returning archived rows so they can still be managed/unarchived.
+  const notArchived = eq(classSection.isArchived, false)
   return await forTenant(ctx).select(
     classSection,
-    scope === 'all' ? undefined : inArray(classSection.id, scope),
+    scope === 'all' ? notArchived : and(notArchived, inArray(classSection.id, scope)),
   )
 }
 

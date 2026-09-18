@@ -22,6 +22,7 @@ vi.mock('@/auth/context', async (importActual) => ({
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 import { createStudent } from '@/app/dashboard/students/actions'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 const asActor = (ctx: AuthContext) => vi.mocked(requireAuthContext).mockResolvedValue(ctx)
 
@@ -49,10 +50,12 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
+  await unseedOrg(org)
 }
 
 beforeAll(async () => {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_selfcreated', tenantId: org, title: '自建学生课程' })
   await db.insert(classSection).values({
     id: sA1,

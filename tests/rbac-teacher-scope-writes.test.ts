@@ -16,6 +16,7 @@ import {
 } from '@/db/schema'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { actorOwnsStudent, actorOwnsLesson, actorOwnsSectionById } from '@/auth/scope'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // 工作流 E — review follow-up (PR #36): the PR closed READ scoping + the roster write path + two API
 // export routes, but left the broad WRITE surface (scheduling, share-token minting, student edits,
@@ -99,10 +100,12 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
+  await unseedOrg(org)
 }
 
 beforeAll(async () => {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_writes', tenantId: org, title: '写路径课程' })
   await db.insert(classSection).values([
     { id: sA1, tenantId: org, courseId: 'c_writes', name: 'A1', teacherId: teacherA, capacity: 5 },

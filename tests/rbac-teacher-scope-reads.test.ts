@@ -34,6 +34,7 @@ import { getLessonMeta } from '@/app/dashboard/schedule/actions'
 import { listSectionMeetings, createSection } from '@/app/dashboard/courses/actions'
 import { getStudent } from '@/app/dashboard/students/actions'
 import { upsertLessonStudentGrade } from '@/app/dashboard/teach/[sectionId]/grade-actions'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 const asActor = (ctx: AuthContext) => vi.mocked(requireAuthContext).mockResolvedValue(ctx)
 
@@ -68,10 +69,12 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
+  await unseedOrg(org)
 }
 
 beforeAll(async () => {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_reads', tenantId: org, title: '读路径课程' })
   await db.insert(classSection).values([
     { id: sA1, tenantId: org, courseId: 'c_reads', name: 'A1', teacherId: teacherA, capacity: 5 },

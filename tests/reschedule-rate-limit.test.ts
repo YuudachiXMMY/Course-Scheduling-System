@@ -12,10 +12,8 @@ import {
   portalLink,
 } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
-import {
-  createRescheduleRequestCore,
-  cancelRescheduleRequestCore,
-} from '@/lib/reschedule-core'
+import { createRescheduleRequestCore, cancelRescheduleRequestCore } from '@/lib/reschedule-core'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // SEC5: createRescheduleRequestCore caps the number of OPEN (pending) requests a single portal user
 // may hold (MAX_OPEN_RESCHEDULE_REQUESTS_PER_USER = 5) so an untrusted parent/student can't spam the
@@ -55,11 +53,13 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
+  await unseedOrg(org)
 }
 
 describe('createRescheduleRequestCore — 每用户待处理配额 (SEC5)', () => {
   beforeAll(async () => {
     await cleanup()
+    await seedOrg(org)
     const ctx = ownerCtx()
     const [c] = await forTenant(ctx).insert(course, { title: '数学' })
     const [sec] = await forTenant(ctx).insert(classSection, {
