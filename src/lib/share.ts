@@ -64,7 +64,7 @@ export function withSectionTitles<T extends SliceableLesson>(
 
 // Build the sectionId → "课程名 · 班级名" map for a set of sections, on the PUBLIC (token-scoped) db
 // path. Scope by the token-resolved tenantId only — never a request param (mirrors the reads below).
-export async function courseTitlesForSections(
+async function courseTitlesForSections(
   tenantId: string,
   sectionIds: string[],
 ): Promise<Map<string, string>> {

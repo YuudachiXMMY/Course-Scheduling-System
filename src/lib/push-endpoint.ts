@@ -52,4 +52,3 @@ export const saveSubscriptionSchema = z.object({
   p256dh: z.string().trim().regex(BASE64URL, 'p256dh 格式无效').min(20).max(200),
   auth: z.string().trim().regex(BASE64URL, 'auth 格式无效').min(16).max(100),
 })
-export type SaveSubscriptionInput = z.infer<typeof saveSubscriptionSchema>

@@ -11,7 +11,7 @@ export const test = base.extend<{ seed: SeedData }>({
 })
 
 export { expect }
-export type { Page, Locator, Browser, BrowserContext } from '@playwright/test'
+export type { Page } from '@playwright/test'
 
 /**
  * Open a browser context already signed in as `role` (via the storageState minted in global-setup).

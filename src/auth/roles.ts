@@ -8,15 +8,14 @@
 // The four staff (dashboard-login) org roles, in descending privilege. Portal roles (parent/student)
 // are intentionally excluded — they are managed on the 家长 tab, not here.
 export const STAFF_ROLES = ['owner', 'admin', 'teacher', 'assistant'] as const
-export type StaffRole = (typeof STAFF_ROLES)[number]
 
 // The "admin tier" — a member whose management is reserved for a super admin (see assertCanManageRole).
-export const ADMIN_TIER_ROLES = ['owner', 'admin'] as const
+const ADMIN_TIER_ROLES = ['owner', 'admin'] as const
 
 // The staff roles that see the WHOLE tenant's sections/students: owner/admin manage everything,
 // assistant is a tenant-wide helper. A member holding ONLY the teacher role is instead confined to the
 // sections they teach (see src/auth/scope.ts); the platform superadmin bypasses this at the ctx level.
-export const WHOLE_TENANT_ROLES = ['owner', 'admin', 'assistant'] as const
+const WHOLE_TENANT_ROLES = ['owner', 'admin', 'assistant'] as const
 
 const ROLE_LABELS: Record<string, string> = {
   owner: '负责人',

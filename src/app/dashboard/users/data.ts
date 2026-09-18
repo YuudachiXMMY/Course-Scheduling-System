@@ -16,8 +16,7 @@ export type PortalUserRow = {
 
 // List every portal login (parent/student) in the tutor's org, each with the students it is linked to.
 // member is NOT a tenant table (keyed by organizationId, which equals tenantId here), so it is queried
-// directly — see src/db/queries/organizations.ts for the same pattern. portalLink/student ARE tenant
-// tables and go through forTenant.
+// directly (not via forTenant). portalLink/student ARE tenant tables and go through forTenant.
 export async function listPortalUsers(ctx: AuthContext): Promise<PortalUserRow[]> {
   const rows = await db
     .select({ userId: user.id, name: user.name, email: user.email, role: member.role })

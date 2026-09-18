@@ -171,7 +171,7 @@ export async function provisionPortalAccountCore(
 // Create a portal login (parent/student) WITHOUT linking any student. Reuses provisionPortalMember,
 // so the same "reuse in-org / refuse foreign email / compensate orphan" guarantees apply. A member
 // with zero portalLinks is a valid state (they simply see nothing until assigned).
-export const createPortalUserSchema = z.object({
+const createPortalUserSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空').max(100),
   kind: z.enum(['parent', 'student']),
   loginId: z.string().trim().max(100).optional(), // optional real email; else a placeholder is synthesized
@@ -204,7 +204,7 @@ export async function createPortalUserCore(
 
 // Link an EXISTING portal user to a student (idempotent). Powers both "assign a parent to a student"
 // and "assign a student to a parent" (same row, two UI directions).
-export const linkPortalUserSchema = z.object({
+const linkPortalUserSchema = z.object({
   userId: z.string().trim().min(1),
   studentId: z.string().trim().min(1),
   relationship: z.enum(['parent', 'student']).optional(), // default: inferred from the user's member role

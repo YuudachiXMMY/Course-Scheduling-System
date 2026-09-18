@@ -94,5 +94,3 @@ export const auth = betterAuth({
     nextCookies(), // R6: MUST be last
   ],
 })
-export type Auth = typeof auth
-export type Session = typeof auth.$Infer.Session
