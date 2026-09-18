@@ -31,7 +31,7 @@ export type CourseInput = z.input<typeof courseSchema>
 export async function listCourses(): Promise<Course[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['list'] })
-  return (await forTenant(ctx).select(course)) as Course[]
+  return await forTenant(ctx).select(course)
 }
 
 // Return validation problems as DATA instead of throwing (mirrors createSection): thrown Server
@@ -55,7 +55,7 @@ export async function createCourse(input: CourseInput): Promise<CourseResult> {
     defaultDurationMinutes: data.defaultDurationMinutes,
   })
   revalidatePath('/dashboard/courses')
-  return { ok: true, course: row as Course }
+  return { ok: true, course: row }
 }
 
 export async function updateCourse(id: string, input: CourseInput): Promise<CourseResult> {
@@ -74,7 +74,7 @@ export async function updateCourse(id: string, input: CourseInput): Promise<Cour
   })
   if (!row) return { ok: false, error: '课程不存在或不属于当前机构' }
   revalidatePath('/dashboard/courses')
-  return { ok: true, course: row as Course }
+  return { ok: true, course: row }
 }
 
 // 归档/恢复同样返回判别式 {ok,error}（镜像 create/updateCourse 与 portal-actions）：抛出的 Server
@@ -87,7 +87,7 @@ export async function archiveCourse(id: string): Promise<CourseResult> {
     const [row] = await forTenant(ctx).update(course, id, { isArchived: true })
     if (!row) return { ok: false, error: '课程不存在或不属于当前机构' }
     revalidatePath('/dashboard/courses')
-    return { ok: true, course: row as Course }
+    return { ok: true, course: row }
   } catch (e) {
     console.error('archiveCourse failed', e)
     if (e instanceof AuthError) return { ok: false, error: '无权归档该课程' }
@@ -103,7 +103,7 @@ export async function restoreCourse(id: string): Promise<CourseResult> {
     const [row] = await forTenant(ctx).update(course, id, { isArchived: false })
     if (!row) return { ok: false, error: '课程不存在或不属于当前机构' }
     revalidatePath('/dashboard/courses')
-    return { ok: true, course: row as Course }
+    return { ok: true, course: row }
   } catch (e) {
     console.error('restoreCourse failed', e)
     if (e instanceof AuthError) return { ok: false, error: '无权恢复该课程' }
@@ -119,10 +119,13 @@ export async function listSections(): Promise<ClassSection[]> {
   // 工作流 E: a teacher sees only the sections they teach; owner/admin/assistant/superadmin see all.
   const scope = await sectionIdsForActor(ctx)
   if (scope !== 'all' && scope.length === 0) return []
-  return (await forTenant(ctx).select(
+  // DB4: exclude soft-deleted (archived) sections from the browse list. Direct-by-id reads
+  // (findById) intentionally keep returning archived rows so they can still be managed/unarchived.
+  const notArchived = eq(classSection.isArchived, false)
+  return await forTenant(ctx).select(
     classSection,
-    scope === 'all' ? undefined : inArray(classSection.id, scope),
-  )) as ClassSection[]
+    scope === 'all' ? notArchived : and(notArchived, inArray(classSection.id, scope)),
+  )
 }
 
 const weekdayEnum = z.enum(WEEKDAYS as [Weekday, ...Weekday[]])
@@ -135,28 +138,37 @@ const meetingSchema = z.object({
   durationMinutes: z.coerce.number().int().min(15).max(480),
 })
 
-const sectionSchema = z.object({
-  courseId: z.string().trim().min(1),
-  name: z.string().trim().max(100).optional(),
-  teacherId: z.string().trim().min(1, '必须指定教师'),
-  capacity: z.coerce.number().int().min(1, '容量至少 1').max(15, '容量最多 15'),
-  meetings: z.array(meetingSchema).min(1, '至少添加一个上课时段'),
-  termStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),
-  termEndDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  timezone: z.string().trim().default(APP_TIME_ZONE),
-  defaultLocation: z.string().trim().max(200).optional(),
-  // M2: only accept http(s) URLs so a link can never carry a javascript:/data: scheme if it's ever
-  // rendered as an href downstream.
-  defaultMeetingUrl: z
-    .string()
-    .trim()
-    .max(500)
-    .regex(/^https?:\/\//, '网课链接需以 http:// 或 https:// 开头')
-    .optional(),
-})
+const sectionSchema = z
+  .object({
+    courseId: z.string().trim().min(1),
+    name: z.string().trim().max(100).optional(),
+    teacherId: z.string().trim().min(1, '必须指定教师'),
+    capacity: z.coerce.number().int().min(1, '容量至少 1').max(15, '容量最多 15'),
+    meetings: z.array(meetingSchema).min(1, '至少添加一个上课时段'),
+    termStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),
+    termEndDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    timezone: z.string().trim().default(APP_TIME_ZONE),
+    defaultLocation: z.string().trim().max(200).optional(),
+    // M2: only accept http(s) URLs so a link can never carry a javascript:/data: scheme if it's ever
+    // rendered as an href downstream.
+    defaultMeetingUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^https?:\/\//, '网课链接需以 http:// 或 https:// 开头')
+      .optional(),
+  })
+  // CR1: enforce termEndDate >= termStartDate ON THE SERVER (server actions are a public boundary; the
+  // client-only guard in section-form.tsx:146 is bypassable). Mirrors createSchema's endAt>startAt rule
+  // in schedule-core.ts. YYYY-MM-DD is lexically orderable, so compare as strings — no Date parsing. An
+  // inverted term would otherwise build an RRULE UNTIL earlier than dtstart and materialize zero lessons.
+  .refine((d) => !d.termEndDate || d.termEndDate >= d.termStartDate, {
+    message: '学期结束日期不能早于开始日期',
+    path: ['termEndDate'],
+  })
 export type SectionInput = z.input<typeof sectionSchema>
 type ParsedSection = z.infer<typeof sectionSchema>
 
@@ -208,10 +220,10 @@ async function replaceMeetings(
   sectionId: string,
   meetings: ParsedSection['meetings'],
 ) {
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     sectionMeeting,
     eq(sectionMeeting.sectionId, sectionId),
-  )) as SectionMeeting[]
+  )
   for (const m of meetings) {
     await forTenant(ctx).insert(sectionMeeting, {
       sectionId,
@@ -230,14 +242,14 @@ async function replaceMeetings(
 // tombstones), (b) in the future, and (c) still at their original slot (startAt == originalStartAt),
 // so manually-rescheduled lessons and past/attended history are preserved.
 async function clearFutureScheduledLessons(ctx: AuthContext, sectionId: string) {
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.sectionId, sectionId),
       eq(lesson.status, 'scheduled'),
       gte(lesson.startAt, new Date()),
     ),
-  )) as (typeof lesson.$inferSelect)[]
+  )
   const untouched = rows.filter(
     (r) => r.originalStartAt && r.startAt.getTime() === r.originalStartAt.getTime(),
   )
@@ -250,10 +262,7 @@ export async function listSectionMeetings(sectionId: string): Promise<SectionMee
   // 工作流 E: mirror updateSection/materializeSectionAction — a section-scoped teacher may only read the
   // weekly schedule of a section they teach, not any same-tenant section by guessed id.
   if (!(await actorOwnsSectionById(ctx, sectionId))) return []
-  return (await forTenant(ctx).select(
-    sectionMeeting,
-    eq(sectionMeeting.sectionId, sectionId),
-  )) as SectionMeeting[]
+  return await forTenant(ctx).select(sectionMeeting, eq(sectionMeeting.sectionId, sectionId))
 }
 
 export async function createSection(input: SectionInput): Promise<CreateSectionResult> {
@@ -288,9 +297,9 @@ export async function createSection(input: SectionInput): Promise<CreateSectionR
     courseId: data.courseId,
     ...sectionRecurrenceColumns(data),
   })
-  await replaceMeetings(ctx, (row as ClassSection).id, data.meetings)
+  await replaceMeetings(ctx, row.id, data.meetings)
   revalidatePath('/dashboard/courses')
-  return { ok: true, section: row as ClassSection }
+  return { ok: true, section: row }
 }
 
 export async function updateSection(id: string, input: SectionInput): Promise<CreateSectionResult> {
@@ -322,7 +331,7 @@ export async function updateSection(id: string, input: SectionInput): Promise<Cr
   // re-materializes, so the calendar reflects the new times instead of accumulating duplicates.
   await clearFutureScheduledLessons(ctx, id)
   revalidatePath('/dashboard/courses')
-  return { ok: true, section: row as ClassSection }
+  return { ok: true, section: row }
 }
 
 // Materialize AFTER the section row is committed. Reuses src/lib/materialize (Phase-6 MCP shares it).

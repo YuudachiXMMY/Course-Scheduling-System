@@ -85,6 +85,41 @@
       "when": 1789680024304,
       "tag": "0011_member_org_user_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789700261445,
+      "tag": "0012_peaceful_silverclaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789701335782,
+      "tag": "0013_next_sway",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789702455548,
+      "tag": "0014_constraints_note_check_section_archive_enrollment_restrict",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1789702465369,
+      "tag": "0015_lesson_room_exclusion",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1789702489573,
+      "tag": "0016_tenant_id_fk",
+      "breakpoints": true
     }
   ]
 }

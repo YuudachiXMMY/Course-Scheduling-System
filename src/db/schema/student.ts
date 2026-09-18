@@ -18,6 +18,12 @@ export const student = pgTable(
     birthDate: date('birth_date', { mode: 'date' }),
     status: studentStatus('status').notNull().default('active'),
     notes: text('notes'),
+    // AZ3: creator audit/ownership column (-> user.id, nullable). Mirrors grade.gradedBy. Workflow-E
+    // side effect: a section-scoped teacher HAS student:create, but a newly created student has no
+    // enrollment, so the enrollment-only scope (scope.ts) would make it permanently invisible to its
+    // creator. studentIdsForActor UNIONs `createdBy === ctx.userId` so a teacher can see/enroll a
+    // student they created — without OR-ing away the enrollment filter (never exposes others' students).
+    createdBy: text('created_by'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

@@ -10,6 +10,11 @@ export const env = createEnv({
     // P4-9: system Chromium path in the Debian runtime image (/usr/bin/chromium). Optional so
     // local dev (Playwright's bundled Chromium, empty var) and prod both validate.
     PLAYWRIGHT_CHROMIUM_PATH: z.string().optional(),
+    // SEC4: escape valve for the headless Chromium OS sandbox (src/lib/browser.ts). The sandbox is
+    // ENABLED by default; set CHROMIUM_NO_SANDBOX=true ONLY in a container/runtime that cannot grant
+    // unprivileged user namespaces, accepting the documented risk (see docs/adr/0002-*). Anything
+    // other than the literal 'true' keeps the sandbox on. Optional so a normal boot enables it.
+    CHROMIUM_NO_SANDBOX: z.string().optional(),
     // P6-8: Claude MCP connector (static bearer). ALL OPTIONAL so the app boots without MCP
     // configured — the endpoint stays inert (401) and resolveMcpAuthContext fails fast until set.
     // The min-length constraints still apply WHEN a value is present.
@@ -39,7 +44,12 @@ export const env = createEnv({
     // ORG_* + NAME values have sensible defaults and are applied at runtime (seed runs post-build,
     // where zod .default()s take effect — skipValidation only bypasses defaults during `next build`).
     ADMIN_EMAIL: z.email().optional(),
-    ADMIN_PASSWORD: z.string().min(8).optional(),
+    // SEC1: this is the highest-privilege credential in the system (platform super-admin, seeded by
+    // scripts/seed-admin.ts) and self-service signup is disabled, so a strong floor matters. Raised
+    // 8→16. Kept OPTIONAL so a no-ADMIN boot still cleanly skips the seed (seed-admin.ts warns+skips).
+    // NOTE: validated at runtime (skipValidation only bypasses `next build`), so an existing deploy
+    // whose ADMIN_PASSWORD is 8–15 chars must be rotated to ≥16 before the next seed/boot.
+    ADMIN_PASSWORD: z.string().min(16).optional(),
     ADMIN_NAME: z.string().min(1).default('管理员'),
     DEFAULT_ORG_NAME: z.string().min(1).default('默认机构'),
     DEFAULT_ORG_ID: z.string().min(1).default('org_default'),

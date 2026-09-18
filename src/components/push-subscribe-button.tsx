@@ -46,6 +46,10 @@ export default function PushSubscribeButton() {
         setSubscribed(true)
         setMsg('已启用推送通知')
       } else {
+        // EH2: the browser sub was created BEFORE the server save; a failed persist would otherwise
+        // leave an orphaned browser subscription with no server row. Roll it back so a retry starts
+        // clean. unsubscribeFromPush is null-safe/idempotent, so the rollback itself can't throw.
+        await unsubscribeFromPush()
         setMsg(res.error)
       }
     })
@@ -55,9 +59,13 @@ export default function PushSubscribeButton() {
     setMsg(null)
     startTransition(async () => {
       const endpoint = await unsubscribeFromPush()
-      if (endpoint) await unsubscribeFromPushAction(endpoint)
+      // EH1: don't report success blindly. The browser subscription is already gone (unsubscribeFromPush
+      // removed it), so keep setSubscribed(false) regardless — but the SERVER prune can still fail, so
+      // surface res.error instead of the success message when the action reports failure.
+      const res = endpoint ? await unsubscribeFromPushAction(endpoint) : { ok: true as const }
       setSubscribed(false)
-      setMsg('已关闭推送通知')
+      if (res.ok) setMsg('已关闭推送通知')
+      else setMsg(res.error)
     })
   }
 

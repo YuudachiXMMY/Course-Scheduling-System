@@ -11,6 +11,7 @@ import {
 } from './actions'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 import type { Weekday } from '@/lib/rrule-build'
+import type { TeacherOption } from './data'
 
 const WEEKDAY_LABELS: { value: Weekday; label: string }[] = [
   { value: 'MO', label: '周一' },
@@ -45,6 +46,8 @@ export default function SectionForm({
   section,
   embedded = false,
   onCreated,
+  teachers = [],
+  canAssignTeacher = false,
 }: {
   courseId: string
   defaultTeacherId: string
@@ -53,6 +56,11 @@ export default function SectionForm({
   embedded?: boolean
   // Rail create flow: report the new section id so the caller can navigate to it.
   onCreated?: (sectionId: string) => void
+  // CR2: whole-tenant admins may assign a section to another org teacher. section-scoped teachers get
+  // no picker and are forced to themselves (server re-enforces this via B8). Optional — call sites that
+  // don't pass these (teach workspace) keep the self-only behavior.
+  teachers?: TeacherOption[]
+  canAssignTeacher?: boolean
 }) {
   const isEdit = Boolean(section)
   const [open, setOpen] = useState(Boolean(embedded))
@@ -65,6 +73,10 @@ export default function SectionForm({
   const [termEnd, setTermEnd] = useState(toDateInput(section?.termEndDate ?? null))
   const [location, setLocation] = useState(section?.defaultLocation ?? '')
   const [meetingUrl, setMeetingUrl] = useState(section?.defaultMeetingUrl ?? '')
+  // CR2: which teacher the created section belongs to. Only meaningful on create — updateSection strips
+  // teacherId (H1), so the picker is shown for create only. Defaults to the acting user (defaultTeacherId).
+  const [teacherId, setTeacherId] = useState(defaultTeacherId)
+  const showTeacherPicker = canAssignTeacher && !isEdit && teachers.length > 0
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -150,7 +162,9 @@ export default function SectionForm({
     const payload = {
       courseId,
       name: name || undefined,
-      teacherId: defaultTeacherId,
+      // CR2: send the picked teacher on create (whole-tenant admin); otherwise the acting user. The
+      // server forces a section-scoped teacher to self and verifies org membership regardless (B8).
+      teacherId: showTeacherPicker ? teacherId : defaultTeacherId,
       capacity: Number(capacity),
       meetings: meetings.map((m) => ({
         byDay: m.byDay,
@@ -208,6 +222,25 @@ export default function SectionForm({
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
+
+      {/* CR2: whole-tenant admins choose which teacher the new section belongs to. */}
+      {showTeacherPicker && (
+        <label className="flex flex-col text-xs text-neutral-500">
+          授课教师
+          <select
+            className="rounded border border-neutral-300 px-2 py-1 text-sm"
+            aria-label="授课教师"
+            value={teacherId}
+            onChange={(e) => setTeacherId(e.target.value)}
+          >
+            {teachers.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <div className="flex flex-col gap-1">
         <span className="text-xs text-neutral-500">上课时段（可添加多个不同日期/时间）</span>

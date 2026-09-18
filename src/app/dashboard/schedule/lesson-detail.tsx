@@ -36,6 +36,8 @@ export default function LessonDetail({
   const [meetingUrl, setMeetingUrl] = useState('')
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState<string | null>(null)
+  // EH5：错误单独用 errorMsg 承载并以红色 role=alert 呈现，避免失败被渲染成绿色成功。
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
   // B24：把详情抽屉升级为合规模态。panelRef 用于打开时把焦点移入 + 实现 Tab 焦点陷阱；
@@ -108,38 +110,62 @@ export default function LessonDetail({
     }
   }, [lessonId])
 
+  // EH5：这些 handler 的 action 在鉴权/校验失败时会 throw；startTransition 会静默吞掉拒绝。
+  // 用 try/catch 捕获并写入 errorMsg（红色 role=alert），成功才写 msg（绿色），二者互斥清空。
   function mark(studentId: string, status: AttStatus) {
+    setMsg(null)
+    setErrorMsg(null)
     startTransition(async () => {
-      await upsertAttendance({ lessonId, studentId, status })
-      setRoster((prev) => prev.map((e) => (e.studentId === studentId ? { ...e, status } : e)))
-      setMsg('已保存出勤')
+      try {
+        await upsertAttendance({ lessonId, studentId, status })
+        setRoster((prev) => prev.map((e) => (e.studentId === studentId ? { ...e, status } : e)))
+        setMsg('已保存出勤')
+      } catch {
+        // These actions THROW on failure; Next.js redacts thrown Server-Action messages in production
+        // (React #441), so e.message would surface an English digest — show a Chinese fallback instead.
+        setErrorMsg('记录考勤失败，请重试')
+      }
     })
   }
 
   function saveShared() {
+    setMsg(null)
+    setErrorMsg(null)
     if (!sharedNote.trim()) {
-      setMsg('笔记内容为空')
+      setErrorMsg('笔记内容为空')
       return
     }
     startTransition(async () => {
-      await upsertSharedNote({ lessonId, body: sharedNote })
-      setMsg('已保存本节课笔记')
+      try {
+        await upsertSharedNote({ lessonId, body: sharedNote })
+        setMsg('已保存本节课笔记')
+      } catch {
+        setErrorMsg('保存笔记失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
+      }
     })
   }
 
   function saveComment(studentId: string) {
+    setMsg(null)
+    setErrorMsg(null)
     const body = comments[studentId] ?? ''
     if (!body.trim()) {
-      setMsg('点评内容为空')
+      setErrorMsg('点评内容为空')
       return
     }
     startTransition(async () => {
-      await upsertStudentNote({ lessonId, studentId, body })
-      setMsg('已保存学生点评')
+      try {
+        await upsertStudentNote({ lessonId, studentId, body })
+        setMsg('已保存学生点评')
+      } catch {
+        setErrorMsg('保存点评失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
+      }
     })
   }
 
   function saveMeta() {
+    setMsg(null)
+    setErrorMsg(null)
     startTransition(async () => {
       const res = await updateLessonAction({
         id: lessonId,
@@ -147,7 +173,7 @@ export default function LessonDetail({
         meetingUrl: meetingUrl || undefined,
       })
       if (!res.ok) {
-        setMsg(res.error)
+        setErrorMsg(res.error)
         return
       }
       setMsg('已保存上课地点/网课链接')
@@ -156,11 +182,17 @@ export default function LessonDetail({
   }
 
   function cancelOne() {
+    setMsg(null)
+    setErrorMsg(null)
     startTransition(async () => {
-      await cancelLessonAction(lessonId)
-      onChanged(lessonId)
-      router.refresh()
-      onClose()
+      try {
+        await cancelLessonAction(lessonId)
+        onChanged(lessonId)
+        router.refresh()
+        onClose()
+      } catch {
+        setErrorMsg('取消失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
+      }
     })
   }
 
@@ -237,6 +269,7 @@ export default function LessonDetail({
                   <button
                     key={s.value}
                     type="button"
+                    aria-pressed={e.status === s.value}
                     disabled={pending}
                     onClick={() => mark(e.studentId, s.value)}
                     className={`rounded px-2 py-1 text-xs ${
@@ -300,7 +333,16 @@ export default function LessonDetail({
           </div>
         )}
 
-        {msg && <p className="text-xs text-green-700">{msg}</p>}
+        {msg && (
+          <p aria-live="polite" className="text-xs text-green-700">
+            {msg}
+          </p>
+        )}
+        {errorMsg && (
+          <p role="alert" className="text-xs text-red-600">
+            {errorMsg}
+          </p>
+        )}
 
         <div className="mt-auto flex gap-2 border-t border-neutral-200 pt-4">
           <button

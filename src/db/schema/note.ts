@@ -1,4 +1,5 @@
-import { pgTable, text, index, foreignKey } from 'drizzle-orm/pg-core'
+import { pgTable, text, index, foreignKey, check } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { primaryId, tenantId, createdAt, updatedAt } from './_helpers'
 import { noteVisibility } from './enums'
 import { lesson } from './lesson'
@@ -38,5 +39,11 @@ export const note = pgTable(
     index('idx_note_tenant_lesson').on(t.tenantId, t.lessonId),
     index('idx_note_tenant_student').on(t.tenantId, t.studentId),
     index('idx_note_tenant_section').on(t.tenantId, t.sectionId), // M7: covers fk_note_section
+    // DB3: a note must be anchored to at least one subject — mirror grade's ck_grade_target. Blocks a
+    // fully-unanchored orphan note (only body set) that no read path could ever surface.
+    check(
+      'ck_note_target',
+      sql`${t.lessonId} is not null or ${t.sectionId} is not null or ${t.studentId} is not null`,
+    ),
   ],
 )

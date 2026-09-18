@@ -111,7 +111,13 @@ export default function RequestForm({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          submit()
+        }}
+        className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm"
+      >
         <h3 className="text-sm font-medium text-neutral-700 tabular-nums">申请改期</h3>
         {options.length === 0 ? (
           <p className="text-sm text-neutral-500">近期暂无可申请改期的课节。</p>
@@ -168,8 +174,7 @@ export default function RequestForm({
             <div>
               <button
                 data-testid="reschedule-submit"
-                type="button"
-                onClick={submit}
+                type="submit"
                 disabled={pending}
                 className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
               >
@@ -178,7 +183,7 @@ export default function RequestForm({
             </div>
           </>
         )}
-      </div>
+      </form>
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-neutral-700 tabular-nums">

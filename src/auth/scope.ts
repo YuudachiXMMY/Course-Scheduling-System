@@ -1,7 +1,7 @@
 import 'server-only'
 import { and, eq, inArray } from 'drizzle-orm'
 import { forTenant } from '@/db/tenant'
-import { classSection, enrollment, lesson } from '@/db/schema'
+import { classSection, enrollment, lesson, student } from '@/db/schema'
 import { hasWholeTenantRole, isSectionScopedRole } from '@/auth/roles'
 import type { AuthContext } from '@/auth/context'
 
@@ -33,24 +33,28 @@ export function actorOwnsSection(ctx: AuthContext, section: { teacherId: string 
 export async function sectionIdsForActor(ctx: AuthContext): Promise<'all' | string[]> {
   if (isWholeTenantActor(ctx)) return 'all'
   if (!isSectionScopedRole(ctx.role)) return [] // defensive: portal/unknown role → see nothing
-  const rows = (await forTenant(ctx).select(
-    classSection,
-    eq(classSection.teacherId, ctx.userId),
-  )) as (typeof classSection.$inferSelect)[]
+  const rows = await forTenant(ctx).select(classSection, eq(classSection.teacherId, ctx.userId))
   return rows.map((r) => r.id)
 }
 
-// The student ids this actor may see: 'all', else the students ACTIVELY enrolled in the actor's sections.
-// Derived from sectionIdsForActor so section- and student-scope share one source of truth.
+// The student ids this actor may see: 'all', else the students ACTIVELY enrolled in the actor's sections
+// UNION the students this actor CREATED (AZ3). Derived from sectionIdsForActor so section- and
+// student-scope share one source of truth.
 export async function studentIdsForActor(ctx: AuthContext): Promise<'all' | string[]> {
   const sections = await sectionIdsForActor(ctx)
   if (sections === 'all') return 'all'
-  if (sections.length === 0) return []
-  const enrolls = (await forTenant(ctx).select(
+  // AZ3: a section-scoped teacher ALSO sees students they created themselves — student:create inserts a
+  // student with NO enrollment, so the enrollment-only set would make a brand-new student permanently
+  // invisible to its creator. The predicate is STRICTLY createdBy === ctx.userId (never OR-ing away the
+  // enrollment filter), so a teacher still can't see students they neither created nor teach.
+  const created = await forTenant(ctx).select(student, eq(student.createdBy, ctx.userId))
+  const createdIds = created.map((s) => s.id)
+  if (sections.length === 0) return [...new Set(createdIds)]
+  const enrolls = await forTenant(ctx).select(
     enrollment,
     and(inArray(enrollment.sectionId, sections), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
-  return [...new Set(enrolls.map((e) => e.studentId))]
+  )
+  return [...new Set([...enrolls.map((e) => e.studentId), ...createdIds])]
 }
 
 // Whether the actor may act on ONE specific student: whole-tenant staff → always; a teacher → only a
@@ -69,9 +73,7 @@ export async function actorOwnsStudent(ctx: AuthContext, studentId: string): Pro
 // 404s), so a guessed same-tenant sectionId can never mutate another teacher's class.
 export async function actorOwnsSectionById(ctx: AuthContext, sectionId: string): Promise<boolean> {
   if (isWholeTenantActor(ctx)) return true
-  const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    | typeof classSection.$inferSelect
-    | null
+  const section = await forTenant(ctx).findById(classSection, sectionId)
   return !!section && actorOwnsSection(ctx, section)
 }
 
@@ -80,8 +82,6 @@ export async function actorOwnsSectionById(ctx: AuthContext, sectionId: string):
 // section, so ownership is the same teacherId === ctx.userId test. A missing/foreign lesson → false.
 export async function actorOwnsLesson(ctx: AuthContext, lessonId: string): Promise<boolean> {
   if (isWholeTenantActor(ctx)) return true
-  const row = (await forTenant(ctx).findById(lesson, lessonId)) as
-    | typeof lesson.$inferSelect
-    | null
+  const row = await forTenant(ctx).findById(lesson, lessonId)
   return !!row && actorOwnsSection(ctx, { teacherId: row.teacherId })
 }

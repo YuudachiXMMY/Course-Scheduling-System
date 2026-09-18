@@ -21,17 +21,16 @@ export async function materializeSection(
   ctx: AuthContext,
   sectionId: string,
 ): Promise<MaterializeResult> {
-  const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    typeof classSection.$inferSelect | null
+  const section = await forTenant(ctx).findById(classSection, sectionId)
   if (!section) return { inserted: 0, conflicts: 0 }
   const zone = section.recurrenceTimezone ?? APP_TIME_ZONE
 
   // Multi-slot model (Phase-B): each sectionMeeting is one weekday@time. Falls back to the legacy
   // single section.rrule when a section has no meeting rows (backward compatibility).
-  const meetings = (await forTenant(ctx).select(
+  const meetings = await forTenant(ctx).select(
     sectionMeeting,
     eq(sectionMeeting.sectionId, sectionId),
-  )) as (typeof sectionMeeting.$inferSelect)[]
+  )
   const hasMeetings = meetings.length > 0
 
   // A window anchor is required: term start (preferred) or the legacy recurrenceDtstart.
@@ -107,10 +106,10 @@ export async function materializeSection(
   // SECOND lesson in a week that already holds the rescheduled exception (their times don't overlap, so
   // the GiST constraint doesn't fire either). Dedupe by ISO week (in the section zone): skip any new
   // occurrence whose week already contains an exception lesson (keyed by the exception's original slot).
-  const existingLessons = (await forTenant(ctx).select(
+  const existingLessons = await forTenant(ctx).select(
     lesson,
     eq(lesson.sectionId, section.id),
-  )) as (typeof lesson.$inferSelect)[]
+  )
   const isoWeek = (d: Date) => DateTime.fromJSDate(d).setZone(zone).toFormat("kkkk'W'WW")
   const exceptionWeeks = new Set(
     existingLessons

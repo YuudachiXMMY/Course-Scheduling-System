@@ -53,6 +53,11 @@ export const classSection = pgTable(
     defaultDurationMinutes: integer('default_duration_minutes'), // overrides course default
     defaultLocation: text('default_location'),
     defaultMeetingUrl: text('default_meeting_url'), // online-class link (Zoom/腾讯会议) applied to new lessons
+    // DB4: soft-delete flag mirroring course.isArchived / student.status — a section can be retired
+    // instead of hard-deleted (which DB6's restrict FKs now block anyway once it has enrollments).
+    // Browse-list read paths (listSections) filter these out; direct-by-id reads keep working so an
+    // archived section can still be managed/unarchived.
+    isArchived: boolean('is_archived').notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -65,6 +70,7 @@ export const classSection = pgTable(
     }).onDelete('cascade'),
     index('idx_section_tenant_course').on(t.tenantId, t.courseId),
     index('idx_section_tenant_teacher').on(t.tenantId, t.teacherId),
+    index('idx_section_tenant_archived').on(t.tenantId, t.isArchived),
     check('ck_section_capacity', sql`${t.capacity} between 1 and 15`),
   ],
 )

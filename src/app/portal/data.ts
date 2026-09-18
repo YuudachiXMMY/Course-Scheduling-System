@@ -20,16 +20,22 @@ export interface PortalCard {
 export async function getPortalSchedule(ctx: AuthContext): Promise<PortalCard[]> {
   await requireConsent(ctx) // 服务端同意门复检：读孩子课表前必须已同意
   const ids = await resolveLinkedStudentIds(ctx)
-  const cards: PortalCard[] = []
-  for (const id of ids) {
-    const s = (await forTenant(ctx).findById(student, id)) as typeof student.$inferSelect | null
-    if (!s) continue
-    cards.push({
-      studentId: id,
-      studentName: s.name,
-      subtitle: s.schoolGrade ?? undefined,
-      lessons: await getStudentLessonsForTenant(ctx, id, cardWindow()),
-    })
-  }
+  // PERF9: resolve each linked student's card in parallel (was a sequential per-child loop, each child
+  // ~4+ serial queries via getStudentLessonsForTenant). Promise.all preserves input order, and the
+  // missing-student null-filter reproduces the old `if (!s) continue` semantics exactly.
+  const cards = (
+    await Promise.all(
+      ids.map(async (id): Promise<PortalCard | null> => {
+        const s = await forTenant(ctx).findById(student, id)
+        if (!s) return null
+        return {
+          studentId: id,
+          studentName: s.name,
+          subtitle: s.schoolGrade ?? undefined,
+          lessons: await getStudentLessonsForTenant(ctx, id, cardWindow()),
+        }
+      }),
+    )
+  ).filter((c): c is PortalCard => c !== null)
   return cards
 }

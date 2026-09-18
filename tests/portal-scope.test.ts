@@ -5,6 +5,7 @@ import { forTenant } from '@/db/tenant'
 import { student, portalLink } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import { resolveLinkedStudentIds, assertLinkedToStudent } from '@/auth/portal'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 const ctxFor = (tenantId: string, userId: string, role = 'parent'): AuthContext => ({
   tenantId,
@@ -26,12 +27,15 @@ const cleanup = async () => {
   for (const t of [orgA, orgB]) {
     await db.delete(portalLink).where(eq(portalLink.tenantId, t))
     await db.delete(student).where(eq(student.tenantId, t))
+    await unseedOrg(t)
   }
 }
 
 describe('portal row-level scope — a parent sees ONLY their own child', () => {
   beforeAll(async () => {
     await cleanup()
+    await seedOrg(orgA)
+    await seedOrg(orgB)
     const ctxA = ctxFor(orgA, parentA1)
     const ctxB = ctxFor(orgB, parentB)
     const [a1] = (await forTenant(ctxA).insert(student, { name: 'S1' })) as { id: string }[]

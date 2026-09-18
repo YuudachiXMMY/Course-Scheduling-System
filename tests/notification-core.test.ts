@@ -151,13 +151,34 @@ describe('notification-core — DB integration', () => {
     await expect(markNotificationReadCore(foreign, ownerList[0].id)).rejects.toThrow('通知不存在')
   })
 
-  it('markAllRead flips every remaining unread of the user', async () => {
+  it('markAllRead flips only the caller’s own unread — other user / tenant untouched, count correct', async () => {
     const ctx = ownerCtx()
+    // Seed unread for another user in the SAME tenant and for a user in ANOTHER tenant. PERF2's bulk
+    // UPDATE must reach NEITHER (predicate is userId===ctx.userId AND unread; scope AND-s tenantId).
+    await createNotificationCore(parentCtx(), {
+      userId: parentUserId,
+      type: 'lesson_reminder',
+      title: '家长未读',
+    })
+    await createNotificationCore(otherCtx(), {
+      userId: otherUserId,
+      type: 'lesson_reminder',
+      title: '他租户未读',
+    })
+    const parentBefore = await unreadCountForUserCore(parentCtx())
+    const otherBefore = await unreadCountForUserCore(otherCtx())
+    expect(parentBefore).toBeGreaterThan(0)
+    expect(otherBefore).toBeGreaterThan(0)
+
     const before = await unreadCountForUserCore(ctx)
     expect(before).toBeGreaterThan(0)
     const flipped = await markAllReadCore(ctx)
     expect(flipped).toBe(before)
     expect(await unreadCountForUserCore(ctx)).toBe(0)
+
+    // Same-tenant other user and the foreign tenant keep every unread row.
+    expect(await unreadCountForUserCore(parentCtx())).toBe(parentBefore)
+    expect(await unreadCountForUserCore(otherCtx())).toBe(otherBefore)
   })
 
   it('prune removes rows older than the retention window, keeps recent, and is tenant-scoped', async () => {

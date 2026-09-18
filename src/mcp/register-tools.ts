@@ -88,11 +88,14 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         // 空作用域必须在 inArray([]) 前短路返回空（否则是非法 SQL，也避免越权列出全租户班级）。
         const scope = await sectionIdsForActor(ctx)
         if (scope !== 'all' && scope.length === 0) return ok(JSON.stringify([], null, 2))
-        const sections = (await forTenant(ctx).select(
+        // DB4: this is a browse-list read path, so it must hide archived sections just like the dashboard
+        // listSections — otherwise an MCP/AI caller would treat a retired section as active.
+        const notArchived = eq(classSection.isArchived, false)
+        const sections = await forTenant(ctx).select(
           classSection,
-          scope === 'all' ? undefined : inArray(classSection.id, scope),
-        )) as (typeof classSection.$inferSelect)[]
-        const courses = (await forTenant(ctx).select(course)) as (typeof course.$inferSelect)[]
+          scope === 'all' ? notArchived : and(notArchived, inArray(classSection.id, scope)),
+        )
+        const courses = await forTenant(ctx).select(course)
         const label = new Map(courses.map((c) => [c.id, c.title]))
         const out = sections.map((r) => ({
           id: r.id,
@@ -127,10 +130,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const statusPred = status ? eq(student.status, status) : undefined
         const where =
           scopePred && statusPred ? and(scopePred, statusPred) : (scopePred ?? statusPred)
-        const rows = (await forTenant(ctx).select(
-          student,
-          where,
-        )) as (typeof student.$inferSelect)[]
+        const rows = await forTenant(ctx).select(student, where)
         const out = rows.map((s) => ({
           id: s.id,
           name: s.name,
@@ -158,10 +158,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         // 工作流 E（B53）：非本班（含猜测的同租户 lessonId）→ 返回空，绝不泄露他人课节笔记。
         // 归属守卫先行，等同「不存在」，不区分「课节不存在」与「不属于本班」以免侦察。
         if (!(await actorOwnsLesson(ctx, lessonId))) return ok(JSON.stringify([], null, 2))
-        const rows = (await forTenant(ctx).select(
-          note,
-          and(eq(note.lessonId, lessonId)),
-        )) as (typeof note.$inferSelect)[]
+        const rows = await forTenant(ctx).select(note, and(eq(note.lessonId, lessonId)))
         // 非 whole-tenant 角色（本班教师/门户）只看 shared 笔记；internal 笔记不经 MCP 外泄，
         // 对齐 dashboard「勿把 internal 笔记转发给家长」的约定。
         const visible = isWholeTenantActor(ctx)

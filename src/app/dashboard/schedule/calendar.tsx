@@ -71,6 +71,14 @@ export default function ScheduleCalendar({
     })
   }
 
+  // CR5: open the calendar on a DETERMINISTIC week. listLessonsInRange has no ORDER BY, so
+  // initialEvents[0] was an arbitrary lesson within the ~6-week window (random opening week). Anchor on
+  // the EARLIEST lesson instead — start is an ISO UTC string, so lexicographic min == chronological min.
+  const initialDate = useMemo(() => {
+    if (initialEvents.length === 0) return undefined
+    return initialEvents.reduce((min, e) => (e.start < min ? e.start : min), initialEvents[0].start)
+  }, [initialEvents])
+
   const fcEvents = useMemo(
     () =>
       events
@@ -202,7 +210,7 @@ export default function ScheduleCalendar({
         initialView="timeGridWeek"
         locale={zhCn}
         timeZone={APP_TIME_ZONE}
-        initialDate={initialEvents[0]?.start}
+        initialDate={initialDate}
         headerToolbar={{
           left: 'prev,next today',
           center: 'title',

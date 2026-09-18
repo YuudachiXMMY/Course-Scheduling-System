@@ -17,7 +17,12 @@ export const pushSubscription = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex('uq_push_sub_tenant_endpoint').on(t.tenantId, t.endpoint), // one row per browser endpoint
+    // SEC2/CR8: ownership + upsert key is (tenant, USER, endpoint). Was (tenant, endpoint) alone,
+    // which let any same-tenant user take over / delete another user's row by submitting their
+    // endpoint. Keying on userId means a caller's atomic onConflictDoUpdate can only ever match — and
+    // therefore only ever mutate — their OWN row for an endpoint; a second user on a shared browser
+    // gets a separate row instead of stealing the first user's.
+    uniqueIndex('uq_push_sub_tenant_user_endpoint').on(t.tenantId, t.userId, t.endpoint),
     index('idx_push_sub_tenant_user').on(t.tenantId, t.userId), // "subscriptions for this user"
   ],
 )

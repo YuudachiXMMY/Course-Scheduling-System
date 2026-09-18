@@ -21,7 +21,7 @@ export async function listLessonsInRange(
   // and() ignores an undefined operand, so 'all' adds no predicate; an empty section list short-circuits.
   const scope = await sectionIdsForActor(ctx)
   if (scope !== 'all' && scope.length === 0) return []
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     lesson,
     and(
       gte(lesson.startAt, from),
@@ -29,36 +29,27 @@ export async function listLessonsInRange(
       ne(lesson.status, 'canceled'),
       scope === 'all' ? undefined : inArray(lesson.sectionId, scope),
     ),
-  )) as (typeof lesson.$inferSelect)[]
+  )
   if (rows.length === 0) return []
 
   // Batch-load the course title + active-enrolled student names per section (dedup ids, no N+1).
   const sectionIds = [...new Set(rows.map((r) => r.sectionId))]
-  const sections = (await forTenant(ctx).select(
-    classSection,
-    inArray(classSection.id, sectionIds),
-  )) as (typeof classSection.$inferSelect)[]
+  const sections = await forTenant(ctx).select(classSection, inArray(classSection.id, sectionIds))
   const courseIdBySection = new Map(sections.map((s) => [s.id, s.courseId]))
 
   const courseIds = [...new Set(sections.map((s) => s.courseId))]
   const courses = courseIds.length
-    ? ((await forTenant(ctx).select(
-        course,
-        inArray(course.id, courseIds),
-      )) as (typeof course.$inferSelect)[])
+    ? await forTenant(ctx).select(course, inArray(course.id, courseIds))
     : []
   const titleByCourse = new Map(courses.map((c) => [c.id, c.title]))
 
-  const enrolls = (await forTenant(ctx).select(
+  const enrolls = await forTenant(ctx).select(
     enrollment,
     and(inArray(enrollment.sectionId, sectionIds), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   const studentIds = [...new Set(enrolls.map((e) => e.studentId))]
   const students = studentIds.length
-    ? ((await forTenant(ctx).select(
-        student,
-        inArray(student.id, studentIds),
-      )) as (typeof student.$inferSelect)[])
+    ? await forTenant(ctx).select(student, inArray(student.id, studentIds))
     : []
   const nameByStudent = new Map(students.map((s) => [s.id, s.name]))
   const namesBySection = new Map<string, string[]>()
@@ -84,4 +75,43 @@ export async function listLessonsInRange(
       meetingUrl: r.meetingUrl,
     }
   })
+}
+
+// CR4: build the FULLY-ENRICHED CalendarEvent for a single lesson row (course title + active-enrolled
+// student names + location/meetingUrl), so the create/reschedule cores return the same shape as
+// listLessonsInRange. Without this the client's optimistic update (calendar.tsx setEvents) would drop
+// courseTitle/studentNames/location after a create or reschedule until a full page reload. Server-only
+// (stays out of the client bundle). One extra section+course lookup and one enrollment+student lookup
+// on the create/reschedule path only (single section, not a hot loop). Tenant-scoped via forTenant.
+export async function hydrateLessonEvent(
+  ctx: AuthContext,
+  row: typeof lesson.$inferSelect,
+): Promise<CalendarEvent> {
+  const section = await forTenant(ctx).findById(classSection, row.sectionId)
+  const parentCourse = section ? await forTenant(ctx).findById(course, section.courseId) : null
+  const courseTitle = parentCourse?.title ?? null
+
+  const enrolls = await forTenant(ctx).select(
+    enrollment,
+    and(eq(enrollment.sectionId, row.sectionId), eq(enrollment.status, 'active')),
+  )
+  const studentIds = [...new Set(enrolls.map((e) => e.studentId))]
+  const students = studentIds.length
+    ? await forTenant(ctx).select(student, inArray(student.id, studentIds))
+    : []
+  const nameByStudent = new Map(students.map((s) => [s.id, s.name]))
+  const studentNames = enrolls.map((e) => nameByStudent.get(e.studentId) ?? e.studentId)
+
+  return {
+    id: row.id,
+    title: row.title ?? courseTitle ?? '课节',
+    start: row.startAt.toISOString(),
+    end: row.endAt.toISOString(),
+    sectionId: row.sectionId,
+    status: row.status,
+    courseTitle,
+    studentNames,
+    location: row.location,
+    meetingUrl: row.meetingUrl,
+  }
 }

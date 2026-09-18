@@ -13,10 +13,11 @@ import type { CreateStaffInput } from '@/auth/staff'
 export default function StaffForm({
   roleOptions,
 }: {
-  roleOptions: { value: string; label: string }[]
+  roleOptions: { value: CreateStaffInput['role']; label: string }[]
 }) {
   const [open, setOpen] = useState(false)
-  const [role, setRole] = useState(roleOptions[0]?.value ?? 'teacher')
+  // TS2：state 直接窄化为角色字面量联合（值由 roleOptions 约束），提交时无需再 cast。
+  const [role, setRole] = useState<CreateStaffInput['role']>(roleOptions[0]?.value ?? 'teacher')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -33,7 +34,7 @@ export default function StaffForm({
         name: name.trim(),
         email: email.trim(),
         password,
-        role: role as CreateStaffInput['role'],
+        role,
       })
       if (!res.ok) {
         setError(res.error)
@@ -74,7 +75,7 @@ export default function StaffForm({
             <select
               className="rounded border border-neutral-300 px-2 py-1 text-sm"
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={(e) => setRole(e.target.value as CreateStaffInput['role'])}
             >
               {roleOptions.map((o) => (
                 <option key={o.value} value={o.value}>
@@ -108,9 +109,13 @@ export default function StaffForm({
           autoComplete="new-password"
         />
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && (
+        <p role="alert" className="text-xs text-red-600">
+          {error}
+        </p>
+      )}
       {okEmail && (
-        <p className="text-xs text-green-700">
+        <p aria-live="polite" className="text-xs text-green-700">
           已新建账号！登录邮箱：<span className="font-mono">{okEmail}</span>（请连同密码转交本人）
         </p>
       )}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DateTime } from 'luxon'
 import { markNotificationRead, markAllNotificationsRead } from './actions'
@@ -16,24 +16,36 @@ function fmt(iso: string | null): string {
 
 export default function NotificationPanel({ items }: { items: NotificationRow[] }) {
   const [pending, startTransition] = useTransition()
+  const [msg, setMsg] = useState<string | null>(null)
   const router = useRouter()
   const hasUnread = items.some((i) => i.readAt === null)
 
+  // EH4: surface action failures instead of silently no-op'ing. The actions return {ok,error}; on
+  // failure show res.error in an aria-live region so screen readers announce it too.
   function markRead(id: string) {
+    setMsg(null)
     startTransition(async () => {
       const res = await markNotificationRead(id)
       if (res.ok) router.refresh()
+      else setMsg(res.error)
     })
   }
   function markAll() {
+    setMsg(null)
     startTransition(async () => {
       const res = await markAllNotificationsRead()
       if (res.ok) router.refresh()
+      else setMsg(res.error)
     })
   }
 
   return (
     <div className="flex flex-col gap-3">
+      {msg && (
+        <p aria-live="polite" className="text-xs text-red-600">
+          {msg}
+        </p>
+      )}
       {hasUnread && (
         <div className="flex justify-end">
           <button

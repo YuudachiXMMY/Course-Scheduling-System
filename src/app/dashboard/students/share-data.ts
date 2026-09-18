@@ -13,10 +13,10 @@ type Share = typeof shareLink.$inferSelect
 // Active (non-revoked) share for ONE student, on the forTenant spine (M1). Mirrors
 // calendar/actions.ts's findActiveFeed but scoped per-student (P4-1).
 export async function getActiveShare(ctx: AuthContext, studentId: string): Promise<Share | null> {
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     shareLink,
     and(eq(shareLink.studentId, studentId), isNull(shareLink.revokedAt)),
-  )) as Share[]
+  )
   return rows[0] ?? null
 }
 
@@ -26,11 +26,11 @@ export async function getActiveShare(ctx: AuthContext, studentId: string): Promi
 export async function ensureActiveShare(ctx: AuthContext, studentId: string): Promise<Share> {
   const existing = await getActiveShare(ctx, studentId)
   if (existing) return existing
-  const [created] = (await forTenant(ctx).insert(shareLink, {
+  const [created] = await forTenant(ctx).insert(shareLink, {
     studentId,
     token: nanoid(32),
     label: '家长课表分享',
-  })) as Share[]
+  })
   return created
 }
 
@@ -42,33 +42,22 @@ export async function getStudentLessonsForTenant(
   studentId: string,
   window: { from: Date; to: Date },
 ): Promise<FeedLesson[]> {
-  const secs = (await forTenant(ctx).select(
+  const secs = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.studentId, studentId), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   const ids = secs.map((s) => s.sectionId)
   // Empty active-enrollment set → `inArray([])` is invalid SQL; early-return.
   if (ids.length === 0) return []
 
-  const rows = (await forTenant(ctx).select(
-    lesson,
-    inArray(lesson.sectionId, ids),
-  )) as (typeof lesson.$inferSelect)[]
+  const rows = await forTenant(ctx).select(lesson, inArray(lesson.sectionId, ids))
 
   // Resolve "课程名 · 班级名" for each section (two forTenant reads — the spine forbids raw joins) so
   // the authenticated preview/PNG card matches the public page instead of showing the generic "课节".
-  const sections = (await forTenant(ctx).select(
-    classSection,
-    inArray(classSection.id, ids),
-  )) as (typeof classSection.$inferSelect)[]
+  const sections = await forTenant(ctx).select(classSection, inArray(classSection.id, ids))
   const courseIds = [...new Set(sections.map((s) => s.courseId))]
   const courses =
-    courseIds.length === 0
-      ? []
-      : ((await forTenant(ctx).select(
-          course,
-          inArray(course.id, courseIds),
-        )) as (typeof course.$inferSelect)[])
+    courseIds.length === 0 ? [] : await forTenant(ctx).select(course, inArray(course.id, courseIds))
   const titleByCourse = new Map(courses.map((c) => [c.id, c.title]))
   const titleBySection = new Map<string, string>()
   for (const s of sections) {

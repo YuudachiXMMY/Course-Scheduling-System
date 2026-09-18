@@ -17,11 +17,14 @@ export default async function SectionLayout({
 }) {
   const { sectionId } = await params
   const ctx = await requireAuthContext()
-  const { section, course } = await getSectionHeader(ctx, sectionId)
+  // PERF6: the two loaders are independent (both take only ctx+sectionId) — run them in parallel.
+  const [{ section, course }, pendingReschedules] = await Promise.all([
+    getSectionHeader(ctx, sectionId),
+    getSectionPendingRescheduleCount(ctx, sectionId),
+  ])
   const canManage = can(ctx.role, { course: ['update'] })
   // Contextual signal only; the queue lives at /dashboard/reschedule. Reviewers (approve perm) see it
   // as an actionable link, read-only roles as plain text.
-  const pendingReschedules = await getSectionPendingRescheduleCount(ctx, sectionId)
   const canReview = can(ctx.role, { rescheduleRequest: ['approve'] })
 
   return (

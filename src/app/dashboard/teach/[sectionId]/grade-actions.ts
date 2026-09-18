@@ -32,18 +32,16 @@ export async function upsertLessonStudentGrade(input: z.input<typeof gradeSchema
   // B31: object-level authz on studentId — owning the lesson is not enough. grade's FK is (tenant,
   // student), so without this a teacher could write a grade/comment for ANY same-tenant student. The
   // student must be actively enrolled in THIS lesson's section.
-  const lrow = (await forTenant(ctx).findById(lesson, data.lessonId)) as
-    | typeof lesson.$inferSelect
-    | null
+  const lrow = await forTenant(ctx).findById(lesson, data.lessonId)
   if (!lrow) throw new Error('课节不存在')
-  const enrolled = (await forTenant(ctx).select(
+  const enrolled = await forTenant(ctx).select(
     enrollment,
     and(
       eq(enrollment.sectionId, lrow.sectionId),
       eq(enrollment.studentId, data.studentId),
       eq(enrollment.status, 'active'),
     ),
-  )) as unknown[]
+  )
   if (enrolled.length === 0) throw new Error('该学生不在该课节班级')
   const row = await upsertLessonStudentGradeCore(ctx, data)
   revalidatePath('/dashboard/schedule')

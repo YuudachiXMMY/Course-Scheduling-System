@@ -80,7 +80,11 @@ export default function FeedPanel({
         >
           生成订阅链接
         </button>
-        {msg && <p className="text-xs text-green-700">{msg}</p>}
+        {msg && (
+          <p aria-live="polite" className="text-xs text-green-700">
+            {msg}
+          </p>
+        )}
       </div>
     )
   }
@@ -140,7 +144,11 @@ export default function FeedPanel({
         </button>
       </div>
 
-      {msg && <p className="text-xs text-green-700">{msg}</p>}
+      {msg && (
+        <p aria-live="polite" className="text-xs text-green-700">
+          {msg}
+        </p>
+      )}
     </div>
   )
 }

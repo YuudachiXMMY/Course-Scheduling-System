@@ -44,14 +44,14 @@ export async function createNotificationCore(
   input: CreateNotificationInput,
 ): Promise<Notification | null> {
   if (input.dedupeKey) {
-    const existing = (await forTenant(ctx).select(
+    const existing = await forTenant(ctx).select(
       notification,
       eq(notification.dedupeKey, input.dedupeKey),
-    )) as Notification[]
+    )
     if (existing.length > 0) return null
   }
   try {
-    const [row] = (await forTenant(ctx).insert(notification, {
+    const [row] = await forTenant(ctx).insert(notification, {
       userId: input.userId,
       type: input.type,
       title: input.title,
@@ -60,7 +60,7 @@ export async function createNotificationCore(
       lessonId: input.lessonId ?? null,
       studentId: input.studentId ?? null,
       dedupeKey: input.dedupeKey ?? null,
-    })) as Notification[]
+    })
     return row ?? null
   } catch (e) {
     if (input.dedupeKey && isUniqueViolation(e)) return null // lost the race — already delivered
@@ -72,10 +72,10 @@ export async function createNotificationCore(
 // user_read covers the userId scan) so a long-lived recipient's full history is never loaded into memory.
 export const NOTIFICATION_PAGE_SIZE = 100
 export async function listNotificationsForUserCore(ctx: AuthContext): Promise<Notification[]> {
-  return (await forTenant(ctx)
+  return await forTenant(ctx)
     .select(notification, eq(notification.userId, ctx.userId))
     .orderBy(desc(notification.createdAt))
-    .limit(NOTIFICATION_PAGE_SIZE)) as Notification[]
+    .limit(NOTIFICATION_PAGE_SIZE)
 }
 
 // SQL COUNT(*), not a row fetch — this runs on EVERY dashboard/portal layout render (the unread badge),
@@ -98,10 +98,7 @@ export async function pruneOldNotificationsCore(
   now: Date = new Date(),
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-  const removed = (await forTenant(ctx).deleteWhere(
-    notification,
-    lt(notification.createdAt, cutoff),
-  )) as Notification[]
+  const removed = await forTenant(ctx).deleteWhere(notification, lt(notification.createdAt, cutoff))
   return removed.length
 }
 
@@ -111,27 +108,26 @@ export async function markNotificationReadCore(
   ctx: AuthContext,
   id: string,
 ): Promise<Notification> {
-  const row = (await forTenant(ctx).findById(notification, id)) as Notification | null
+  const row = await forTenant(ctx).findById(notification, id)
   if (!row || row.userId !== ctx.userId) throw new Error('通知不存在')
-  const [updated] = (await forTenant(ctx).update(notification, id, {
+  const [updated] = await forTenant(ctx).update(notification, id, {
     readAt: new Date(),
-  })) as Notification[]
+  })
   return updated
 }
 
-// Mark every unread notification of the current user read; returns how many were flipped.
+// Mark every unread notification of the current user read; returns how many were flipped. One bulk
+// UPDATE (PERF2) instead of a select + per-row update loop (N+1). The predicate matches only this
+// user's own still-unread rows and updateWhereMany always AND-s the tenant scope, so the flip can
+// never reach another user's or tenant's rows.
 export async function markAllReadCore(ctx: AuthContext): Promise<number> {
-  const unread = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).updateWhereMany(
     notification,
-    and(eq(notification.userId, ctx.userId), isNull(notification.readAt)),
-  )) as Notification[]
-  const now = new Date()
-  let count = 0
-  for (const n of unread) {
-    await forTenant(ctx).update(notification, n.id, { readAt: now })
-    count++
-  }
-  return count
+    // both operands are defined, so and() is never undefined here (updateWhereMany requires SQL)
+    and(eq(notification.userId, ctx.userId), isNull(notification.readAt))!,
+    { readAt: new Date() },
+  )
+  return rows.length
 }
 
 // Who to notify about a lesson: its teacher ∪ the portal users linked to its actively-enrolled
@@ -143,19 +139,71 @@ export async function resolveLessonRecipientsCore(
   const recipients = new Set<string>()
   if (lessonRow.teacherId) recipients.add(lessonRow.teacherId)
 
-  const enrolls = (await forTenant(ctx).select(
+  const enrolls = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, lessonRow.sectionId), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   const studentIds = [...new Set(enrolls.map((e) => e.studentId))]
   if (studentIds.length > 0) {
-    const links = (await forTenant(ctx).select(
-      portalLink,
-      inArray(portalLink.studentId, studentIds),
-    )) as (typeof portalLink.$inferSelect)[]
+    const links = await forTenant(ctx).select(portalLink, inArray(portalLink.studentId, studentIds))
     for (const l of links) if (l.userId) recipients.add(l.userId)
   }
   return [...recipients]
+}
+
+// Batch form of resolveLessonRecipientsCore for the reminder scan's hot path (PERF10): resolve the
+// recipient set of MANY lessons with a fixed 2 queries total instead of 2 per lesson (N+1). Semantics
+// are identical to the per-lesson version — teacher ∪ portal users of the section's active students,
+// deduped per lesson, falsy ids dropped, empty inArray guarded — only the recipient array's order may
+// differ (it's a set, so callers treat it order-independently). Returns lesson.id → recipients[].
+export async function resolveLessonRecipientsBatchCore(
+  ctx: AuthContext,
+  lessons: LessonRow[],
+): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>()
+  if (lessons.length === 0) return result
+
+  // ONE enrollment query for every section touched by the batch → section → active studentIds.
+  const sectionIds = [...new Set(lessons.map((l) => l.sectionId).filter(Boolean))]
+  const studentsBySection = new Map<string, string[]>()
+  const allStudentIds = new Set<string>()
+  if (sectionIds.length > 0) {
+    const enrolls = await forTenant(ctx).select(
+      enrollment,
+      and(inArray(enrollment.sectionId, sectionIds), eq(enrollment.status, 'active')),
+    )
+    for (const e of enrolls) {
+      const list = studentsBySection.get(e.sectionId)
+      if (list) list.push(e.studentId)
+      else studentsBySection.set(e.sectionId, [e.studentId])
+      allStudentIds.add(e.studentId)
+    }
+  }
+
+  // ONE portalLink query for every active student in the batch → student → portal userIds.
+  const usersByStudent = new Map<string, string[]>()
+  if (allStudentIds.size > 0) {
+    const links = await forTenant(ctx).select(
+      portalLink,
+      inArray(portalLink.studentId, [...allStudentIds]),
+    )
+    for (const l of links) {
+      if (!l.userId) continue
+      const list = usersByStudent.get(l.studentId)
+      if (list) list.push(l.userId)
+      else usersByStudent.set(l.studentId, [l.userId])
+    }
+  }
+
+  for (const lessonRow of lessons) {
+    const recipients = new Set<string>()
+    if (lessonRow.teacherId) recipients.add(lessonRow.teacherId)
+    for (const studentId of studentsBySection.get(lessonRow.sectionId) ?? []) {
+      for (const userId of usersByStudent.get(studentId) ?? []) recipients.add(userId)
+    }
+    result.set(lessonRow.id, [...recipients])
+  }
+  return result
 }
 
 function fmtLessonTime(startAt: Date | null): string {

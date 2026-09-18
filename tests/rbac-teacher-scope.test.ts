@@ -4,6 +4,7 @@ import { db } from '@/db'
 import { course, classSection, student, enrollment, lesson } from '@/db/schema'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { sectionIdsForActor, studentIdsForActor, actorOwnsSection } from '@/auth/scope'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // The per-section loaders in teach/[sectionId]/data.ts 404 via next/navigation's notFound() for a foreign
 // section. Mock it to a deterministic throw (mirrors report-db.test.ts's vi.mock) so the DATA-LAYER guard
@@ -80,10 +81,12 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
+  await unseedOrg(org)
 }
 
 beforeAll(async () => {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_scope', tenantId: org, title: '作用域课程' })
   await db.insert(classSection).values([
     { id: sA1, tenantId: org, courseId: 'c_scope', name: 'A1', teacherId: teacherA, capacity: 5 },
@@ -201,7 +204,9 @@ describe('数据层归属守卫 — getSectionHeader / getSectionRoster / getSec
     expect(typeof (await getSectionPendingRescheduleCount(teacherACtx, sA1))).toBe('number')
     // Foreign section 404s directly — locks the getSectionReports self-guard and the new pending-count guard.
     await expect(getSectionReports(teacherBCtx, sA1)).rejects.toThrow('NEXT_NOT_FOUND')
-    await expect(getSectionPendingRescheduleCount(teacherBCtx, sA1)).rejects.toThrow('NEXT_NOT_FOUND')
+    await expect(getSectionPendingRescheduleCount(teacherBCtx, sA1)).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    )
   })
 })
 
@@ -211,7 +216,9 @@ describe('数据层归属守卫 — getSectionHeader / getSectionRoster / getSec
 describe('花名册写路径归属守卫 — enrollStudent / unenrollStudent / listSectionEnrollments（M2 补：写路径）', () => {
   it('a teacher cannot enroll or unenroll students in another teacher’s section', async () => {
     asActor(teacherBCtx)
-    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('无权管理该班级')
+    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow(
+      '无权管理该班级',
+    )
     await expect(unenrollStudent({ studentId: stuA, sectionId: sA1 })).rejects.toThrow(
       '无权管理该班级',
     )

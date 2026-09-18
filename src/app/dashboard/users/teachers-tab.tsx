@@ -5,6 +5,7 @@ import { isAdminRole, roleLabel } from '@/auth/roles'
 import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
+import type { CreateStaffInput } from '@/auth/staff'
 
 // 教师 tab of /dashboard/users — teacher/assistant staff accounts. Defence-in-depth: the page already
 // gates admin+, but we re-check member:create here so a direct hit still can't reach the data. Any org
@@ -17,7 +18,7 @@ export default async function TeachersTab() {
   const staff = await listStaff(ctx)
   const teachers = staff.filter((s) => !isAdminRole(s.role)) // teacher / assistant only
 
-  const createRoles = [
+  const createRoles: { value: CreateStaffInput['role']; label: string }[] = [
     { value: 'teacher', label: roleLabel('teacher') },
     { value: 'assistant', label: roleLabel('assistant') },
   ]

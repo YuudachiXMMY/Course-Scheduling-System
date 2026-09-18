@@ -5,6 +5,7 @@ import { course, classSection, student, enrollment, lesson, rescheduleRequest } 
 import { forTenant } from '@/db/tenant'
 import { approveRescheduleRequestCore, rejectRescheduleRequestCore } from '@/lib/reschedule-core'
 import type { AuthContext } from '@/auth/context'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // 评审 Slice G / B19/B20 —— 改期审批 check-then-act 非原子。approve/reject/cancel 曾是"无锁读 → 判 pending →
 // 副作用 → 写状态"，并发审批可致课节已移动却记为拒绝、双通知。修复：终态写为带 status='pending' 谓词的原子
@@ -31,16 +32,27 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
+  await unseedOrg(org)
 }
 
 async function seed() {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_ra', tenantId: org, title: '原子改期课程' })
   await db
     .insert(classSection)
-    .values({ id: sec, tenantId: org, courseId: 'c_ra', name: 'RA', teacherId: teacher, capacity: 5 })
+    .values({
+      id: sec,
+      tenantId: org,
+      courseId: 'c_ra',
+      name: 'RA',
+      teacherId: teacher,
+      capacity: 5,
+    })
   await db.insert(student).values({ id: stu, tenantId: org, name: '学生RA' })
-  await db.insert(enrollment).values({ tenantId: org, studentId: stu, sectionId: sec, status: 'active' })
+  await db
+    .insert(enrollment)
+    .values({ tenantId: org, studentId: stu, sectionId: sec, status: 'active' })
   await db.insert(lesson).values({
     id: les,
     tenantId: org,
@@ -95,7 +107,10 @@ describe('改期审批并发原子性 (B19/B20)', () => {
       rescheduleRequest,
       eq(rescheduleRequest.id, reqId),
     )) as (typeof rescheduleRequest.$inferSelect)[]
-    const [lesRow] = (await forTenant(ctx).select(lesson, eq(lesson.id, les))) as (typeof lesson.$inferSelect)[]
+    const [lesRow] = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.id, les),
+    )) as (typeof lesson.$inferSelect)[]
 
     // 终态确定且唯一：既不是仍 pending，也不是"移动了却记为 rejected"的矛盾态。
     expect(['approved', 'rejected']).toContain(reqRow.status)

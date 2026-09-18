@@ -16,9 +16,9 @@ export async function getActiveFeed(ctx: AuthContext): Promise<Feed | null> {
   const ownerScope = isWholeTenantActor(ctx)
     ? isNull(calendarFeed.teacherId)
     : eq(calendarFeed.teacherId, ctx.userId)
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     calendarFeed,
     and(isNull(calendarFeed.revokedAt), ownerScope),
-  )) as Feed[]
+  )
   return rows[0] ?? null
 }

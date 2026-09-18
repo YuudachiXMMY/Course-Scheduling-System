@@ -17,15 +17,36 @@ export function hashPayload(payload: unknown): string {
   return crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex')
 }
 
+// SEC6: the store only ever shrinks on consume — a preview that is never confirmed would linger until
+// process restart, a slow unbounded leak. Sweep expired entries lazily on each issue (O(n) with small
+// n, gated by the single trusted MCP bearer's preview volume). `now` is injectable so it stays
+// deterministically testable.
+function sweepExpired(now: number): void {
+  for (const [token, entry] of store) {
+    if (entry.expiresAt < now) store.delete(token)
+  }
+}
+
 export function issueConfirmation(payload: unknown, now: number = Date.now()): string {
+  sweepExpired(now)
   const token = crypto.randomUUID()
   store.set(token, { payloadHash: hashPayload(payload), expiresAt: now + TTL_MS })
   return token
 }
 
+// Observability/test hook: the number of pending (issued-but-not-consumed) confirmations. Lets the
+// SEC6 sweep test assert expired entries are actually purged from the store, not merely rejected.
+export function confirmationStoreSize(): number {
+  return store.size
+}
+
 // Single-use: ALWAYS consumes the token. Returns true only if it existed, is unexpired, AND the
 // resubmitted payload hashes to the same value it was bound to.
-export function consumeConfirmation(token: string, payload: unknown, now: number = Date.now()): boolean {
+export function consumeConfirmation(
+  token: string,
+  payload: unknown,
+  now: number = Date.now(),
+): boolean {
   const pending = store.get(token)
   if (!pending) return false
   store.delete(token)

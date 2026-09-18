@@ -76,12 +76,16 @@ export default function NavLinks({
       <NavLink href="/dashboard/notifications" activePrefix="/dashboard/notifications">
         通知
         {unreadCount > 0 && (
-          <span
-            aria-hidden
-            className="ml-1 inline-block rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white"
-          >
-            {unreadCount}
-          </span>
+          <>
+            {/* B41：视觉徽章仅呈现数字，对 AT 隐藏；另补 sr-only 文本，让读屏能感知未读数量。 */}
+            <span
+              aria-hidden
+              className="ml-1 inline-block rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white"
+            >
+              {unreadCount}
+            </span>
+            <span className="sr-only">（{unreadCount} 条未读通知）</span>
+          </>
         )}
       </NavLink>
       <NavLink href="/dashboard/calendar">日历订阅</NavLink>

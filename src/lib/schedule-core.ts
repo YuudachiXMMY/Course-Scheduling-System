@@ -8,7 +8,8 @@ import { lesson, classSection } from '@/db/schema'
 import { checkTeacherConflict } from '@/lib/conflict'
 import { ConflictError, isExclusionViolation } from '@/lib/errors'
 import { APP_TIME_ZONE } from '@/lib/timezone'
-import type { CalendarEvent, ScheduleResult } from '@/app/dashboard/schedule/types'
+import { hydrateLessonEvent } from '@/app/dashboard/schedule/data'
+import type { ScheduleResult } from '@/app/dashboard/schedule/types'
 
 // P6-3: the scheduling create/reschedule core, extracted from the Server Actions so the Next.js
 // dashboard AND the Phase-6 MCP tools share BYTE-IDENTICAL conflict detection + write logic.
@@ -20,19 +21,9 @@ import type { CalendarEvent, ScheduleResult } from '@/app/dashboard/schedule/typ
 
 const ZONE = APP_TIME_ZONE
 
-function toEvent(row: typeof lesson.$inferSelect): CalendarEvent {
-  return {
-    id: row.id,
-    title: row.title ?? '课节',
-    start: row.startAt.toISOString(),
-    end: row.endAt.toISOString(),
-    sectionId: row.sectionId,
-    status: row.status,
-  }
-}
-
-function toHHmm(d: Date): string {
-  return DateTime.fromJSDate(d).setZone(ZONE).toFormat('HH:mm')
+// Render a suggestion instant as HH:mm in the section's zone (CR10) — falls back to APP_TIME_ZONE.
+function toHHmm(d: Date, zone: string = ZONE): string {
+  return DateTime.fromJSDate(d).setZone(zone).toFormat('HH:mm')
 }
 
 // Field shapes are exported separately from the refined schemas so callers that need a plain
@@ -64,9 +55,7 @@ export async function scheduleLessonCore(
   const data = createSchema.parse(input)
 
   // teacherId comes from the section (denormalized) so GiST/conflict never silently exempts the row.
-  const section = (await forTenant(ctx).findById(classSection, data.sectionId)) as
-    | typeof classSection.$inferSelect
-    | null
+  const section = await forTenant(ctx).findById(classSection, data.sectionId)
   if (!section) throw new Error('班级不存在或不属于当前机构')
   // 工作流 E: a section-scoped teacher may only schedule into a section they teach (shared by the
   // dashboard Server Action AND the MCP tool, so both paths are covered here).
@@ -74,13 +63,21 @@ export async function scheduleLessonCore(
   const teacherId = section.teacherId
   if (!teacherId) throw new Error('班级尚未指定教师，无法排课')
 
-  const check = await checkTeacherConflict(ctx, { teacherId, startAt: data.startAt, endAt: data.endAt })
+  // CR10: suggestions enumerate the business-hours window in the SECTION's zone (recurrenceTimezone),
+  // not a hardcoded APP_TIME_ZONE — thread it through so per-section timezones (if ever enabled) stay
+  // consistent. Defaults to APP_TIME_ZONE today (classSection.recurrenceTimezone default).
+  const check = await checkTeacherConflict(ctx, {
+    teacherId,
+    startAt: data.startAt,
+    endAt: data.endAt,
+    zone: section.recurrenceTimezone,
+  })
   if (check.hasConflict) {
     return {
       ok: false,
       error: 'CONFLICT',
       conflicts: check.conflicts.map((c) => ({ id: c.id, title: c.title })),
-      suggestions: check.suggestions.map(toHHmm),
+      suggestions: check.suggestions.map((d) => toHHmm(d, section.recurrenceTimezone)),
     }
   }
 
@@ -94,7 +91,7 @@ export async function scheduleLessonCore(
       status: 'scheduled',
       isException: true, // ad-hoc lesson (not from the RRULE grid)
     })
-    return { ok: true, event: toEvent(row as typeof lesson.$inferSelect) }
+    return { ok: true, event: await hydrateLessonEvent(ctx, row) }
   } catch (e) {
     if (isExclusionViolation(e)) throw new ConflictError()
     throw e
@@ -107,25 +104,31 @@ export async function rescheduleLessonCore(
 ): Promise<ScheduleResult> {
   const data = rescheduleSchema.parse(input)
 
-  const existing = (await forTenant(ctx).findById(lesson, data.id)) as typeof lesson.$inferSelect | null
+  const existing = await forTenant(ctx).findById(lesson, data.id)
   if (!existing) throw new Error('课节不存在')
   if (!existing.teacherId) throw new Error('课节缺少教师信息')
   // 工作流 E: a section-scoped teacher may only move a lesson of a section they teach (lesson.teacherId
   // is denormalized from the section). Also gates approveRescheduleRequestCore, which moves via here.
   if (!actorOwnsSection(ctx, { teacherId: existing.teacherId })) throw new Error('无权修改该课节')
 
+  // CR10: the lesson row carries no zone; load its section for recurrenceTimezone so suggestions use the
+  // section's business-hours window (defaults to APP_TIME_ZONE). Missing section → fall back.
+  const section = await forTenant(ctx).findById(classSection, existing.sectionId)
+  const zone = section?.recurrenceTimezone ?? ZONE
+
   const check = await checkTeacherConflict(ctx, {
     teacherId: existing.teacherId,
     startAt: data.startAt,
     endAt: data.endAt,
     excludeLessonId: data.id, // don't conflict with itself
+    zone,
   })
   if (check.hasConflict) {
     return {
       ok: false,
       error: 'CONFLICT',
       conflicts: check.conflicts.map((c) => ({ id: c.id, title: c.title })),
-      suggestions: check.suggestions.map(toHHmm),
+      suggestions: check.suggestions.map((d) => toHHmm(d, zone)),
     }
   }
 
@@ -135,7 +138,7 @@ export async function rescheduleLessonCore(
       endAt: data.endAt,
       isException: true, // moved off the pattern (P2-8)
     })
-    return { ok: true, event: toEvent(row as typeof lesson.$inferSelect) }
+    return { ok: true, event: await hydrateLessonEvent(ctx, row) }
   } catch (e) {
     if (isExclusionViolation(e)) throw new ConflictError()
     throw e

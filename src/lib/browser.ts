@@ -21,7 +21,13 @@ async function getBrowser(): Promise<Browser> {
   // failure so a transient launch error (or missing system chromium) can be retried next request.
   const p = chromium.launch({
     headless: true,
-    chromiumSandbox: false,
+    // SEC4: run Chromium WITH its OS sandbox by default (Playwright defaults chromiumSandbox to false,
+    // so we must opt in explicitly). The sandbox is a real containment boundary for the renderer; we
+    // only ever render app-generated, HTML-escaped markup via page.setContent and NEVER navigate to a
+    // remote/user URL, but defence-in-depth is cheap here. If the target runtime cannot grant
+    // unprivileged user namespaces (some hardened containers), set CHROMIUM_NO_SANDBOX=true to fall
+    // back to the previous no-sandbox behavior — a documented, accepted risk (docs/adr/0002-*).
+    chromiumSandbox: env.CHROMIUM_NO_SANDBOX !== 'true',
     // Debian system chromium in prod (/usr/bin/chromium via PLAYWRIGHT_CHROMIUM_PATH);
     // empty → Playwright's bundled Chromium in dev/macOS.
     executablePath: env.PLAYWRIGHT_CHROMIUM_PATH || undefined,

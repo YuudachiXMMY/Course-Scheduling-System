@@ -4,6 +4,7 @@ import { db } from '@/db'
 import { course, classSection, student, enrollment, lesson, grade, note } from '@/db/schema'
 import { getReportData } from '@/lib/report-data'
 import type { AuthContext } from '@/auth/context'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // 评审 Slice H —— 报告数据正确性/隐私。
 // B51: 报告按"当前 active 在册"取数，遗漏报告周期内曾在册但已转班/结课的班级数据。
@@ -27,10 +28,12 @@ const cleanup = async () => {
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
+  await unseedOrg(org)
 }
 
 beforeAll(async () => {
   await cleanup()
+  await seedOrg(org)
   await db.insert(course).values({ id: 'c_rs', tenantId: org, title: '报告课程' })
   await db.insert(classSection).values([
     { id: sX, tenantId: org, courseId: 'c_rs', name: 'X', teacherId: teacher, capacity: 5 },
@@ -69,8 +72,20 @@ beforeAll(async () => {
     .insert(grade)
     .values({ tenantId: org, studentId: stu, lessonId: lesX, title: '期中', score: '90' })
   await db.insert(note).values([
-    { tenantId: org, studentId: stu, authorId: teacher, body: '内部备注勿外传', visibility: 'internal' },
-    { tenantId: org, studentId: stu, authorId: teacher, body: '家长可见评语', visibility: 'shared' },
+    {
+      tenantId: org,
+      studentId: stu,
+      authorId: teacher,
+      body: '内部备注勿外传',
+      visibility: 'internal',
+    },
+    {
+      tenantId: org,
+      studentId: stu,
+      authorId: teacher,
+      body: '家长可见评语',
+      visibility: 'shared',
+    },
   ])
 })
 

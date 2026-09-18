@@ -14,6 +14,7 @@ import { db } from '@/db'
 import { course, classSection, lesson, calendarFeed } from '@/db/schema'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { getOrCreateFeed, rotateFeed, revokeFeed } from '@/app/dashboard/calendar/actions'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // Two lessons at known UTC instants. Jan 5 is EST (America/Toronto, UTC-5), so 08:00Z == 03:00 local.
 const lessons: FeedLesson[] = [
@@ -128,11 +129,13 @@ const cleanupScope = async () => {
   await db.delete(lesson).where(eq(lesson.tenantId, org))
   await db.delete(classSection).where(eq(classSection.tenantId, org))
   await db.delete(course).where(eq(course.tenantId, org))
+  await unseedOrg(org)
 }
 
 describe('评审 Slice D — 订阅源按 feed 归属维度收敛', () => {
   beforeAll(async () => {
     await cleanupScope()
+    await seedOrg(org)
     await db.insert(course).values({ id: 'c_ical', tenantId: org, title: 'iCal 课程' })
     await db.insert(classSection).values([
       { id: sA, tenantId: org, courseId: 'c_ical', name: 'A 班', teacherId: teacherA, capacity: 5 },

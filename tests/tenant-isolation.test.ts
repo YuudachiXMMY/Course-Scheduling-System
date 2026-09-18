@@ -24,6 +24,9 @@ describe('tenant isolation', () => {
   // user has no org FK so is removed explicitly. Runs before AND after so the suite is
   // re-runnable against a persistent DB (local docker volume), not only a fresh CI service.
   const cleanup = async () => {
+    // DB1: student.tenant_id now FK-references organization ON DELETE RESTRICT, so the student rows
+    // this suite inserts must be removed BEFORE their org (previously they were left as orphans).
+    await db.delete(student).where(inArray(student.tenantId, [orgA, orgB]))
     await db.delete(organization).where(inArray(organization.id, [orgA, orgB]))
     await db.delete(user).where(inArray(user.id, [userA, userB]))
   }

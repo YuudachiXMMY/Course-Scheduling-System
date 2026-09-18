@@ -113,6 +113,11 @@ export async function setStaffRoleCore(
 ): Promise<void> {
   if (targetUserId === ctx.userId) throw new Error('不能修改自己的角色')
   if (!(STAFF_ROLES as readonly string[]).includes(newRole)) throw new Error('无效的角色')
+  // AZ4: owner is seed-only (staff.ts header). STAFF_ROLES includes 'owner', so even a platform
+  // superadmin could otherwise promote a member to owner and mint a 2nd owner via the API. Gate the
+  // TARGET role only — demoting an existing owner (oldRole=owner → admin) must still work, so this
+  // guards promotion TO owner, never owner demotion/deactivation (still behind the last-owner lock).
+  if (newRole === 'owner') throw new Error('负责人为初始化专用角色，不能通过管理界面授予')
   const oldRole = await requireStaffTarget(ctx, targetUserId)
   assertCanManageRole(ctx, oldRole)
   assertCanManageRole(ctx, newRole)

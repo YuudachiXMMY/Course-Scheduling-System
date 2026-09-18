@@ -24,28 +24,21 @@ export async function getLessonRoster(lessonId: string): Promise<RosterEntry[]> 
   // section-scoped teacher or a portal account may only read a lesson they own. requirePermission
   // checks the coarse role; forTenant checks only the tenant. Neither is a row-level ownership check.
   if (!(await actorOwnsLesson(ctx, lessonId))) return []
-  const lrow = (await forTenant(ctx).findById(lesson, lessonId)) as
-    typeof lesson.$inferSelect | null
+  const lrow = await forTenant(ctx).findById(lesson, lessonId)
   if (!lrow) return []
 
-  const enrollments = (await forTenant(ctx).select(
+  const enrollments = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, lrow.sectionId), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   if (enrollments.length === 0) return []
 
   // Only load the enrolled students' names (not the whole tenant's student table).
   const studentIds = enrollments.map((e) => e.studentId)
-  const students = (await forTenant(ctx).select(
-    student,
-    inArray(student.id, studentIds),
-  )) as (typeof student.$inferSelect)[]
+  const students = await forTenant(ctx).select(student, inArray(student.id, studentIds))
   const nameById = new Map(students.map((s) => [s.id, s.name]))
 
-  const recorded = (await forTenant(ctx).select(
-    attendance,
-    eq(attendance.lessonId, lessonId),
-  )) as (typeof attendance.$inferSelect)[]
+  const recorded = await forTenant(ctx).select(attendance, eq(attendance.lessonId, lessonId))
   const byStudent = new Map(recorded.map((a) => [a.studentId, a]))
 
   return enrollments.map((e) => {
@@ -75,10 +68,10 @@ export async function upsertAttendance(input: z.input<typeof attendanceSchema>) 
   // 工作流 E: a section-scoped teacher may only record attendance for a lesson they teach.
   if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权记录该课节考勤')
 
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     attendance,
     and(eq(attendance.lessonId, data.lessonId), eq(attendance.studentId, data.studentId)),
-  )) as (typeof attendance.$inferSelect)[]
+  )
 
   if (existing[0]) {
     const [row] = await forTenant(ctx).update(attendance, existing[0].id, {
@@ -107,10 +100,7 @@ export async function listAttendance(lessonId: string) {
   requirePermission(ctx, { lesson: ['read'] })
   // 工作流 E: row-level ownership guard, mirrors upsertAttendance (see getLessonRoster).
   if (!(await actorOwnsLesson(ctx, lessonId))) return []
-  return (await forTenant(ctx).select(
-    attendance,
-    eq(attendance.lessonId, lessonId),
-  )) as (typeof attendance.$inferSelect)[]
+  return await forTenant(ctx).select(attendance, eq(attendance.lessonId, lessonId))
 }
 
 // A lesson's notes: ONE shared note (studentId = null) that every student's per-lesson report
@@ -128,10 +118,7 @@ export async function getLessonNotes(lessonId: string): Promise<LessonNotes> {
   // 工作流 E: row-level ownership guard, mirrors upsertSharedNote/upsertStudentNote (see getLessonRoster).
   // Private per-student teacher notes must never leak to a foreign teacher or a portal account.
   if (!(await actorOwnsLesson(ctx, lessonId))) return { shared: '', perStudent: {} }
-  const rows = (await forTenant(ctx).select(
-    note,
-    eq(note.lessonId, lessonId),
-  )) as (typeof note.$inferSelect)[]
+  const rows = await forTenant(ctx).select(note, eq(note.lessonId, lessonId))
   // Oldest → newest so a later row wins per key (latest edit reflects current state).
   rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
   let shared = ''
@@ -156,10 +143,10 @@ export async function upsertSharedNote(input: z.input<typeof sharedNoteSchema>) 
   // 工作流 E: a section-scoped teacher may only write a note on a lesson they teach.
   if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权编辑该课节笔记')
 
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     note,
     and(eq(note.lessonId, data.lessonId), isNull(note.studentId)),
-  )) as (typeof note.$inferSelect)[]
+  )
 
   if (existing[0]) {
     const [row] = await forTenant(ctx).update(note, existing[0].id, {
@@ -193,10 +180,10 @@ export async function upsertStudentNote(input: z.input<typeof studentNoteSchema>
   // 工作流 E: a section-scoped teacher may only write a comment on a lesson they teach.
   if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权编辑该课节点评')
 
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     note,
     and(eq(note.lessonId, data.lessonId), eq(note.studentId, data.studentId)),
-  )) as (typeof note.$inferSelect)[]
+  )
 
   if (existing[0]) {
     const [row] = await forTenant(ctx).update(note, existing[0].id, {

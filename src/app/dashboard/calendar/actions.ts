@@ -30,10 +30,10 @@ function feedOwnerId(ctx: AuthContext): string | null {
 // `calendarFeed` is a NORMAL tenant table here — only the PUBLIC route
 // (src/app/api/calendar/[token]/route.ts) bypasses forTenant() (P3-2).
 async function findActiveFeed(ctx: AuthContext): Promise<Feed | null> {
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     calendarFeed,
     and(isNull(calendarFeed.revokedAt), feedOwnerScope(ctx)),
-  )) as Feed[]
+  )
   return rows[0] ?? null
 }
 
@@ -46,11 +46,11 @@ export async function getOrCreateFeed(): Promise<{ token: string }> {
   const existing = await findActiveFeed(ctx)
   if (existing) return { token: existing.token }
 
-  const [created] = (await forTenant(ctx).insert(calendarFeed, {
+  const [created] = await forTenant(ctx).insert(calendarFeed, {
     token: nanoid(32),
     label: '我的教学日历',
     teacherId: feedOwnerId(ctx), // 按 owner 维度接线：section-scoped 教师→自己，whole-tenant→null
-  })) as Feed[]
+  })
   revalidatePath('/dashboard/calendar')
   return { token: created.token }
 }
@@ -64,16 +64,16 @@ export async function rotateFeed(): Promise<{ token: string }> {
   const existing = await findActiveFeed(ctx)
   const token = nanoid(32)
   if (!existing) {
-    const [created] = (await forTenant(ctx).insert(calendarFeed, {
+    const [created] = await forTenant(ctx).insert(calendarFeed, {
       token,
       label: '我的教学日历',
       teacherId: feedOwnerId(ctx), // 无现存 feed 时新建，仍按 owner 维度接线
-    })) as Feed[]
+    })
     revalidatePath('/dashboard/calendar')
     return { token: created.token }
   }
 
-  const [updated] = (await forTenant(ctx).update(calendarFeed, existing.id, { token })) as Feed[]
+  const [updated] = await forTenant(ctx).update(calendarFeed, existing.id, { token })
   revalidatePath('/dashboard/calendar')
   return { token: updated.token }
 }

@@ -136,6 +136,7 @@ export default function SectionRoster({
       {!readOnly && (
         <div className="flex gap-2">
           <select
+            aria-label="选择学生"
             className="flex-1 rounded border border-neutral-300 px-2 py-1 text-xs"
             value={pick}
             onChange={(e) => setPick(e.target.value)}

@@ -49,7 +49,10 @@ test.describe.serial('课程管理（课程 / 班级 / 花名册 / 归档恢复�
 
     // One meeting slot. 周三(WE) @ 07:00, default 60 分 — an early, unusual slot to steer clear of any
     // teacher lessons the owner might collide with (a conflict would just skip that occurrence).
-    await card.getByRole('combobox').first().selectOption('WE')
+    // Target the weekday select by its accessible name (含「星期」) rather than positional .first():
+    // CR2 added a 授课教师 <select> before the meeting rows for whole-tenant actors (owner runs this
+    // spec), so .first() would now land on the teacher picker and time out on the missing 'WE' option.
+    await card.getByRole('combobox', { name: /星期/ }).first().selectOption('WE')
     await card.locator('input[type="time"]').first().fill('07:00')
     await card
       .locator('label')

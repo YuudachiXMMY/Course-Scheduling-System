@@ -51,20 +51,32 @@ export function expandRecurrence(params: {
       `recurrence expands to ${floatingOccurrences.length} occurrences (max ${MAX_OCCURRENCES})`,
     )
   }
-  return floatingOccurrences.map((floating) => {
+  return floatingOccurrences.flatMap((floating) => {
+    const reqHour = floating.getUTCHours()
+    const reqMinute = floating.getUTCMinutes()
     // Reinterpret the floating wall-clock as `zone`, then to a real UTC instant.
     const local = DateTime.fromObject(
       {
         year: floating.getUTCFullYear(),
         month: floating.getUTCMonth() + 1,
         day: floating.getUTCDate(),
-        hour: floating.getUTCHours(),
-        minute: floating.getUTCMinutes(),
+        hour: reqHour,
+        minute: reqMinute,
       },
       { zone },
     )
+    // CR11: DST spring-forward gap. On the transition day the requested wall-clock time may NOT EXIST
+    // (e.g. 02:30 America/Toronto when clocks jump 02:00 → 03:00). Luxon does NOT set .isValid=false for
+    // a gap time — it silently rolls the instant forward to the post-transition offset (02:30 → 03:30),
+    // which would materialize a lesson at an unintended wall-clock. Detect it by comparing the requested
+    // hour/minute to what Luxon resolved; if they differ (or the DateTime is invalid), SKIP the
+    // occurrence rather than emit a shifted one. Fall-back (ambiguous) times keep their wall-clock, so
+    // this never drops November occurrences. Business-hours class times almost never land in the gap.
+    if (!local.isValid || local.hour !== reqHour || local.minute !== reqMinute) {
+      return []
+    }
     const startAt = local.toUTC().toJSDate()
     const endAt = local.plus({ minutes: durationMinutes }).toUTC().toJSDate()
-    return { startAt, endAt, originalStartAt: startAt }
+    return [{ startAt, endAt, originalStartAt: startAt }]
   })
 }

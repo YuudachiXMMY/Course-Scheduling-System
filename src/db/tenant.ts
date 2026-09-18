@@ -6,6 +6,17 @@ import type { AuthContext } from '@/auth/context'
 
 type TenantTable = PgTable & { id: PgColumn; tenantId: PgColumn }
 
+// B44: a chainable-and-awaitable view over a drizzle select builder that PRESERVES the row type.
+// forTenant().select() must stay chainable (notification-core chains .orderBy().limit()) AND carry
+// T['$inferSelect'] through those chains, so callers no longer hand-cast the result. Only the builder
+// methods actually used today are exposed — chaining .groupBy/.leftJoin/.for on a scoped select is an
+// intentional compile error (use raw db for those).
+type TenantSelect<Row> = Promise<Row[]> & {
+  orderBy(...cols: (SQL | PgColumn)[]): TenantSelect<Row>
+  limit(n: number): TenantSelect<Row>
+  offset(n: number): TenantSelect<Row>
+}
+
 // tenantId comes ONLY from the verified AuthContext — never from request params/body.
 //
 // M1: this wrapper is the ONLY sanctioned path to tenant-scoped data. There is no RLS backstop yet
@@ -14,12 +25,14 @@ type TenantTable = PgTable & { id: PgColumn; tenantId: PgColumn }
 export function forTenant(ctx: AuthContext) {
   const scope = (t: TenantTable) => eq(t.tenantId, ctx.tenantId)
   return {
-    select<T extends TenantTable>(t: T, extra?: SQL) {
+    select<T extends TenantTable>(t: T, extra?: SQL): TenantSelect<T['$inferSelect']> {
       const table = t as unknown as PgTable
       return db
         .select()
         .from(table)
-        .where(extra ? and(scope(t), extra) : scope(t))
+        .where(extra ? and(scope(t), extra) : scope(t)) as unknown as TenantSelect<
+        T['$inferSelect']
+      >
     },
     // Tenant-scoped COUNT(*) — returns a scalar instead of loading rows into memory (hot paths like
     // the unread badge that only need a number). `extra` narrows within the tenant, never across it.
@@ -30,21 +43,28 @@ export function forTenant(ctx: AuthContext) {
         .where(extra ? and(scope(t), extra) : scope(t))
       return row?.value ?? 0
     },
-    async findById<T extends TenantTable>(t: T, id: string) {
+    async findById<T extends TenantTable>(t: T, id: string): Promise<T['$inferSelect'] | null> {
       const rows = await db
         .select()
         .from(t as unknown as PgTable)
         .where(and(scope(t), eq(t.id, id)))
         .limit(1)
-      return rows[0] ?? null
+      return (rows[0] ?? null) as T['$inferSelect'] | null
     },
-    insert<T extends TenantTable>(t: T, values: Record<string, unknown>) {
+    insert<T extends TenantTable>(
+      t: T,
+      values: Record<string, unknown>,
+    ): Promise<T['$inferSelect'][]> {
       return db
         .insert(t as unknown as PgTable)
         .values({ ...values, tenantId: ctx.tenantId }) // forces tenantId
-        .returning()
+        .returning() as unknown as Promise<T['$inferSelect'][]>
     },
-    update<T extends TenantTable>(t: T, id: string, values: Record<string, unknown>) {
+    update<T extends TenantTable>(
+      t: T,
+      id: string,
+      values: Record<string, unknown>,
+    ): Promise<T['$inferSelect'][]> {
       const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
       void _t
       void _id
@@ -52,7 +72,7 @@ export function forTenant(ctx: AuthContext) {
         .update(t as unknown as PgTable)
         .set(safe)
         .where(and(scope(t), eq(t.id, id)))
-        .returning()
+        .returning() as unknown as Promise<T['$inferSelect'][]>
     },
     // S0 (B19/B20): conditional tenant-scoped update — like update() but AND-s an extra predicate into
     // the WHERE so the row changes ONLY if it still matches (optimistic compare-and-set). A single
@@ -64,7 +84,7 @@ export function forTenant(ctx: AuthContext) {
       id: string,
       extra: SQL,
       values: Record<string, unknown>,
-    ) {
+    ): Promise<T['$inferSelect'][]> {
       const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
       void _t
       void _id
@@ -72,24 +92,44 @@ export function forTenant(ctx: AuthContext) {
         .update(t as unknown as PgTable)
         .set(safe)
         .where(and(scope(t), eq(t.id, id), extra))
-        .returning()
+        .returning() as unknown as Promise<T['$inferSelect'][]>
     },
-    delete<T extends TenantTable>(t: T, id: string) {
+    // Bulk tenant-scoped UPDATE by an arbitrary condition — the update analogue of deleteWhere, and the
+    // batch counterpart of update()/updateWhere() (which touch a single id). Collapses a select-then-
+    // per-row-update loop into ONE statement (PERF2/PERF4). Same isolation invariants as deleteWhere:
+    // scope(t) is ALWAYS AND-ed in so `extra` can only narrow WITHIN ctx.tenantId, `extra` is REQUIRED,
+    // and tenantId/id are stripped from `values` so the write can never move a row across tenants or
+    // rewrite its id. Returns every affected row.
+    updateWhereMany<T extends TenantTable>(
+      t: T,
+      extra: SQL,
+      values: Record<string, unknown>,
+    ): Promise<T['$inferSelect'][]> {
+      const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
+      void _t
+      void _id
+      return db
+        .update(t as unknown as PgTable)
+        .set(safe)
+        .where(and(scope(t), extra))
+        .returning() as unknown as Promise<T['$inferSelect'][]>
+    },
+    delete<T extends TenantTable>(t: T, id: string): Promise<T['$inferSelect'][]> {
       return db
         .delete(t as unknown as PgTable)
         .where(and(scope(t), eq(t.id, id)))
-        .returning()
+        .returning() as unknown as Promise<T['$inferSelect'][]>
     },
     // Bulk tenant-scoped delete by an arbitrary condition (retention / cleanup jobs). Like delete()
     // the tenant scope is ALWAYS AND-ed in, so `extra` can only narrow WITHIN ctx.tenantId — it can
     // never reach another tenant's rows. `extra` is REQUIRED (a forgotten predicate can't become a
     // whole-table wipe), but note it bounds CROSS-tenant blast radius only: a tautological `extra`
     // (e.g. sql`true`) would still delete every row of this tenant, so callers must scope it themselves.
-    deleteWhere<T extends TenantTable>(t: T, extra: SQL) {
+    deleteWhere<T extends TenantTable>(t: T, extra: SQL): Promise<T['$inferSelect'][]> {
       return db
         .delete(t as unknown as PgTable)
         .where(and(scope(t), extra))
-        .returning()
+        .returning() as unknown as Promise<T['$inferSelect'][]>
     },
   }
 }

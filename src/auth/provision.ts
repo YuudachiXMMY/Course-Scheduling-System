@@ -40,6 +40,16 @@ export type ProvisionPortalInput = z.input<typeof provisionSchema>
 // tenant scope), so passing a pre-existing/reused id would wrongly tear down a real cross-org account.
 export async function deprovisionPortalMember(userId: string): Promise<void> {
   await db.transaction(async (tx) => {
+    // AZ7: turn the CONTRACT above into a runtime guard. This deletes the user row by BARE userId (no
+    // tenant scope), so a future caller passing a reused/pre-existing id would hard-delete a real,
+    // possibly cross-org account. A freshly-minted provision artifact has AT MOST ONE membership (0 if
+    // addMember failed before it committed); a user in >1 org is never such an artifact → refuse. The
+    // check + deletes stay inside the same transaction so they remain atomic.
+    const memberships = await tx
+      .select({ id: member.id })
+      .from(member)
+      .where(eq(member.userId, userId))
+    if (memberships.length > 1) throw new Error('拒绝删除多机构用户')
     await tx.delete(member).where(eq(member.userId, userId))
     await tx.delete(account).where(eq(account.userId, userId))
     await tx.delete(userTable).where(eq(userTable.id, userId))
@@ -70,11 +80,16 @@ export async function provisionPortalMember(args: {
 
   if (existing) {
     const [m] = await db
-      .select({ id: member.id })
+      .select({ id: member.id, role: member.role })
       .from(member)
       .where(and(eq(member.userId, existing.id), eq(member.organizationId, args.orgId)))
       .limit(1)
     if (!m) throw new Error('该邮箱已被其他账号占用')
+    // AZ6: only REUSE a genuine PORTAL member (parent/student — e.g. a real-email parent linked to a
+    // 2nd child). If the email already belongs to a STAFF account (owner/admin/teacher/assistant) in
+    // this org, refuse rather than stapling a portalLink onto a staff login (role confusion). member.role
+    // stays authoritative; the caller records the requested kind on the portalLink relationship.
+    if (!isPortalRole(m.role)) throw new Error('该邮箱已被员工账号占用')
     return { userId: existing.id, created: false } // already in this org → reuse (multi-child parent)
   }
 
@@ -106,8 +121,7 @@ export async function provisionPortalAccountCore(
 ): Promise<{ userId: string; email: string; created: boolean }> {
   const data = provisionSchema.parse(input)
 
-  const s = (await forTenant(ctx).findById(student, data.studentId)) as
-    typeof student.$inferSelect | null
+  const s = await forTenant(ctx).findById(student, data.studentId)
   if (!s) throw new Error('学生不存在')
 
   const email =
@@ -126,10 +140,10 @@ export async function provisionPortalAccountCore(
   try {
     // Idempotent link (tenant-scoped write; tenantId injected by forTenant). Skip if the
     // (tenant, student, user) link already exists — a retry or same-child re-provision is a no-op.
-    const linked = (await forTenant(ctx).select(
+    const linked = await forTenant(ctx).select(
       portalLink,
       and(eq(portalLink.studentId, data.studentId), eq(portalLink.userId, userId)),
-    )) as unknown[]
+    )
     if (linked.length === 0) {
       await forTenant(ctx).insert(portalLink, {
         studentId: data.studentId,
@@ -224,10 +238,10 @@ export async function linkPortalUserCore(
       ? 'student'
       : 'parent')
   // 4) Idempotent insert — the uq_portal_link_student_user unique index is the backstop.
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     portalLink,
     and(eq(portalLink.studentId, data.studentId), eq(portalLink.userId, data.userId)),
-  )) as unknown[]
+  )
   if (existing.length === 0) {
     await forTenant(ctx).insert(portalLink, {
       studentId: data.studentId,

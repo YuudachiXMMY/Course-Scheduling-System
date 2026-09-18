@@ -5,7 +5,7 @@ import type { AuthContext } from '@/auth/context'
 import { forTenant } from '@/db/tenant'
 import { lesson } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
-import { createNotificationCore, resolveLessonRecipientsCore } from '@/lib/notification-core'
+import { createNotificationCore, resolveLessonRecipientsBatchCore } from '@/lib/notification-core'
 import { sendPushToUserCore } from '@/lib/push-core'
 
 // P7b: fixed reminder offsets. A single constant keeps this trivially extensible (add a channel /
@@ -37,13 +37,17 @@ export async function runReminderScanCore(
     const title = offset.label === '1h' ? '课程即将开始' : '课前提醒'
     // gt(lower) / lte(upper): exclusive lower, inclusive upper so a lesson on a boundary isn't
     // double-counted between adjacent scans. Only 'scheduled' lessons get reminders.
-    const lessons = (await forTenant(ctx).select(
+    const lessons = await forTenant(ctx).select(
       lesson,
       and(gt(lesson.startAt, from), lte(lesson.startAt, to), eq(lesson.status, 'scheduled')),
-    )) as (typeof lesson.$inferSelect)[]
+    )
+
+    // PERF10: resolve recipients for the whole window in a fixed 2 queries (enrollment + portalLink)
+    // instead of 2 per lesson (N+1) — this runs per offset per tenant on the cron hot path.
+    const recipientsByLesson = await resolveLessonRecipientsBatchCore(ctx, lessons)
 
     for (const l of lessons) {
-      const recipients = await resolveLessonRecipientsCore(ctx, l)
+      const recipients = recipientsByLesson.get(l.id) ?? []
       if (recipients.length === 0) continue
       const body = `课程将于 ${fmtLessonTime(l.startAt)} 开始`
       for (const userId of recipients) {

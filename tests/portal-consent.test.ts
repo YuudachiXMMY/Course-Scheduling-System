@@ -6,6 +6,7 @@ import { student, portalLink } from '@/db/schema'
 import { requireAuthContext, type AuthContext } from '@/auth/context'
 import { requireConsent } from '@/auth/portal'
 import { getPortalSchedule } from '@/app/portal/data'
+import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // Slice F（B40）——门户同意门服务端复检。layout.tsx 的 ConsentGate 只在渲染层拦截（UX 级）；门户的
 // Server Action 与数据加载器必须在触碰个人数据前独立复检 consentedAt，否则一个从未点"我已阅读并同意"
@@ -51,11 +52,13 @@ const CONSENT_ERR = '请先阅读并同意隐私条款'
 const cleanup = async () => {
   await db.delete(portalLink).where(eq(portalLink.tenantId, org))
   await db.delete(student).where(eq(student.tenantId, org))
+  await unseedOrg(org)
 }
 
 describe('门户同意门服务端复检（Slice F / B40）', () => {
   beforeAll(async () => {
     await cleanup()
+    await seedOrg(org)
     const [a] = (await forTenant(ownerCtx).insert(student, { name: '学生A' })) as { id: string }[]
     const [b] = (await forTenant(ownerCtx).insert(student, { name: '学生B' })) as { id: string }[]
     studentA = a.id
@@ -108,18 +111,18 @@ describe('门户同意门服务端复检（Slice F / B40）', () => {
 
   // ── Server Action：改期申请 ───────────────────────────────────────────────────────────────────
   describe('createRescheduleRequest Server Action', () => {
-    it('未同意用户提交改期 → 抛同意门错误（先于任何输入校验/数据访问）', async () => {
+    it('未同意用户提交改期 → 返回同意门错误（EH8：{ok,error} 判别式，不再向不可信客户端抛原始错误）', async () => {
       asActor(noConsentCtx)
-      await expect(
-        createRescheduleRequest({} as Parameters<typeof createRescheduleRequest>[0]),
-      ).rejects.toThrow(CONSENT_ERR)
+      // EH8/CWE-209：动作把 requireConsent 抛出的 BusinessError 收敛为 {ok:false, error}，
+      // 消息原样保留（同意门仍在数据访问前强制，请求不会被创建）。
+      const res = await createRescheduleRequest({} as Parameters<typeof createRescheduleRequest>[0])
+      expect(res.ok).toBe(false)
+      if (!res.ok) expect(res.error).toBe(CONSENT_ERR)
     })
 
     it('已同意用户 → 越过同意门（此后可因其它既有校验被拒，但不再是同意门错误）', async () => {
       asActor(consentedCtx)
-      const res = await createRescheduleRequest(
-        {} as Parameters<typeof createRescheduleRequest>[0],
-      )
+      const res = await createRescheduleRequest({} as Parameters<typeof createRescheduleRequest>[0])
       expect(res.ok).toBe(false)
       if (!res.ok) expect(res.error).not.toBe(CONSENT_ERR)
     })
