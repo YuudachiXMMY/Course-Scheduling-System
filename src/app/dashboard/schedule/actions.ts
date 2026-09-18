@@ -96,6 +96,9 @@ export interface LessonMeta {
 export async function getLessonMeta(lessonId: string): Promise<LessonMeta | null> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['read'] })
+  // 工作流 E: mirror updateLessonAction — location/meetingUrl (Zoom/腾讯会议链接) must not leak to a
+  // section-scoped teacher or portal account guessing a same-tenant lessonId.
+  if (!(await actorOwnsLesson(ctx, lessonId))) return null
   const row = (await forTenant(ctx).findById(lesson, lessonId)) as typeof lesson.$inferSelect | null
   if (!row) return null
   return { location: row.location, meetingUrl: row.meetingUrl, title: row.title }

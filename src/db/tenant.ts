@@ -54,6 +54,26 @@ export function forTenant(ctx: AuthContext) {
         .where(and(scope(t), eq(t.id, id)))
         .returning()
     },
+    // S0 (B19/B20): conditional tenant-scoped update — like update() but AND-s an extra predicate into
+    // the WHERE so the row changes ONLY if it still matches (optimistic compare-and-set). A single
+    // UPDATE statement re-evaluates its WHERE after taking the row lock, so two concurrent callers
+    // serialise: the loser's predicate (e.g. status='pending') no longer holds and it gets [] back.
+    // Callers treat 0 returned rows as a lost race / conflict. tenantId + id are always AND-ed in.
+    updateWhere<T extends TenantTable>(
+      t: T,
+      id: string,
+      extra: SQL,
+      values: Record<string, unknown>,
+    ) {
+      const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
+      void _t
+      void _id
+      return db
+        .update(t as unknown as PgTable)
+        .set(safe)
+        .where(and(scope(t), eq(t.id, id), extra))
+        .returning()
+    },
     delete<T extends TenantTable>(t: T, id: string) {
       return db
         .delete(t as unknown as PgTable)

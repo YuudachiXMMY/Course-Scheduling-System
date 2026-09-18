@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { requireConsent } from '@/auth/portal'
 import {
   createRescheduleRequestCore,
   cancelRescheduleRequestCore,
@@ -26,6 +27,7 @@ export async function createRescheduleRequest(
 ): Promise<RescheduleActionResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { rescheduleRequest: ['create'] })
+  await requireConsent(ctx) // 服务端同意门复检：提交改期（触碰孩子课表）前必须已同意
   const parsed = createRescheduleRequestSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
@@ -43,6 +45,7 @@ export async function createRescheduleRequest(
 export async function cancelRescheduleRequest(id: string): Promise<RescheduleActionResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { rescheduleRequest: ['cancel'] })
+  await requireConsent(ctx) // 服务端同意门复检：取消改期前必须已同意
   if (!id) return { ok: false, error: '无效的申请' }
   try {
     const row = await cancelRescheduleRequestCore(ctx, id)

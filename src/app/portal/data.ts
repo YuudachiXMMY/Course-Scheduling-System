@@ -4,7 +4,7 @@ import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
 import { getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
 import { cardWindow, type FeedLesson } from '@/lib/ical-feed'
-import { resolveLinkedStudentIds } from '@/auth/portal'
+import { resolveLinkedStudentIds, requireConsent } from '@/auth/portal'
 
 // Phase 7a — the portal's "我的课表": upcoming lessons for ONLY the students this user is linked to.
 // Reuses the Phase-4 authenticated per-student pipeline (getStudentLessonsForTenant, forTenant spine
@@ -18,6 +18,7 @@ export interface PortalCard {
 }
 
 export async function getPortalSchedule(ctx: AuthContext): Promise<PortalCard[]> {
+  await requireConsent(ctx) // 服务端同意门复检：读孩子课表前必须已同意
   const ids = await resolveLinkedStudentIds(ctx)
   const cards: PortalCard[] = []
   for (const id of ids) {

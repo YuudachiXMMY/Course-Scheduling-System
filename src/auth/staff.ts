@@ -43,18 +43,29 @@ async function requireStaffTarget(ctx: AuthContext, targetUserId: string): Promi
   return m.role
 }
 
-// Count the org's owners (comma-multi aware — an 'owner,admin' still counts). Used to protect the LAST
-// owner: an org with zero owners is unrecoverable through the UI (only the seed mints owners).
-async function ownerCount(tenantId: string): Promise<number> {
-  const rows = await db
-    .select({ role: member.role })
+// B39: count the org's USABLE owners (comma-multi aware; a banned owner cannot sign in, so it does not
+// count) WHILE holding a row lock, INSIDE the caller's transaction. `SELECT ... FOR UPDATE` on the org's
+// member rows serialises concurrent demote/deactivate calls: without it two requests each read ">1",
+// both pass the guard, and both commit — leaving the tenant with zero usable owners (recoverable only
+// via the seed). Joining user lets deactivate (which flips user.banned, NOT member.role) also converge:
+// the second txn, unblocked after the first commits, sees the freshly-banned owner and refuses.
+async function lockUsableOwnerCount(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tenantId: string,
+): Promise<number> {
+  const rows = await tx
+    .select({ role: member.role, banned: userTable.banned })
     .from(member)
+    .innerJoin(userTable, eq(member.userId, userTable.id))
     .where(eq(member.organizationId, tenantId))
-  return rows.filter((r) =>
-    r.role
-      .split(',')
-      .map((x) => x.trim())
-      .includes('owner'),
+    .for('update')
+  return rows.filter(
+    (r) =>
+      !r.banned &&
+      r.role
+        .split(',')
+        .map((x) => x.trim())
+        .includes('owner'),
   ).length
 }
 
@@ -108,13 +119,17 @@ export async function setStaffRoleCore(
 
   const wasOwner = roleList(oldRole).includes('owner')
   const staysOwner = roleList(newRole).includes('owner')
-  if (wasOwner && !staysOwner && (await ownerCount(ctx.tenantId)) <= 1) {
-    throw new Error('不能降级唯一的负责人')
-  }
-  await db
-    .update(member)
-    .set({ role: newRole })
-    .where(and(eq(member.userId, targetUserId), eq(member.organizationId, ctx.tenantId)))
+  // B39: count-then-write is one transaction with a row lock so a concurrent demote/deactivate can't
+  // also read ">1" and strand the tenant at zero usable owners.
+  await db.transaction(async (tx) => {
+    if (wasOwner && !staysOwner && (await lockUsableOwnerCount(tx, ctx.tenantId)) <= 1) {
+      throw new Error('不能降级唯一的负责人')
+    }
+    await tx
+      .update(member)
+      .set({ role: newRole })
+      .where(and(eq(member.userId, targetUserId), eq(member.organizationId, ctx.tenantId)))
+  })
 }
 
 // Deactivate (ban, reversible) a staff account. Guards: not self, in-org, manageable role, not the last
@@ -126,10 +141,13 @@ export async function deactivateStaffCore(ctx: AuthContext, targetUserId: string
   if (targetUserId === ctx.userId) throw new Error('不能停用自己')
   const role = await requireStaffTarget(ctx, targetUserId)
   assertCanManageRole(ctx, role)
-  if (roleList(role).includes('owner') && (await ownerCount(ctx.tenantId)) <= 1) {
-    throw new Error('不能停用唯一的负责人')
-  }
+  // B39: the last-usable-owner check, the ban, and the session revocation are ONE transaction with a
+  // row lock (lockUsableOwnerCount). Deactivate flips user.banned rather than member.role, so the lock +
+  // the banned-aware count are what make two concurrent deactivations converge instead of both banning.
   await db.transaction(async (tx) => {
+    if (roleList(role).includes('owner') && (await lockUsableOwnerCount(tx, ctx.tenantId)) <= 1) {
+      throw new Error('不能停用唯一的负责人')
+    }
     await tx
       .update(userTable)
       .set({ banned: true, banReason: '管理员停用', banExpires: null })

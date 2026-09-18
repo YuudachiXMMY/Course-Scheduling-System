@@ -48,6 +48,9 @@ export async function listStudents(): Promise<Student[]> {
 export async function getStudent(id: string): Promise<Student | null> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['read'] })
+  // 工作流 E: mirror updateStudent/archiveStudent — a section-scoped teacher may only read a student
+  // enrolled in a section they teach, never any same-tenant student's name/parentWechat/schoolGrade.
+  if (!(await actorOwnsStudent(ctx, id))) return null
   return (await forTenant(ctx).findById(student, id)) as Student | null
 }
 

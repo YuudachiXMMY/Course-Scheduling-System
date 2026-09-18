@@ -32,3 +32,18 @@ export async function assertLinkedToStudent(ctx: AuthContext, studentId: string)
   )) as unknown[]
   if (rows.length === 0) throw new Error('无权访问该学生')
 }
+
+// 服务端同意门复检（Slice F / P7a-9）。layout.tsx 的 ConsentGate 只在渲染层拦截，是 UX 级；门户的
+// Server Action 与数据加载器（独立 POST 端点 / RSC 数据函数）必须在触碰个人数据前独立复检 consentedAt，
+// 否则一个从未点"我已阅读并同意"的家长/学生可直接调用这些动作，绕过 PIPL/未成年人同意门。判定与
+// layout 的 needsConsent 完全一致：有 portalLink 且存在未 stamp 的链接即视为未同意（多孩家长同意一次
+// 会 stamp 全部）。仅约束门户角色（parent/student）——staff 不受同意门约束，直接放行。
+export async function requireConsent(ctx: AuthContext): Promise<void> {
+  if (!isPortalRole(ctx.role)) return // staff 不受同意门约束
+  const rows = (await forTenant(ctx).select(
+    portalLink,
+    eq(portalLink.userId, ctx.userId),
+  )) as (typeof portalLink.$inferSelect)[]
+  const needsConsent = rows.length > 0 && rows.some((r) => !r.consentedAt)
+  if (needsConsent) throw new Error('请先阅读并同意隐私条款')
+}

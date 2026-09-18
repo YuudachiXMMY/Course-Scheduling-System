@@ -1,11 +1,21 @@
 import 'server-only'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { forTenant } from '@/db/tenant'
 import { classSection, course, student, note, lesson } from '@/db/schema'
 import { requirePermission } from '@/auth/authorize'
+// 工作流 E — 行级作用域助手（复用 dashboard/导出路径的同一套归属校验，勿新造）。
+import {
+  actorOwnsLesson,
+  actorOwnsSection,
+  actorOwnsStudent,
+  isWholeTenantActor,
+  sectionIdsForActor,
+  studentIdsForActor,
+} from '@/auth/scope'
+import { assertLinkedToStudent, isPortalRole } from '@/auth/portal'
 import { AuthError } from '@/auth/context'
 import { ConflictError } from '@/lib/errors'
 import { resolveMcpAuthContext } from '@/auth/mcp-context'
@@ -74,8 +84,13 @@ export function registerCourseSchedulingTools(server: McpServer): void {
       runTool(async () => {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { course: ['read'] })
+        // 工作流 E（B55）：section-scoped 教师只见本班；whole-tenant staff → 'all' 见全部；
+        // 空作用域必须在 inArray([]) 前短路返回空（否则是非法 SQL，也避免越权列出全租户班级）。
+        const scope = await sectionIdsForActor(ctx)
+        if (scope !== 'all' && scope.length === 0) return ok(JSON.stringify([], null, 2))
         const sections = (await forTenant(ctx).select(
           classSection,
+          scope === 'all' ? undefined : inArray(classSection.id, scope),
         )) as (typeof classSection.$inferSelect)[]
         const courses = (await forTenant(ctx).select(course)) as (typeof course.$inferSelect)[]
         const label = new Map(courses.map((c) => [c.id, c.title]))
@@ -103,12 +118,18 @@ export function registerCourseSchedulingTools(server: McpServer): void {
       runTool(async () => {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { student: ['list'] })
-        const rows = (await forTenant(
-          ctx,
-          // status is an optional filter; when absent the tenant scope alone applies.
-        ).select(
+        // 工作流 E（B56）：镜像 dashboard listStudents — 教师只见本班在册学生（含 parentWechat PII），
+        // whole-tenant staff → 'all' 见全部；空作用域在 inArray([]) 前短路返回空。
+        const scope = await studentIdsForActor(ctx)
+        if (scope !== 'all' && scope.length === 0) return ok(JSON.stringify([], null, 2))
+        // status is an optional filter; AND it into the row-level scope (both can be undefined).
+        const scopePred = scope === 'all' ? undefined : inArray(student.id, scope)
+        const statusPred = status ? eq(student.status, status) : undefined
+        const where =
+          scopePred && statusPred ? and(scopePred, statusPred) : (scopePred ?? statusPred)
+        const rows = (await forTenant(ctx).select(
           student,
-          status ? eq(student.status, status) : undefined,
+          where,
         )) as (typeof student.$inferSelect)[]
         const out = rows.map((s) => ({
           id: s.id,
@@ -134,11 +155,19 @@ export function registerCourseSchedulingTools(server: McpServer): void {
       runTool(async () => {
         const ctx = await resolveMcpAuthContext()
         requirePermission(ctx, { lesson: ['read'] })
+        // 工作流 E（B53）：非本班（含猜测的同租户 lessonId）→ 返回空，绝不泄露他人课节笔记。
+        // 归属守卫先行，等同「不存在」，不区分「课节不存在」与「不属于本班」以免侦察。
+        if (!(await actorOwnsLesson(ctx, lessonId))) return ok(JSON.stringify([], null, 2))
         const rows = (await forTenant(ctx).select(
           note,
           and(eq(note.lessonId, lessonId)),
         )) as (typeof note.$inferSelect)[]
-        const out = rows.map((n) => ({
+        // 非 whole-tenant 角色（本班教师/门户）只看 shared 笔记；internal 笔记不经 MCP 外泄，
+        // 对齐 dashboard「勿把 internal 笔记转发给家长」的约定。
+        const visible = isWholeTenantActor(ctx)
+          ? rows
+          : rows.filter((n) => n.visibility === 'shared')
+        const out = visible.map((n) => ({
           id: n.id,
           body: n.body,
           visibility: n.visibility, // 'internal' | 'shared' — caller decides; do NOT auto-forward internal notes to parents
@@ -166,6 +195,9 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const section = (await forTenant(ctx).findById(classSection, args.sectionId)) as
           typeof classSection.$inferSelect | null
         if (!section) throw new Error('班级不存在或不属于当前机构')
+        // 工作流 E（B54）：只有本班教师（或 whole-tenant staff）可预览排课；非本班视同不存在，
+        // 避免泄露他人日历冲突课程标题/空闲时段并为其签发 confirmationToken。section 已加载 → 用同步版。
+        if (!actorOwnsSection(ctx, section)) throw new Error('班级不存在或不属于当前机构')
         if (!section.teacherId) throw new Error('班级尚未指定教师，无法排课')
         const check = await checkTeacherConflict(ctx, {
           teacherId: section.teacherId,
@@ -226,6 +258,9 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const existing = (await forTenant(ctx).findById(lesson, args.id)) as
           typeof lesson.$inferSelect | null
         if (!existing) throw new Error('课节不存在')
+        // 工作流 E（B54）：只有本班教师（或 whole-tenant staff）可预览改期；lesson.teacherId 由 section
+        // 反规范化而来，用同步 actorOwnsSection 即可，非本班视同不存在，避免泄露他人冲突/空闲时段。
+        if (!actorOwnsSection(ctx, { teacherId: existing.teacherId })) throw new Error('课节不存在')
         if (!existing.teacherId) throw new Error('课节缺少教师信息')
         const check = await checkTeacherConflict(ctx, {
           teacherId: existing.teacherId,
@@ -293,6 +328,15 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const s = (await forTenant(ctx).findById(student, studentId)) as
           typeof student.$inferSelect | null
         if (!s) throw new Error('学生不存在')
+        // 工作流 E + 门户收敛（B52）：行级归属守卫必须在 getActiveShare 之前，
+        // 否则会泄露他家孩子姓名/课表并可能返回其活跃公开分享 token。
+        // 门户账号（家长/学生）收敛到其 portalLink 关联学生；其余（教师/staff）走 actorOwnsStudent
+        // （教师=本班在册学生，whole-tenant staff=全部）。
+        if (isPortalRole(ctx.role)) {
+          await assertLinkedToStudent(ctx, studentId)
+        } else if (!(await actorOwnsStudent(ctx, studentId))) {
+          throw new Error('无权访问该学生')
+        }
         // getActiveShare (read-only) — NOT ensureActiveShare. shareUrl is null when no active share.
         const share = await getActiveShare(ctx, studentId)
         const shareUrl = share ? `${env.NEXT_PUBLIC_APP_URL}/s/${share.token}` : null
