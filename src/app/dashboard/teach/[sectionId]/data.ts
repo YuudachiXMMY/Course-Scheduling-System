@@ -11,6 +11,7 @@ import {
   lesson,
   grade,
   note,
+  attendance,
   progressReport,
   rescheduleRequest,
 } from '@/db/schema'
@@ -196,6 +197,7 @@ export interface LessonNoteRow {
   summary: string // shared lesson note (note.studentId = null)
   comments: Record<string, string> // studentId -> per-student 点评 (note.studentId set)
   grades: Record<string, LessonGradeCell> // studentId -> 课堂成绩 (grade.title = QUICK_GRADE_TITLE)
+  attendance: Record<string, string> // studentId -> 出勤状态 (attendanceStatus: present/absent/late/excused)
 }
 
 // Load the note/grade matrix for a whole section's lessons in one pass. note & grade both hang off
@@ -208,7 +210,7 @@ export async function getSectionLessonNotes(
   lessonIds: string[],
 ): Promise<Record<string, LessonNoteRow>> {
   const byLesson: Record<string, LessonNoteRow> = {}
-  for (const id of lessonIds) byLesson[id] = { summary: '', comments: {}, grades: {} }
+  for (const id of lessonIds) byLesson[id] = { summary: '', comments: {}, grades: {}, attendance: {} }
   if (lessonIds.length === 0) return byLesson // inArray([]) is invalid SQL — guard (see report-data.ts)
 
   const noteRows = await forTenant(ctx).select(note, inArray(note.lessonId, lessonIds))
@@ -230,6 +232,15 @@ export async function getSectionLessonNotes(
     const row = byLesson[g.lessonId]
     if (!row) continue
     row.grades[g.studentId] = { score: g.score, maxScore: g.maxScore, comment: g.comment }
+  }
+
+  // Attendance is a single row per (lesson, student) (uq_attendance_lesson_student), so no ordering
+  // dance is needed — one status wins. Batch by lessonIds like note/grade above.
+  const attRows = await forTenant(ctx).select(attendance, inArray(attendance.lessonId, lessonIds))
+  for (const a of attRows) {
+    const row = byLesson[a.lessonId]
+    if (!row) continue
+    row.attendance[a.studentId] = a.status
   }
   return byLesson
 }
