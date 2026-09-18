@@ -22,7 +22,7 @@ export async function getOrCreateShare(studentId: string): Promise<{ token: stri
   if (!(await actorOwnsStudent(ctx, studentId))) throw new Error('无权分享该学生课表')
 
   const share = await ensureActiveShare(ctx, studentId)
-  revalidatePath('/dashboard/students')
+  revalidatePath('/dashboard/users')
   return { token: share.token }
 }
 
@@ -41,12 +41,12 @@ export async function rotateShare(studentId: string): Promise<{ token: string }>
       token,
       label: '家长课表分享',
     })
-    revalidatePath('/dashboard/students')
+    revalidatePath('/dashboard/users')
     return { token: created.token }
   }
 
   const [updated] = await forTenant(ctx).update(shareLink, existing.id, { token })
-  revalidatePath('/dashboard/students')
+  revalidatePath('/dashboard/users')
   return { token: updated.token }
 }
 
@@ -59,7 +59,7 @@ export async function revokeShare(studentId: string): Promise<{ ok: true }> {
   const existing = await getActiveShare(ctx, studentId)
   if (existing) {
     await forTenant(ctx).update(shareLink, existing.id, { revokedAt: new Date() })
-    revalidatePath('/dashboard/students')
+    revalidatePath('/dashboard/users')
   }
   return { ok: true }
 }

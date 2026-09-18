@@ -22,8 +22,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ student
     const ctx = await requireAuthContext()
     requirePermission(ctx, { student: ['read'], lesson: ['read'] })
     const { studentId } = await params
-    const s = (await forTenant(ctx).findById(student, studentId)) as
-      typeof student.$inferSelect | null
+    const s = await forTenant(ctx).findById(student, studentId)
     if (!s) return new Response('Not found', { status: 404 })
     // 工作流 E: a plain teacher may only export a student ACTIVELY enrolled in a section they teach — a
     // guessed same-tenant studentId 404s BEFORE ensureActiveShare, so it can never mint a persistent
