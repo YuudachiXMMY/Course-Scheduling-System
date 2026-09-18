@@ -321,9 +321,15 @@ describe('改期审批队列归属守卫（MEDIUM 2）— reschedule-core / data
   })
 
   it('the pending queue is scoped to the reviewer’s own lessons; owner sees the whole tenant', async () => {
-    const aIds = (await listRescheduleRequests(teacherACtx)).map((r) => r.id)
+    const aRows = await listRescheduleRequests(teacherACtx)
+    const aIds = aRows.map((r) => r.id)
     expect(aIds).toContain(reqA)
     expect(aIds).not.toContain(reqB)
+    // PERF3: the batched lesson/student IN queries must hydrate the same per-row fields the old
+    // per-request findById lookups did — reqA carries student 学生A's name and lessonA1's current time.
+    const rowA = aRows.find((r) => r.id === reqA)
+    expect(rowA?.studentName).toBe('学生A')
+    expect(rowA?.currentStartAt).not.toBeNull()
 
     const bIds = (await listRescheduleRequests(teacherBCtx)).map((r) => r.id)
     expect(bIds).toContain(reqB)

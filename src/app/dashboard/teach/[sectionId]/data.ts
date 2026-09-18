@@ -158,10 +158,15 @@ export async function getSectionReports(ctx: AuthContext, id: string): Promise<R
   const roster = await getSectionRoster(ctx, id)
   const rosterIds = new Set(roster.map((r) => r.id))
   if (rosterIds.size === 0) return []
-  const rows = await forTenant(ctx).select(progressReport)
+  // PERF5: push the roster-membership filter into SQL (inArray) instead of loading the ENTIRE tenant's
+  // progressReport table and filtering in memory — this runs on the workspace render path. rosterIds is
+  // non-empty (guarded above). Mirrors getSectionPendingRescheduleCount / getSectionLessonNotes here.
+  const rows = await forTenant(ctx).select(
+    progressReport,
+    inArray(progressReport.studentId, [...rosterIds]),
+  )
   const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
   return rows
-    .filter((r) => rosterIds.has(r.studentId))
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     .map((r) => ({
       id: r.id,

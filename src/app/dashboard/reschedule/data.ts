@@ -1,5 +1,5 @@
 import 'server-only'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { AuthContext } from '@/auth/context'
 import { forTenant } from '@/db/tenant'
 import { actorOwnsSection, isWholeTenantActor } from '@/auth/scope'
@@ -34,11 +34,32 @@ export async function listRescheduleRequests(
   // against lessons they teach; whole-tenant staff + superadmin see the whole tenant's queue.
   const wholeTenant = isWholeTenantActor(ctx)
 
+  // PERF3: batch-hydrate the lesson (current time + teacher for the scope check) and student (name)
+  // with two IN queries instead of 1-2 findById round-trips per request row (N+1). Maps are built
+  // once, then the loop below does exactly the same per-row lookups + authz filter as before. Guard
+  // the empty inArray (invalid SQL).
+  const lessonIds = [...new Set(reqs.map((r) => r.lessonId).filter((v): v is string => Boolean(v)))]
+  const lessonsById = new Map<string, typeof lesson.$inferSelect>()
+  if (lessonIds.length > 0) {
+    for (const l of await forTenant(ctx).select(lesson, inArray(lesson.id, lessonIds))) {
+      lessonsById.set(l.id, l)
+    }
+  }
+  const studentIds = [
+    ...new Set(reqs.map((r) => r.studentId).filter((v): v is string => Boolean(v))),
+  ]
+  const studentsById = new Map<string, typeof student.$inferSelect>()
+  if (studentIds.length > 0) {
+    for (const s of await forTenant(ctx).select(student, inArray(student.id, studentIds))) {
+      studentsById.set(s.id, s)
+    }
+  }
+
   const out: ReviewRow[] = []
   for (const r of reqs) {
-    const l = await forTenant(ctx).findById(lesson, r.lessonId)
+    const l = lessonsById.get(r.lessonId) ?? null
     if (!wholeTenant && !(l && actorOwnsSection(ctx, { teacherId: l.teacherId }))) continue
-    const s = r.studentId ? await forTenant(ctx).findById(student, r.studentId) : null
+    const s = r.studentId ? (studentsById.get(r.studentId) ?? null) : null
     out.push({
       id: r.id,
       studentName: s?.name ?? null,

@@ -13,7 +13,14 @@ export default async function PortalReschedulePage() {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { rescheduleRequest: ['list'] })
 
-  const cards = await getPortalSchedule(ctx)
+  // PERF8: the schedule (linked students' lessons) and the user's own requests are independent reads —
+  // fetch them in parallel. getPortalSchedule runs requireConsent(ctx); under Promise.all the requests
+  // query fires concurrently, but it's row-scoped to ctx.userId + tenant (no cross-scope leak) and its
+  // result is discarded if requireConsent rejects — so no data escapes an unconsented user.
+  const [cards, rows] = await Promise.all([
+    getPortalSchedule(ctx),
+    forTenant(ctx).select(rescheduleRequest, eq(rescheduleRequest.requestedById, ctx.userId)),
+  ])
   const options: LessonOption[] = cards.flatMap((c) =>
     c.lessons.map((l) => ({
       studentId: c.studentId,
@@ -23,11 +30,6 @@ export default async function PortalReschedulePage() {
       startAt: l.startAt.toISOString(),
       endAt: l.endAt.toISOString(),
     })),
-  )
-
-  const rows = await forTenant(ctx).select(
-    rescheduleRequest,
-    eq(rescheduleRequest.requestedById, ctx.userId),
   )
   const requests: RequestRow[] = rows
     .map((r) => ({

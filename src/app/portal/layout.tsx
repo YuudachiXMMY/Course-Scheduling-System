@@ -18,11 +18,15 @@ export default async function PortalLayout({ children }: { children: ReactNode }
   if (!ctx) redirect('/login')
   if (!isPortalRole(ctx.role)) redirect('/dashboard')
 
-  const links = await forTenant(ctx).select(portalLink, eq(portalLink.userId, ctx.userId))
+  // PERF7: the portalLink read and the unread-count read are independent — run them in parallel
+  // instead of two sequential round-trips on every portal render.
+  const [links, unread] = await Promise.all([
+    forTenant(ctx).select(portalLink, eq(portalLink.userId, ctx.userId)),
+    unreadCountForUserCore(ctx),
+  ])
   const needsConsent = links.length > 0 && links.some((l) => !l.consentedAt)
   // Unread badge lives in the layout (always visible), NOT a page — pages render inside the consent
   // gate and would be hidden until consent. ctx is available here (Server Component).
-  const unread = await unreadCountForUserCore(ctx)
 
   return (
     <div className="min-h-dvh">

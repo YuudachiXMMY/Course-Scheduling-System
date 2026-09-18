@@ -17,6 +17,10 @@ import {
 } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import { runReminderScanCore } from '@/lib/reminder-core'
+import {
+  resolveLessonRecipientsCore,
+  resolveLessonRecipientsBatchCore,
+} from '@/lib/notification-core'
 
 // web-push is CJS default-exported; mock it so no network is touched even if VAPID were configured.
 vi.mock('web-push', () => ({
@@ -181,5 +185,26 @@ describe('reminder-core — upcoming-lesson scan — DB integration', () => {
     )) as (typeof notification.$inferSelect)[]
     const midKeys = midRows.filter((r) => r.dedupeKey?.startsWith(`reminder:${lessonMid}:24h:`))
     expect(midKeys.length).toBe(2) // stale (+90m) + fresh (+125m)
+  })
+
+  it('PERF10: the batch recipient resolver returns identical sets to the per-lesson resolver', async () => {
+    const ctx = ownerCtx()
+    const lessons = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.sectionId, sectionId),
+    )) as (typeof lesson.$inferSelect)[]
+    expect(lessons.length).toBeGreaterThan(0)
+
+    const batch = await resolveLessonRecipientsBatchCore(ctx, lessons)
+    // Recipient ORDER may differ (it's a set), so compare sorted arrays per lesson.
+    for (const l of lessons) {
+      const perLesson = (await resolveLessonRecipientsCore(ctx, l)).slice().sort()
+      const fromBatch = (batch.get(l.id) ?? []).slice().sort()
+      expect(fromBatch).toEqual(perLesson)
+    }
+    // Sanity: an in-window lesson resolves to teacher ∪ the linked parent.
+    expect((batch.get(lessonSoon) ?? []).slice().sort()).toEqual([parentUserId, teacherId].sort())
+    // Empty input → empty map (guards the empty-inArray path).
+    expect((await resolveLessonRecipientsBatchCore(ctx, [])).size).toBe(0)
   })
 })

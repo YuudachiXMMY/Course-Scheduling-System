@@ -94,6 +94,26 @@ export function forTenant(ctx: AuthContext) {
         .where(and(scope(t), eq(t.id, id), extra))
         .returning() as unknown as Promise<T['$inferSelect'][]>
     },
+    // Bulk tenant-scoped UPDATE by an arbitrary condition — the update analogue of deleteWhere, and the
+    // batch counterpart of update()/updateWhere() (which touch a single id). Collapses a select-then-
+    // per-row-update loop into ONE statement (PERF2/PERF4). Same isolation invariants as deleteWhere:
+    // scope(t) is ALWAYS AND-ed in so `extra` can only narrow WITHIN ctx.tenantId, `extra` is REQUIRED,
+    // and tenantId/id are stripped from `values` so the write can never move a row across tenants or
+    // rewrite its id. Returns every affected row.
+    updateWhereMany<T extends TenantTable>(
+      t: T,
+      extra: SQL,
+      values: Record<string, unknown>,
+    ): Promise<T['$inferSelect'][]> {
+      const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
+      void _t
+      void _id
+      return db
+        .update(t as unknown as PgTable)
+        .set(safe)
+        .where(and(scope(t), extra))
+        .returning() as unknown as Promise<T['$inferSelect'][]>
+    },
     delete<T extends TenantTable>(t: T, id: string): Promise<T['$inferSelect'][]> {
       return db
         .delete(t as unknown as PgTable)
