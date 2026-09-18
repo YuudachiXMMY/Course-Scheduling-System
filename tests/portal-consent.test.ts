@@ -108,11 +108,15 @@ describe('门户同意门服务端复检（Slice F / B40）', () => {
 
   // ── Server Action：改期申请 ───────────────────────────────────────────────────────────────────
   describe('createRescheduleRequest Server Action', () => {
-    it('未同意用户提交改期 → 抛同意门错误（先于任何输入校验/数据访问）', async () => {
+    it('未同意用户提交改期 → 返回同意门错误（EH8：{ok,error} 判别式，不再向不可信客户端抛原始错误）', async () => {
       asActor(noConsentCtx)
-      await expect(
-        createRescheduleRequest({} as Parameters<typeof createRescheduleRequest>[0]),
-      ).rejects.toThrow(CONSENT_ERR)
+      // EH8/CWE-209：动作把 requireConsent 抛出的 BusinessError 收敛为 {ok:false, error}，
+      // 消息原样保留（同意门仍在数据访问前强制，请求不会被创建）。
+      const res = await createRescheduleRequest(
+        {} as Parameters<typeof createRescheduleRequest>[0],
+      )
+      expect(res.ok).toBe(false)
+      if (!res.ok) expect(res.error).toBe(CONSENT_ERR)
     })
 
     it('已同意用户 → 越过同意门（此后可因其它既有校验被拒，但不再是同意门错误）', async () => {

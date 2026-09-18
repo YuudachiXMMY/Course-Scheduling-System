@@ -18,6 +18,9 @@
 //   - Idempotent: re-running never recreates the user (password untouched), never rewrites the org
 //     name, and never adds a duplicate membership. An advisory lock (mirrors scripts/migrate.ts)
 //     serialises concurrent replicas so two boots can't race a double-create.
+//   - SEC1: ADMIN_PASSWORD is the platform super-admin secret. The env schema (src/env.ts) enforces a
+//     ≥16-char floor; set a long, random value (e.g. `openssl rand -base64 24`). Boot fails env
+//     validation if a value is present but shorter than 16.
 import { and, eq } from 'drizzle-orm'
 import postgres from 'postgres'
 import { pathToFileURL } from 'node:url'

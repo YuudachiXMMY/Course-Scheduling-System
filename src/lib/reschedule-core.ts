@@ -7,7 +7,7 @@ import { rescheduleRequest, lesson, enrollment } from '@/db/schema'
 import { assertLinkedToStudent } from '@/auth/portal'
 import { actorOwnsSection } from '@/auth/scope'
 import { rescheduleLessonCore } from '@/lib/schedule-core'
-import { ConflictError } from '@/lib/errors'
+import { BusinessError, ConflictError } from '@/lib/errors'
 import { notifyRescheduleOutcomeCore } from '@/lib/notification-core'
 import type { CalendarEvent } from '@/app/dashboard/schedule/types'
 
@@ -17,6 +17,15 @@ import type { CalendarEvent } from '@/app/dashboard/schedule/types'
 // in the thin Server Actions — so this stays headless-testable (like report-core).
 
 export type RescheduleRequestRow = typeof rescheduleRequest.$inferSelect
+
+// SEC5: these portal write actions are reachable by untrusted external parent/student accounts and had
+// NO rate limit — a caller could spam pending requests, growing rows and flooding the teacher review
+// queue. We cap the number of OPEN (pending) requests one user may hold at a time. Chosen over an
+// in-memory token bucket because a DB count(): (a) survives multi-instance/restart, (b) is cheap
+// (indexed by tenant) and self-clearing (approving/rejecting/canceling frees a slot), (c) is
+// headless-testable and also covers the MCP path (both go through this core). The cap is generous so
+// legitimate rapid corrections aren't blocked.
+const MAX_OPEN_RESCHEDULE_REQUESTS_PER_USER = 5
 
 export const createRescheduleRequestFields = {
   studentId: z.string().trim().min(1),
@@ -51,8 +60,17 @@ export async function createRescheduleRequestCore(
   // Row-level ownership: the acting user must be linked to this student (P7a-5).
   await assertLinkedToStudent(ctx, data.studentId)
 
+  // SEC5: per-user quota on open (pending) requests — reject once the caller already holds the cap.
+  const openCount = await forTenant(ctx).count(
+    rescheduleRequest,
+    and(eq(rescheduleRequest.requestedById, ctx.userId), eq(rescheduleRequest.status, 'pending')),
+  )
+  if (openCount >= MAX_OPEN_RESCHEDULE_REQUESTS_PER_USER) {
+    throw new BusinessError('待处理的改期申请过多，请先等待老师处理后再提交')
+  }
+
   const target = await forTenant(ctx).findById(lesson, data.lessonId)
-  if (!target) throw new Error('课节不存在')
+  if (!target) throw new BusinessError('课节不存在')
 
   // The child must actually attend this lesson's section (active enrollment).
   const enrolled = await forTenant(ctx).select(
@@ -63,7 +81,7 @@ export async function createRescheduleRequestCore(
       eq(enrollment.status, 'active'),
     ),
   )
-  if (enrolled.length === 0) throw new Error('该学生未在此班级')
+  if (enrolled.length === 0) throw new BusinessError('该学生未在此班级')
 
   const [row] = await forTenant(ctx).insert(rescheduleRequest, {
     studentId: data.studentId,
@@ -83,8 +101,9 @@ export async function createRescheduleRequestCore(
 // a section they teach; whole-tenant staff + superadmin bypass via actorOwnsSection.
 async function assertReviewerOwnsRequestLesson(ctx: AuthContext, lessonId: string): Promise<void> {
   const target = await forTenant(ctx).findById(lesson, lessonId)
-  if (!target) throw new Error('课节不存在')
-  if (!actorOwnsSection(ctx, { teacherId: target.teacherId })) throw new Error('无权处理该申请')
+  if (!target) throw new BusinessError('课节不存在')
+  if (!actorOwnsSection(ctx, { teacherId: target.teacherId }))
+    throw new BusinessError('无权处理该申请')
 }
 
 // Teacher/admin approve: move the lesson via rescheduleLessonCore (same conflict check + GiST backstop
@@ -95,9 +114,9 @@ export async function approveRescheduleRequestCore(
   requestId: string,
 ): Promise<ApproveResult> {
   const req = await forTenant(ctx).findById(rescheduleRequest, requestId)
-  if (!req) throw new Error('申请不存在')
-  if (req.status !== 'pending') throw new Error('申请已处理')
-  if (!req.requestedStartAt || !req.requestedEndAt) throw new Error('申请缺少目标时间')
+  if (!req) throw new BusinessError('申请不存在')
+  if (req.status !== 'pending') throw new BusinessError('申请已处理')
+  if (!req.requestedStartAt || !req.requestedEndAt) throw new BusinessError('申请缺少目标时间')
   await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
 
   // B19/B20: atomically CLAIM the request (pending → approved) BEFORE moving the lesson. A single
@@ -110,7 +129,7 @@ export async function approveRescheduleRequestCore(
     eq(rescheduleRequest.status, 'pending'),
     { status: 'approved', reviewedById: ctx.userId, reviewedAt: new Date() },
   )
-  if (!claimed) throw new Error('申请已处理')
+  if (!claimed) throw new BusinessError('申请已处理')
 
   // Compensating rollback: if the move can't happen, release the claim back to pending so the request is
   // reviewable again — never a stuck 'approved' whose lesson never actually moved.
@@ -170,8 +189,8 @@ export async function rejectRescheduleRequestCore(
 ): Promise<RescheduleRequestRow> {
   const parsedNote = rejectRescheduleNoteSchema.parse(note)
   const req = await forTenant(ctx).findById(rescheduleRequest, requestId)
-  if (!req) throw new Error('申请不存在')
-  if (req.status !== 'pending') throw new Error('申请已处理')
+  if (!req) throw new BusinessError('申请不存在')
+  if (req.status !== 'pending') throw new BusinessError('申请已处理')
   await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
   // B19/B20: atomic compare-and-set — reject only if STILL pending, else 0 rows = a concurrent
   // transition already won (no double-notify, no contradictory status).
@@ -186,7 +205,7 @@ export async function rejectRescheduleRequestCore(
       reviewNote: parsedNote && parsedNote.length > 0 ? parsedNote : null,
     },
   )
-  if (!updated) throw new Error('申请已处理')
+  if (!updated) throw new BusinessError('申请已处理')
   // P7b: notify the requester + teacher of the rejection (no lesson move — use the request's lesson
   // for context). Side effect only — never let it throw out of the core.
   try {
@@ -204,9 +223,9 @@ export async function cancelRescheduleRequestCore(
   requestId: string,
 ): Promise<RescheduleRequestRow> {
   const req = await forTenant(ctx).findById(rescheduleRequest, requestId)
-  if (!req) throw new Error('申请不存在')
-  if (req.requestedById !== ctx.userId) throw new Error('无权取消该申请')
-  if (req.status !== 'pending') throw new Error('申请已处理')
+  if (!req) throw new BusinessError('申请不存在')
+  if (req.requestedById !== ctx.userId) throw new BusinessError('无权取消该申请')
+  if (req.status !== 'pending') throw new BusinessError('申请已处理')
   // B19/B20: atomic compare-and-set — cancel only if STILL pending (a race with an approve/reject loses).
   const [updated] = await forTenant(ctx).updateWhere(
     rescheduleRequest,
@@ -214,6 +233,6 @@ export async function cancelRescheduleRequestCore(
     eq(rescheduleRequest.status, 'pending'),
     { status: 'canceled' },
   )
-  if (!updated) throw new Error('申请已处理')
+  if (!updated) throw new BusinessError('申请已处理')
   return updated
 }
