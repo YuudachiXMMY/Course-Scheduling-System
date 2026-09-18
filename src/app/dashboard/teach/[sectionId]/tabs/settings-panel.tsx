@@ -4,6 +4,7 @@ import CourseForm from '@/app/dashboard/courses/course-form'
 import SectionForm from '@/app/dashboard/courses/section-form'
 import { getSectionHeader } from '../data'
 import SectionDangerZone from '../section-danger-zone'
+import { formatDateTime } from '@/lib/format-datetime'
 
 // 设置 tab: reuse CourseForm (expanded) + SectionForm (embedded) + a danger zone. Gated on course:update
 // (assistant can't manage), so the whole tab is hidden for read-only roles.
@@ -24,6 +25,9 @@ export default async function SettingsPanel({ sectionId }: { sectionId: string }
 
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-neutral-700">班级设置</h3>
+        <p className="text-xs text-neutral-400">
+          创建于 {formatDateTime(section.createdAt)} · 最近修改 {formatDateTime(section.updatedAt)}
+        </p>
         <SectionForm
           courseId={course.id}
           defaultTeacherId={ctx.userId}

@@ -11,6 +11,8 @@ export type PortalUserRow = {
   name: string
   email: string
   role: string
+  createdAt: Date
+  updatedAt: Date
   students: { id: string; name: string }[]
 }
 
@@ -19,7 +21,14 @@ export type PortalUserRow = {
 // directly (not via forTenant). portalLink/student ARE tenant tables and go through forTenant.
 export async function listPortalUsers(ctx: AuthContext): Promise<PortalUserRow[]> {
   const rows = await db
-    .select({ userId: user.id, name: user.name, email: user.email, role: member.role })
+    .select({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      role: member.role,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    })
     .from(member)
     .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.organizationId, ctx.tenantId))
@@ -48,6 +57,8 @@ export type StaffRow = {
   email: string
   role: string
   banned: boolean
+  createdAt: Date
+  updatedAt: Date
 }
 
 // List every STAFF login (owner/admin/teacher/assistant) in the org — the inverse of listPortalUsers.
@@ -62,6 +73,8 @@ export async function listStaff(ctx: AuthContext): Promise<StaffRow[]> {
       email: user.email,
       role: member.role,
       banned: user.banned,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     })
     .from(member)
     .innerJoin(user, eq(user.id, member.userId))

@@ -6,6 +6,7 @@ import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
 import type { CreateStaffInput } from '@/auth/staff'
+import { formatDateTime } from '@/lib/format-datetime'
 
 // 教师 tab of /dashboard/users — teacher/assistant staff accounts. Defence-in-depth: the page already
 // gates admin+, but we re-check member:create here so a direct hit still can't reach the data. Any org
@@ -55,6 +56,9 @@ export default async function TeachersTab() {
                     {s.banned && <span className="ml-1 text-xs text-red-500">已停用</span>}
                   </span>
                   <span className="font-mono text-xs text-neutral-500">{s.email}</span>
+                  <span className="text-xs text-neutral-400">
+                    创建于 {formatDateTime(s.createdAt)} · 最近修改 {formatDateTime(s.updatedAt)}
+                  </span>
                 </div>
                 {!isSelf && (
                   <div className="flex items-center gap-2">

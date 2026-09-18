@@ -4,6 +4,7 @@ import { listStudents } from '../students/actions'
 import { listPortalUsers } from './data'
 import UserForm from './user-form'
 import { LinkControl, UnlinkButton } from './link-control'
+import { formatDateTime } from '@/lib/format-datetime'
 
 // 家长 tab of /dashboard/users — manage portal accounts (parent/student) and their student links.
 // Defence-in-depth: even though the page hides this tab for non-managers, we re-check the permission
@@ -36,6 +37,9 @@ export default async function ParentsTab() {
                       {u.name} <span className="text-xs font-normal text-neutral-500">{u.role}</span>
                     </span>
                     <span className="font-mono text-xs text-neutral-500">{u.email}</span>
+                    <span className="text-xs text-neutral-400">
+                      创建于 {formatDateTime(u.createdAt)} · 最近修改 {formatDateTime(u.updatedAt)}
+                    </span>
                   </div>
                 </div>
                 <div className="flex flex-col gap-1.5">
