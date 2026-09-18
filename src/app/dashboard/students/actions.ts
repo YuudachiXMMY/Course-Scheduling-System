@@ -35,8 +35,11 @@ export async function createStudent(input: CreateStudentInput): Promise<StudentR
     name: parsed.data.name,
     parentWechat: parsed.data.parentWechat,
     schoolGrade: parsed.data.schoolGrade,
+    // AZ3: stamp the creator so a section-scoped teacher can still see/edit/enroll a student they
+    // create (their new student has no enrollment yet; scope.ts unions createdBy === ctx.userId).
+    createdBy: ctx.userId,
   })
-  revalidatePath('/dashboard/students')
+  revalidatePath('/dashboard/users')
   return { ok: true, row }
 }
 
@@ -80,7 +83,7 @@ export async function updateStudent(id: string, input: UpdateStudentInput): Prom
     parentWechat: parsed.data.parentWechat,
     schoolGrade: parsed.data.schoolGrade,
   })
-  revalidatePath('/dashboard/students')
+  revalidatePath('/dashboard/users')
   return { ok: true, row }
 }
 
@@ -90,7 +93,7 @@ export async function archiveStudent(id: string): Promise<StudentResult> {
   requirePermission(ctx, { student: ['update'] })
   if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权归档该学生' }
   const [row] = await forTenant(ctx).update(student, id, { status: 'archived' })
-  revalidatePath('/dashboard/students')
+  revalidatePath('/dashboard/users')
   return { ok: true, row }
 }
 
@@ -100,6 +103,6 @@ export async function restoreStudent(id: string): Promise<StudentResult> {
   requirePermission(ctx, { student: ['update'] })
   if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权恢复该学生' }
   const [row] = await forTenant(ctx).update(student, id, { status: 'active' })
-  revalidatePath('/dashboard/students')
+  revalidatePath('/dashboard/users')
   return { ok: true, row }
 }

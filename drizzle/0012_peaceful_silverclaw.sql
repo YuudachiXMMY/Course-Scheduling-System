@@ -1,0 +1,1 @@
+ALTER TABLE "student" ADD COLUMN "created_by" text;
