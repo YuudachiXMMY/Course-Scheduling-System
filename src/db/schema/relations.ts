@@ -9,6 +9,7 @@ import { note } from './note'
 import { progressReport } from './progress-report'
 import { rescheduleRequest, creditPackage, payment } from './reserved'
 import { shareLink } from './share-link'
+import { sectionShareLink } from './section-share-link'
 import { portalLink } from './portal-link'
 import { notification } from './notification'
 
@@ -81,6 +82,12 @@ export const paymentRelations = relations(payment, ({ one }) => ({
 }))
 export const shareLinkRelations = relations(shareLink, ({ one }) => ({
   student: one(student, { fields: [shareLink.studentId], references: [student.id] }),
+}))
+export const sectionShareLinkRelations = relations(sectionShareLink, ({ one }) => ({
+  section: one(classSection, {
+    fields: [sectionShareLink.sectionId],
+    references: [classSection.id],
+  }),
 }))
 export const portalLinkRelations = relations(portalLink, ({ one }) => ({
   student: one(student, { fields: [portalLink.studentId], references: [student.id] }),
