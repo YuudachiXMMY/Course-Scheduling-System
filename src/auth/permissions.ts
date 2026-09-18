@@ -73,11 +73,13 @@ const parent = ac.newRole({
   student: ['read'],
   lesson: ['read', 'list'],
   rescheduleRequest: ['create', 'read', 'list', 'cancel'],
+  report: ['read', 'list'], // Phase 5: 家长门户仅查看 approved 报告（无 create/update/approve）
   notification: ['read', 'list', 'update'],
 })
 const student_role = ac.newRole({
   lesson: ['read', 'list'],
   rescheduleRequest: ['create', 'read', 'list', 'cancel'],
+  report: ['read', 'list'], // Phase 5: 学生门户仅查看自己的 approved 报告
   notification: ['read', 'list', 'update'],
 })
 
