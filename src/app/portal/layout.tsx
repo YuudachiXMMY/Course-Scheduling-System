@@ -34,7 +34,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
         <h1 className="text-base font-semibold">课程门户</h1>
         <nav className="flex gap-4 text-sm">
           <Link href="/portal" className="text-neutral-700 hover:text-neutral-900 hover:underline">
-            我的课表
+            课表
           </Link>
           <Link
             href="/portal/reschedule"

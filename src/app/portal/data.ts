@@ -6,7 +6,7 @@ import { getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
 import { cardWindow, type FeedLesson } from '@/lib/ical-feed'
 import { resolveLinkedStudentIds, requireConsent } from '@/auth/portal'
 
-// Phase 7a — the portal's "我的课表": upcoming lessons for ONLY the students this user is linked to.
+// Phase 7a — the portal's "课表": upcoming lessons for ONLY the students this user is linked to.
 // Reuses the Phase-4 authenticated per-student pipeline (getStudentLessonsForTenant, forTenant spine
 // + ScheduleCard shape) — NOT the public /s/[token] path. Data-loader convention: takes ctx, does not
 // self-gate (the calling page owns requireAuthContext + requirePermission).
