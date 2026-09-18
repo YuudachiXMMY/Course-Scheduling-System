@@ -73,6 +73,15 @@ describe('subscribeToPush', () => {
     expect(m.subscribe).not.toHaveBeenCalled() // never subscribes without permission
   })
 
+  it('returns null when the user dismisses the prompt (permission stays default)', async () => {
+    // requestPermission resolves to 'granted' | 'denied' | 'default'; dismissing the prompt yields
+    // 'default'. The `permission !== 'granted'` guard must treat it exactly like a denial.
+    const m = stubSupportedBrowser({ permission: 'default' })
+    const { subscribeToPush } = await loadPushClient(VAPID)
+    expect(await subscribeToPush()).toBeNull()
+    expect(m.subscribe).not.toHaveBeenCalled()
+  })
+
   it('reuses an existing browser subscription instead of creating a duplicate', async () => {
     const existing = { toJSON: () => ({ endpoint: 'https://push.example/existing' }) }
     const m = stubSupportedBrowser({ existing })

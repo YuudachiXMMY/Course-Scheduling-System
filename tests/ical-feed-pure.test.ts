@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { sectionDisplayName, cardWindow, buildIcs, type FeedLesson } from '@/lib/ical-feed'
+import {
+  sectionDisplayName,
+  cardWindow,
+  feedWindow,
+  buildIcs,
+  type FeedLesson,
+} from '@/lib/ical-feed'
 
 // ical-feed.test.ts covers buildIcs' event shaping + feedWindow + the DB-backed getFeedLessons.
 // These pure helpers are exercised only indirectly there (the DB fixtures all carry titles, so the
@@ -35,9 +41,15 @@ describe('cardWindow', () => {
   it('is narrower than the subscribe-grade feed window', () => {
     const now = new Date('2026-06-15T12:00:00Z')
     const card = cardWindow(now)
+    const feed = feedWindow(now)
     const cardSpan = card.to.getTime() - card.from.getTime()
-    // 4 weeks (card) is well under the 34-week feed window.
-    expect(cardSpan).toBeLessThan(10 * 7 * 24 * 60 * 60 * 1000)
+    const feedSpan = feed.to.getTime() - feed.from.getTime()
+    // Pin the actual invariant against feedWindow itself (~4w card vs -8w..+26w feed),
+    // not an unrelated hardcoded constant — so shrinking feedWindow or widening cardWindow
+    // past each other is caught here.
+    expect(cardSpan).toBeLessThan(feedSpan)
+    // And card starts no earlier than feed (feed reaches 8 weeks into the past, card starts today).
+    expect(card.from.getTime()).toBeGreaterThan(feed.from.getTime())
   })
 })
 
