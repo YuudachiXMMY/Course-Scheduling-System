@@ -28,7 +28,7 @@ export type RescheduleRequestRow = typeof rescheduleRequest.$inferSelect
 // legitimate rapid corrections aren't blocked.
 const MAX_OPEN_RESCHEDULE_REQUESTS_PER_USER = 5
 
-export const createRescheduleRequestFields = {
+const createRescheduleRequestFields = {
   studentId: z.string().trim().min(1),
   lessonId: z.string().trim().min(1),
   requestedStartAt: z.coerce.date(),
@@ -198,7 +198,7 @@ export async function approveRescheduleRequestCore(
 
 // Optional reviewer note (a reject reason). Trimmed + capped to mirror the request's own `reason`
 // field; empty/whitespace collapses to null so we never persist a blank string.
-export const rejectRescheduleNoteSchema = z.string().trim().max(500).optional()
+const rejectRescheduleNoteSchema = z.string().trim().max(500).optional()
 
 export async function rejectRescheduleRequestCore(
   ctx: AuthContext,

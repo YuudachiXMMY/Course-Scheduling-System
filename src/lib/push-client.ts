@@ -7,7 +7,7 @@ const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
 // applicationServerKey must be the VAPID public key as raw bytes (base64url → Uint8Array). Backed by
 // an explicit ArrayBuffer so the type is Uint8Array<ArrayBuffer> (a valid BufferSource — a plain
 // Uint8Array<ArrayBufferLike> is rejected by pushManager.subscribe's typing under TS 5.7+).
-export function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
+function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
   const raw = atob(base64)
@@ -16,7 +16,7 @@ export function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuf
   return output
 }
 
-export function pushSupported(): boolean {
+function pushSupported(): boolean {
   return (
     typeof window !== 'undefined' &&
     'serviceWorker' in navigator &&

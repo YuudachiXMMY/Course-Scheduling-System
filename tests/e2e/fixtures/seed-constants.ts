@@ -14,7 +14,7 @@ export const E2E_ORG_SLUG = 'e2e-academy'
 /** All seeded login accounts share this email domain → cheap, precise cleanup (`email LIKE '%@e2e.local'`). */
 export const E2E_EMAIL_DOMAIN = 'e2e.local'
 /** Every seeded account uses one password (≥ 8 chars for Better Auth). */
-export const E2E_PASSWORD = 'E2ePassw0rd!'
+const E2E_PASSWORD = 'E2ePassw0rd!'
 
 export type E2ERole = 'owner' | 'admin' | 'teacher' | 'parent' | 'student' | 'parentNoConsent'
 
@@ -83,8 +83,6 @@ export const E2E_ACCOUNTS: Record<E2ERole, E2EAccount> = {
   },
 }
 
-export const STAFF_ROLES: E2ERole[] = ['owner', 'admin', 'teacher']
-export const PORTAL_ROLES: E2ERole[] = ['parent', 'student']
 /** Roles for which global-setup mints a reusable signed-in storageState file. */
 export const STORAGE_STATE_ROLES: E2ERole[] = [
   'owner',

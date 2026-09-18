@@ -61,7 +61,7 @@ const styles = StyleSheet.create({
   },
 })
 
-export function ReportDocument({ model: m }: { model: ReportPdfModel }) {
+function ReportDocument({ model: m }: { model: ReportPdfModel }) {
   const period = m.periodStart && m.periodEnd ? `${m.periodStart} 至 ${m.periodEnd}` : '—'
   const paras = (m.narrative ?? '').split(/\n+/).filter((p) => p.trim().length > 0)
   return (

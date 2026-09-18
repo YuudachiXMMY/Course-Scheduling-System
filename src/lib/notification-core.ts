@@ -11,7 +11,7 @@ import { sendPushToUserCore } from '@/lib/push-core'
 // scan and the reschedule cores can call it directly and it stays DB-integration-testable. Web Push
 // is fired best-effort AFTER the row is written — a push failure never aborts the persisted write.
 export type Notification = typeof notification.$inferSelect
-export type NotificationType = Notification['type']
+type NotificationType = Notification['type']
 type LessonRow = typeof lesson.$inferSelect
 
 export interface CreateNotificationInput {
@@ -70,7 +70,7 @@ export async function createNotificationCore(
 
 // Newest-first, capped at NOTIFICATION_PAGE_SIZE. Ordering + limit run in SQL (idx_notification_tenant_
 // user_read covers the userId scan) so a long-lived recipient's full history is never loaded into memory.
-export const NOTIFICATION_PAGE_SIZE = 100
+const NOTIFICATION_PAGE_SIZE = 100
 export async function listNotificationsForUserCore(ctx: AuthContext): Promise<Notification[]> {
   return await forTenant(ctx)
     .select(notification, eq(notification.userId, ctx.userId))
@@ -92,7 +92,7 @@ export async function unreadCountForUserCore(ctx: AuthContext): Promise<number> 
 // NOTIFICATION_RETENTION_DAYS — a 90-day-old notification is stale by any measure (its deep-linked
 // lesson has long passed) — keeping the table bounded. `now` is injected for testability. Returns the
 // number of rows removed.
-export const NOTIFICATION_RETENTION_DAYS = 90
+const NOTIFICATION_RETENTION_DAYS = 90
 export async function pruneOldNotificationsCore(
   ctx: AuthContext,
   now: Date = new Date(),

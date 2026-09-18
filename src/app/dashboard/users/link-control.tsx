@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { linkPortalUser, unlinkPortalUser } from './user-actions'
 
-export type LinkOption = { value: string; label: string }
+type LinkOption = { value: string; label: string }
 
 // Assign picker — one <select> of not-yet-linked targets + an 关联 button. Reused in BOTH directions;
 // exactly ONE of fixedUserId / fixedStudentId is supplied by the caller, and the picked option fills

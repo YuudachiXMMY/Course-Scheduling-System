@@ -21,8 +21,8 @@ import type { AuthContext } from '@/auth/context'
 // createUser + addMember stay as auth.api.* — they are Better Auth's only headerless-callable trusted ops.
 
 // Staff creation is limited to teacher/assistant/admin (owner is seed-only, never minted through the UI).
-export const STAFF_CREATE_KINDS = ['teacher', 'assistant', 'admin'] as const
-export const createStaffSchema = z.object({
+const STAFF_CREATE_KINDS = ['teacher', 'assistant', 'admin'] as const
+const createStaffSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空').max(100),
   email: z.string().trim().email('请输入有效邮箱').max(100),
   password: z.string().min(8, '密码至少 8 位'),

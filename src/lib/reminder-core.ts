@@ -10,7 +10,7 @@ import { sendPushToUserCore } from '@/lib/push-core'
 
 // P7b: fixed reminder offsets. A single constant keeps this trivially extensible (add a channel /
 // offset later without touching the producer). No per-user preferences / quiet hours in this phase.
-export const REMINDER_OFFSETS = [
+const REMINDER_OFFSETS = [
   { label: '24h', minutes: 24 * 60 },
   { label: '1h', minutes: 60 },
 ] as const

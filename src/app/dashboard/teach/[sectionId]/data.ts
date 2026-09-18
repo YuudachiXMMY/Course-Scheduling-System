@@ -186,7 +186,7 @@ export async function getSectionReports(ctx: AuthContext, id: string): Promise<R
 // async functions — grade-actions.ts imports it from here.
 export const QUICK_GRADE_TITLE = '课堂表现'
 
-export interface LessonGradeCell {
+interface LessonGradeCell {
   score: string | null // node-pg returns numeric as string
   maxScore: string | null
   comment: string | null

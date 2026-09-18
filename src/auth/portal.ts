@@ -6,7 +6,7 @@ import { BusinessError } from '@/lib/errors'
 import type { AuthContext } from '@/auth/context'
 
 // Phase 7a: parent/student are the "portal" roles — they log into /portal, not /dashboard.
-export const PORTAL_ROLES = ['parent', 'student'] as const
+const PORTAL_ROLES = ['parent', 'student'] as const
 
 // member.role may be comma-separated (Better Auth multi-role); match within the parsed list.
 export function isPortalRole(role: string): boolean {

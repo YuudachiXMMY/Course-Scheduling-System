@@ -18,5 +18,4 @@ export const db = drizzle(client, {
   casing: 'snake_case',
   logger: process.env.NODE_ENV !== 'production',
 })
-export type DB = typeof db
 export { schema }
