@@ -26,7 +26,7 @@ export interface PortalStudentOption {
   name: string
 }
 export interface PortalSectionOption {
-  id: string // '' represents the whole-schedule (null section) bucket
+  id: string // WHOLE_SCHEDULE_KEY represents the whole-schedule (null section) bucket
   label: string
 }
 export interface PortalReportsData {
@@ -36,6 +36,10 @@ export interface PortalReportsData {
 }
 
 const WHOLE_SCHEDULE_LABEL = '全程'
+// Non-empty sentinel for the whole-schedule (sectionId === null) filter bucket. MUST stay non-empty
+// so it never collides with the reports-list "全部课程" (show-all) `<option value="">` — an empty
+// key there would short-circuit the filter and make 「全程」 behave identically to 「全部课程」.
+export const WHOLE_SCHEDULE_KEY = '__whole__'
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
 
 // Portal report loader (Phase 5). Faces UNTRUSTED users, so every read is row-scoped to the
@@ -93,12 +97,13 @@ export async function getPortalReports(ctx: AuthContext): Promise<PortalReportsD
     }))
 
   // Filter options derived from the linked students and the sections that actually appear in the
-  // reports (deduped). A '' bucket represents whole-schedule (null section) reports when present.
+  // reports (deduped). A WHOLE_SCHEDULE_KEY bucket represents whole-schedule (null section) reports
+  // when present — non-empty so it never collides with the "全部课程" show-all sentinel.
   const studentOptions: PortalStudentOption[] = students.map((s) => ({ id: s.id, name: s.name }))
   const sectionOptions: PortalSectionOption[] = []
   const seen = new Set<string>()
   for (const r of reports) {
-    const key = r.sectionId ?? ''
+    const key = r.sectionId ?? WHOLE_SCHEDULE_KEY
     if (seen.has(key)) continue
     seen.add(key)
     sectionOptions.push({ id: key, label: r.sectionLabel })

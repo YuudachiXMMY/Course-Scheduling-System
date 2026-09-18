@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { WHOLE_SCHEDULE_KEY } from './data'
 import type {
   PortalReportRow,
   PortalStudentOption,
@@ -24,7 +25,7 @@ export default function ReportsList({
   const filtered = reports.filter(
     (r) =>
       (!studentId || r.studentId === studentId) &&
-      (!sectionId || (r.sectionId ?? '') === sectionId),
+      (!sectionId || (r.sectionId ?? WHOLE_SCHEDULE_KEY) === sectionId),
   )
 
   return (
