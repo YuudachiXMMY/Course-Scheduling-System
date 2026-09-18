@@ -1,7 +1,7 @@
 import 'server-only'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '@/db'
-import { shareLink, enrollment, lesson, classSection, course } from '@/db/schema'
+import { shareLink, sectionShareLink, enrollment, lesson, classSection, course } from '@/db/schema'
 import { type FeedLesson, feedWindow, sectionDisplayName } from '@/lib/ical-feed'
 
 // Shape the pure slicing helper needs from a lesson row. Kept minimal so BOTH the public
@@ -127,6 +127,52 @@ export async function getStudentScheduleForShare(
     })
     .from(lesson)
     .where(and(eq(lesson.tenantId, tenantId), inArray(lesson.sectionId, sectionIds)))
+
+  // Fill each lesson's display title from its course/section before slicing, so the public card
+  // shows "课程名 · 班级名" instead of the generic "课节" fallback.
+  const titleBySection = await courseTitlesForSections(tenantId, sectionIds)
+  const named = withSectionTitles(rows, titleBySection)
+
+  // Window + non-canceled + section membership all live in the pure helper (single logic path).
+  return sliceLessonsForSections(named, sectionIds, window)
+}
+
+// 功能2 — section mirror of getShareByToken. Resolve a capability token to its (non-revoked)
+// sectionShareLink row, or null. Global-unique token index → a single row; a revoked token → null
+// so its URL 404s.
+export async function getSectionShareByToken(token: string) {
+  const [row] = await db
+    .select()
+    .from(sectionShareLink)
+    .where(and(eq(sectionShareLink.token, token), isNull(sectionShareLink.revokedAt)))
+    .limit(1)
+  return row ?? null
+}
+
+// 功能2 — section mirror of getStudentScheduleForShare. Same P4-2 public-read exception: NO
+// AuthContext; `tenantId`/`sectionId` come from a token-resolved `sectionShareLink` row (via
+// getSectionShareByToken) — NEVER from a request param. Scope STRICTLY by them (raw db, no
+// forTenant). Unlike the student path there is no enrollment step — a section share is a single
+// fixed section, so its own lessons ARE the schedule.
+export async function getSectionScheduleForShare(
+  tenantId: string,
+  sectionId: string,
+  window = feedWindow(),
+): Promise<FeedLesson[]> {
+  const sectionIds = [sectionId]
+
+  const rows = await db
+    .select({
+      id: lesson.id,
+      title: lesson.title,
+      startAt: lesson.startAt,
+      endAt: lesson.endAt,
+      location: lesson.location,
+      sectionId: lesson.sectionId,
+      status: lesson.status,
+    })
+    .from(lesson)
+    .where(and(eq(lesson.tenantId, tenantId), eq(lesson.sectionId, sectionId)))
 
   // Fill each lesson's display title from its course/section before slicing, so the public card
   // shows "课程名 · 班级名" instead of the generic "课节" fallback.

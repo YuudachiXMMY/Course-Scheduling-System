@@ -120,6 +120,13 @@
       "when": 1789702489573,
       "tag": "0016_tenant_id_fk",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789760708789,
+      "tag": "0017_even_agent_brand",
+      "breakpoints": true
     }
   ]
 }
