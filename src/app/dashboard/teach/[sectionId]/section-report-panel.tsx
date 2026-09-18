@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, type FormEvent } from 'react'
+import { useRef, useState, useTransition, type FormEvent, type KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createReportDraft, type ReportResult } from '@/app/dashboard/reports/actions'
 import { ReportItem } from '@/app/dashboard/reports/report-item'
@@ -83,6 +83,26 @@ export default function SectionReportPanel({
   const pill = (on: boolean) =>
     `rounded px-2 py-1 ${on ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-50'}`
 
+  const periodOptions: { value: 'month' | 'custom'; label: string }[] = [
+    { value: 'month', label: '本月' },
+    { value: 'custom', label: '自定义' },
+  ]
+  const radioRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  // A11Y6：为自定义 radiogroup 实现方向键 roving —— 只有选中项在 Tab 序（tabIndex 0），方向键在
+  // 选项间循环移动并同步切换选中项（Space/Enter 仍由各按钮的 onClick 处理）。
+  function onPeriodKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const idx = periodOptions.findIndex((o) => o.value === period)
+    let next = idx
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (idx + 1) % periodOptions.length
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (idx - 1 + periodOptions.length) % periodOptions.length
+    else return
+    e.preventDefault()
+    setPeriod(periodOptions[next].value)
+    radioRefs.current[next]?.focus()
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {canWrite && roster.length === 0 && (
@@ -112,26 +132,25 @@ export default function SectionReportPanel({
             <div
               role="radiogroup"
               aria-label="报告时间段"
+              onKeyDown={onPeriodKeyDown}
               className="flex items-center gap-1 rounded border border-neutral-300 p-0.5 text-xs"
             >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={period === 'month'}
-                onClick={() => setPeriod('month')}
-                className={pill(period === 'month')}
-              >
-                本月
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={period === 'custom'}
-                onClick={() => setPeriod('custom')}
-                className={pill(period === 'custom')}
-              >
-                自定义
-              </button>
+              {periodOptions.map((o, i) => (
+                <button
+                  key={o.value}
+                  ref={(el) => {
+                    radioRefs.current[i] = el
+                  }}
+                  type="button"
+                  role="radio"
+                  aria-checked={period === o.value}
+                  tabIndex={period === o.value ? 0 : -1}
+                  onClick={() => setPeriod(o.value)}
+                  className={pill(period === o.value)}
+                >
+                  {o.label}
+                </button>
+              ))}
             </div>
             {period === 'month' ? (
               <span className="text-xs text-neutral-500 tabular-nums">

@@ -5,6 +5,7 @@ import { isAdminRole, roleLabel } from '@/auth/roles'
 import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
+import type { CreateStaffInput } from '@/auth/staff'
 
 // 管理员 tab of /dashboard/users — owner/admin accounts. Visible to every org manager, but WRITE controls
 // render ONLY for a super admin — a regular admin sees admins strictly read-only (the "普通 admin 对 admin
@@ -21,11 +22,14 @@ export default async function AdminsTab() {
     value: r,
     label: roleLabel(r),
   }))
+  const createRoles: { value: CreateStaffInput['role']; label: string }[] = [
+    { value: 'admin', label: roleLabel('admin') },
+  ]
 
   return (
     <section className="flex flex-col gap-6">
       {isSuper ? (
-        <StaffForm roleOptions={[{ value: 'admin', label: roleLabel('admin') }]} />
+        <StaffForm roleOptions={createRoles} />
       ) : (
         <p className="text-xs text-neutral-500">
           管理员账号仅超级管理员可创建 / 修改 / 停用；此处只读。

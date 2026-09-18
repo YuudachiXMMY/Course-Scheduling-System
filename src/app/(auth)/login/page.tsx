@@ -51,7 +51,11 @@ export default function LoginPage() {
           autoComplete="current-password"
         />
       </label>
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
       <button
         type="submit"
         disabled={pending}

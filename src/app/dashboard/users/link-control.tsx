@@ -12,17 +12,15 @@ export type LinkOption = { value: string; label: string }
 //   - 家长 tab: fixedUserId, options = assignable students (value = studentId).
 //   - 学生 tab: fixedStudentId, options = assignable accounts (value = userId).
 // Props are all serializable (no function props) so this Client Component can be rendered by the RSC tabs.
-export function LinkControl({
-  label,
-  options,
-  fixedUserId,
-  fixedStudentId,
-}: {
-  label: string
-  options: LinkOption[]
-  fixedUserId?: string
-  fixedStudentId?: string
-}) {
+type LinkControlProps = { label: string; options: LinkOption[] } & (
+  | { fixedUserId: string; fixedStudentId?: undefined }
+  | { fixedStudentId: string; fixedUserId?: undefined }
+)
+
+// TS1：用判别式联合表达"fixedUserId / fixedStudentId 恰有其一"的互斥契约，在两个调用点编译期强制。
+// 故意不解构这两个字段，让 TS 能把它们与判别关联，提交时靠控制流收窄而非 `!` 非空断言。
+export function LinkControl(props: LinkControlProps) {
+  const { label, options } = props
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
@@ -34,9 +32,10 @@ export function LinkControl({
     if (!value) return
     setError(null)
     startTransition(async () => {
-      const input = fixedUserId
-        ? { userId: fixedUserId, studentId: value }
-        : { userId: value, studentId: fixedStudentId! }
+      const input =
+        props.fixedUserId !== undefined
+          ? { userId: props.fixedUserId, studentId: value }
+          : { userId: value, studentId: props.fixedStudentId }
       const res = await linkPortalUser(input)
       if (!res.ok) {
         setError(res.error)

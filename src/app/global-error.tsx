@@ -33,7 +33,7 @@ export default function GlobalError({
         }}
       >
         <div style={{ maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>页面加载出错</h2>
+          <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>页面加载出错</h1>
           <p style={{ fontSize: 14, color: '#525252', margin: 0 }}>
             应用遇到未预期的错误。请重试；若反复出现，请刷新页面或稍后再试。
           </p>
