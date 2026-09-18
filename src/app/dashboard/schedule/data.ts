@@ -76,3 +76,42 @@ export async function listLessonsInRange(
     }
   })
 }
+
+// CR4: build the FULLY-ENRICHED CalendarEvent for a single lesson row (course title + active-enrolled
+// student names + location/meetingUrl), so the create/reschedule cores return the same shape as
+// listLessonsInRange. Without this the client's optimistic update (calendar.tsx setEvents) would drop
+// courseTitle/studentNames/location after a create or reschedule until a full page reload. Server-only
+// (stays out of the client bundle). One extra section+course lookup and one enrollment+student lookup
+// on the create/reschedule path only (single section, not a hot loop). Tenant-scoped via forTenant.
+export async function hydrateLessonEvent(
+  ctx: AuthContext,
+  row: typeof lesson.$inferSelect,
+): Promise<CalendarEvent> {
+  const section = await forTenant(ctx).findById(classSection, row.sectionId)
+  const parentCourse = section ? await forTenant(ctx).findById(course, section.courseId) : null
+  const courseTitle = parentCourse?.title ?? null
+
+  const enrolls = await forTenant(ctx).select(
+    enrollment,
+    and(eq(enrollment.sectionId, row.sectionId), eq(enrollment.status, 'active')),
+  )
+  const studentIds = [...new Set(enrolls.map((e) => e.studentId))]
+  const students = studentIds.length
+    ? await forTenant(ctx).select(student, inArray(student.id, studentIds))
+    : []
+  const nameByStudent = new Map(students.map((s) => [s.id, s.name]))
+  const studentNames = enrolls.map((e) => nameByStudent.get(e.studentId) ?? e.studentId)
+
+  return {
+    id: row.id,
+    title: row.title ?? courseTitle ?? '课节',
+    start: row.startAt.toISOString(),
+    end: row.endAt.toISOString(),
+    sectionId: row.sectionId,
+    status: row.status,
+    courseTitle,
+    studentNames,
+    location: row.location,
+    meetingUrl: row.meetingUrl,
+  }
+}

@@ -71,6 +71,32 @@ describe('expandRecurrence', () => {
     for (const o of occ) expect(o.startAt.getUTCHours()).toBe(8)
   })
 
+  it('CR11: skips a DST spring-forward gap occurrence (America/Toronto 2026-03-08 02:30 does not exist)', () => {
+    const TZ = 'America/Toronto' // spring-forward 2026-03-08: 02:00 → 03:00, so 02:30 has no instant.
+    const windowStart = DateTime.fromObject({ year: 2026, month: 3, day: 6 }, { zone: TZ })
+      .toUTC()
+      .toJSDate()
+    const windowEnd = DateTime.fromObject({ year: 2026, month: 3, day: 11 }, { zone: TZ })
+      .toUTC()
+      .toJSDate()
+    const occ = expandRecurrence({
+      rruleText: 'FREQ=DAILY',
+      wallStart: { year: 2026, month: 3, day: 6, hour: 2, minute: 30 },
+      zone: TZ,
+      durationMinutes: 60,
+      windowStart,
+      windowEnd,
+    })
+    // Floating days 6,7,8,9,10 → 5 occurrences; 03-08 02:30 falls in the gap → skipped → 4 kept.
+    expect(occ).toHaveLength(4)
+    const localWall = occ.map((o) =>
+      DateTime.fromJSDate(o.startAt).setZone(TZ).toFormat('yyyy-MM-dd HH:mm'),
+    )
+    expect(localWall).not.toContain('2026-03-08 02:30') // the nonexistent time is not emitted
+    expect(localWall).toContain('2026-03-07 02:30') // a normal day keeps its 02:30 wall-clock
+    expect(localWall).toContain('2026-03-09 02:30')
+  })
+
   it('rejects a runaway expansion (>500 occurrences)', () => {
     const windowStart = new Date(Date.UTC(2026, 0, 1))
     const windowEnd = new Date(Date.UTC(2027, 6, 1)) // ~1.5y, under the 2-year window cap

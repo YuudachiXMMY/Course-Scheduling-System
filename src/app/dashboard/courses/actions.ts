@@ -135,28 +135,37 @@ const meetingSchema = z.object({
   durationMinutes: z.coerce.number().int().min(15).max(480),
 })
 
-const sectionSchema = z.object({
-  courseId: z.string().trim().min(1),
-  name: z.string().trim().max(100).optional(),
-  teacherId: z.string().trim().min(1, '必须指定教师'),
-  capacity: z.coerce.number().int().min(1, '容量至少 1').max(15, '容量最多 15'),
-  meetings: z.array(meetingSchema).min(1, '至少添加一个上课时段'),
-  termStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),
-  termEndDate: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
-  timezone: z.string().trim().default(APP_TIME_ZONE),
-  defaultLocation: z.string().trim().max(200).optional(),
-  // M2: only accept http(s) URLs so a link can never carry a javascript:/data: scheme if it's ever
-  // rendered as an href downstream.
-  defaultMeetingUrl: z
-    .string()
-    .trim()
-    .max(500)
-    .regex(/^https?:\/\//, '网课链接需以 http:// 或 https:// 开头')
-    .optional(),
-})
+const sectionSchema = z
+  .object({
+    courseId: z.string().trim().min(1),
+    name: z.string().trim().max(100).optional(),
+    teacherId: z.string().trim().min(1, '必须指定教师'),
+    capacity: z.coerce.number().int().min(1, '容量至少 1').max(15, '容量最多 15'),
+    meetings: z.array(meetingSchema).min(1, '至少添加一个上课时段'),
+    termStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),
+    termEndDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    timezone: z.string().trim().default(APP_TIME_ZONE),
+    defaultLocation: z.string().trim().max(200).optional(),
+    // M2: only accept http(s) URLs so a link can never carry a javascript:/data: scheme if it's ever
+    // rendered as an href downstream.
+    defaultMeetingUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^https?:\/\//, '网课链接需以 http:// 或 https:// 开头')
+      .optional(),
+  })
+  // CR1: enforce termEndDate >= termStartDate ON THE SERVER (server actions are a public boundary; the
+  // client-only guard in section-form.tsx:146 is bypassable). Mirrors createSchema's endAt>startAt rule
+  // in schedule-core.ts. YYYY-MM-DD is lexically orderable, so compare as strings — no Date parsing. An
+  // inverted term would otherwise build an RRULE UNTIL earlier than dtstart and materialize zero lessons.
+  .refine((d) => !d.termEndDate || d.termEndDate >= d.termStartDate, {
+    message: '学期结束日期不能早于开始日期',
+    path: ['termEndDate'],
+  })
 export type SectionInput = z.input<typeof sectionSchema>
 type ParsedSection = z.infer<typeof sectionSchema>
 

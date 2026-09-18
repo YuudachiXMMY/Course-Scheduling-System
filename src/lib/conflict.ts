@@ -16,7 +16,7 @@ export interface ConflictSummary {
 export interface ConflictCheck {
   hasConflict: boolean
   conflicts: ConflictSummary[]
-  suggestions: Date[] // free start times same day, same duration (America/Toronto wall-clock)
+  suggestions: Date[] // free start times same day, same duration (in the section's zone, CR10)
 }
 
 /**
@@ -26,9 +26,17 @@ export interface ConflictCheck {
  */
 export async function checkTeacherConflict(
   ctx: AuthContext,
-  args: { teacherId: string; startAt: Date; endAt: Date; excludeLessonId?: string },
+  args: {
+    teacherId: string
+    startAt: Date
+    endAt: Date
+    excludeLessonId?: string
+    // CR10: the zone used for the free-slot business-hours window. Threaded from the section's
+    // recurrenceTimezone by the schedule cores; defaults to APP_TIME_ZONE (the app-wide default).
+    zone?: string
+  },
 ): Promise<ConflictCheck> {
-  const { teacherId, startAt, endAt, excludeLessonId } = args
+  const { teacherId, startAt, endAt, excludeLessonId, zone } = args
   // Bind the bounds as ISO strings with explicit casts: postgres.js can't infer the param type
   // inside tstzrange(...) and fails to serialize a bare Date there.
   const overlaps = sql`tstzrange(${lesson.startAt}, ${lesson.endAt}, '[)') && tstzrange(${startAt.toISOString()}::timestamptz, ${endAt.toISOString()}::timestamptz, '[)')`
@@ -48,27 +56,32 @@ export async function checkTeacherConflict(
     endAt: r.endAt,
   }))
   const suggestions = conflicts.length
-    ? await suggestFreeSlots(ctx, { teacherId, startAt, endAt })
+    ? await suggestFreeSlots(ctx, { teacherId, startAt, endAt, zone })
     : []
   return { hasConflict: conflicts.length > 0, conflicts, suggestions }
 }
 
-// Scan the SAME calendar day (America/Toronto) in 30-min steps for the first N gaps that fit.
+// Scan the SAME calendar day in 30-min steps for the first N gaps that fit. The day/window is
+// interpreted in `args.zone` (CR10: the section's recurrenceTimezone), defaulting to APP_TIME_ZONE.
 export async function suggestFreeSlots(
   ctx: AuthContext,
-  args: { teacherId: string; startAt: Date; endAt: Date },
+  args: { teacherId: string; startAt: Date; endAt: Date; zone?: string },
 ): Promise<Date[]> {
-  const zone = APP_TIME_ZONE
+  const zone = args.zone ?? APP_TIME_ZONE
   const durationMs = args.endAt.getTime() - args.startAt.getTime()
   const day = DateTime.fromJSDate(args.startAt).setZone(zone)
   const dayStart = day.set({ hour: 8, minute: 0, second: 0, millisecond: 0 }) // 08:00 local
   const dayEnd = day.set({ hour: 21, minute: 0, second: 0, millisecond: 0 }) // 21:00 local
+  // CR9: fetch lessons that OVERLAP the business-hours window, not just those STARTING inside it. A
+  // lesson beginning before dayStart (e.g. 07:30–08:30) still occupies early slots; filtering by
+  // startAt alone missed it and wrongly offered 08:00/08:30 as free. Mirror checkTeacherConflict's
+  // tstzrange overlap (half-open '[)') and its explicit ::timestamptz casts (postgres.js param typing).
   const busy = await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.teacherId, args.teacherId),
       ne(lesson.status, 'canceled'),
-      sql`${lesson.startAt} >= ${dayStart.toUTC().toISO()}::timestamptz and ${lesson.startAt} < ${dayEnd.toUTC().toISO()}::timestamptz`,
+      sql`tstzrange(${lesson.startAt}, ${lesson.endAt}, '[)') && tstzrange(${dayStart.toUTC().toISO()}::timestamptz, ${dayEnd.toUTC().toISO()}::timestamptz, '[)')`,
     ),
   )
   const out: Date[] = []

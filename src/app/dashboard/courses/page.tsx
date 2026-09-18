@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
+import { isWholeTenantActor } from '@/auth/scope'
 import { listCourses, listSections } from './actions'
+import { listTeachers } from './data'
 import { listStudents } from '../students/actions'
 import CourseForm from './course-form'
 import SectionForm from './section-form'
@@ -11,10 +13,13 @@ import CourseRestore from './course-restore'
 export default async function CoursesPage() {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['list'] })
-  const [courses, sections, students] = await Promise.all([
+  // CR2: only whole-tenant admins get the teacher picker; fetch the assignable list only for them.
+  const canAssignTeacher = isWholeTenantActor(ctx)
+  const [courses, sections, students, teachers] = await Promise.all([
     listCourses(),
     listSections(),
     listStudents(),
+    canAssignTeacher ? listTeachers(ctx) : Promise.resolve([]),
   ])
   const activeCourses = courses.filter((c) => !c.isArchived)
   const archivedCourses = courses.filter((c) => c.isArchived)
@@ -61,7 +66,13 @@ export default async function CoursesPage() {
                         {s.name ?? '（未命名班级）'} · {s.rrule ?? '无重复'} · {s.capacity} 人
                       </span>
                       <div className="flex shrink-0 items-center gap-2">
-                        <SectionForm courseId={c.id} defaultTeacherId={ctx.userId} section={s} />
+                        <SectionForm
+                          courseId={c.id}
+                          defaultTeacherId={ctx.userId}
+                          section={s}
+                          teachers={teachers}
+                          canAssignTeacher={canAssignTeacher}
+                        />
                         <SectionRoster
                           sectionId={s.id}
                           capacity={s.capacity}
@@ -81,7 +92,12 @@ export default async function CoursesPage() {
                   <li className="text-xs text-neutral-400">暂无班级</li>
                 )}
               </ul>
-              <SectionForm courseId={c.id} defaultTeacherId={ctx.userId} />
+              <SectionForm
+                courseId={c.id}
+                defaultTeacherId={ctx.userId}
+                teachers={teachers}
+                canAssignTeacher={canAssignTeacher}
+              />
             </div>
           )
         })}
