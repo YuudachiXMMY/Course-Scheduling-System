@@ -88,9 +88,12 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         // 空作用域必须在 inArray([]) 前短路返回空（否则是非法 SQL，也避免越权列出全租户班级）。
         const scope = await sectionIdsForActor(ctx)
         if (scope !== 'all' && scope.length === 0) return ok(JSON.stringify([], null, 2))
+        // DB4: this is a browse-list read path, so it must hide archived sections just like the dashboard
+        // listSections — otherwise an MCP/AI caller would treat a retired section as active.
+        const notArchived = eq(classSection.isArchived, false)
         const sections = await forTenant(ctx).select(
           classSection,
-          scope === 'all' ? undefined : inArray(classSection.id, scope),
+          scope === 'all' ? notArchived : and(notArchived, inArray(classSection.id, scope)),
         )
         const courses = await forTenant(ctx).select(course)
         const label = new Map(courses.map((c) => [c.id, c.title]))

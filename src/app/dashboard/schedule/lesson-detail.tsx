@@ -120,8 +120,10 @@ export default function LessonDetail({
         await upsertAttendance({ lessonId, studentId, status })
         setRoster((prev) => prev.map((e) => (e.studentId === studentId ? { ...e, status } : e)))
         setMsg('已保存出勤')
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : '保存出勤失败')
+      } catch {
+        // These actions THROW on failure; Next.js redacts thrown Server-Action messages in production
+        // (React #441), so e.message would surface an English digest — show a Chinese fallback instead.
+        setErrorMsg('记录考勤失败，请重试')
       }
     })
   }
@@ -137,8 +139,8 @@ export default function LessonDetail({
       try {
         await upsertSharedNote({ lessonId, body: sharedNote })
         setMsg('已保存本节课笔记')
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : '保存笔记失败')
+      } catch {
+        setErrorMsg('保存笔记失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
       }
     })
   }
@@ -155,8 +157,8 @@ export default function LessonDetail({
       try {
         await upsertStudentNote({ lessonId, studentId, body })
         setMsg('已保存学生点评')
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : '保存点评失败')
+      } catch {
+        setErrorMsg('保存点评失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
       }
     })
   }
@@ -188,8 +190,8 @@ export default function LessonDetail({
         onChanged(lessonId)
         router.refresh()
         onClose()
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : '取消失败')
+      } catch {
+        setErrorMsg('取消失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
       }
     })
   }

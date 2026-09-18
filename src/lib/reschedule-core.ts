@@ -1,7 +1,8 @@
 import 'server-only'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, count, eq, sql } from 'drizzle-orm'
 import type { AuthContext } from '@/auth/context'
+import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { rescheduleRequest, lesson, enrollment } from '@/db/schema'
 import { assertLinkedToStudent } from '@/auth/portal'
@@ -60,15 +61,6 @@ export async function createRescheduleRequestCore(
   // Row-level ownership: the acting user must be linked to this student (P7a-5).
   await assertLinkedToStudent(ctx, data.studentId)
 
-  // SEC5: per-user quota on open (pending) requests — reject once the caller already holds the cap.
-  const openCount = await forTenant(ctx).count(
-    rescheduleRequest,
-    and(eq(rescheduleRequest.requestedById, ctx.userId), eq(rescheduleRequest.status, 'pending')),
-  )
-  if (openCount >= MAX_OPEN_RESCHEDULE_REQUESTS_PER_USER) {
-    throw new BusinessError('待处理的改期申请过多，请先等待老师处理后再提交')
-  }
-
   const target = await forTenant(ctx).findById(lesson, data.lessonId)
   if (!target) throw new BusinessError('课节不存在')
 
@@ -83,14 +75,40 @@ export async function createRescheduleRequestCore(
   )
   if (enrolled.length === 0) throw new BusinessError('该学生未在此班级')
 
-  const [row] = await forTenant(ctx).insert(rescheduleRequest, {
-    studentId: data.studentId,
-    lessonId: data.lessonId,
-    requestedById: ctx.userId, // audit stamp (mirrors attendance.recordedBy)
-    requestedStartAt: data.requestedStartAt,
-    requestedEndAt: data.requestedEndAt,
-    reason: data.reason,
-    status: 'pending',
+  // SEC5: per-user quota on open (pending) requests. The count→insert MUST be atomic: a concurrent burst
+  // from the same untrusted account would otherwise each read a below-cap count (READ COMMITTED snapshots
+  // exclude peers' uncommitted inserts) and all insert, overshooting the cap. Serialize same-user creators
+  // with a per-(tenant,user) transaction-scoped advisory lock, then re-count and insert inside the txn so
+  // the loser sees the winner's committed row. tenantId is kept in every WHERE / on the insert for M1.
+  const row = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:${ctx.userId}`}))`)
+    const [openRow] = await tx
+      .select({ value: count() })
+      .from(rescheduleRequest)
+      .where(
+        and(
+          eq(rescheduleRequest.tenantId, ctx.tenantId),
+          eq(rescheduleRequest.requestedById, ctx.userId),
+          eq(rescheduleRequest.status, 'pending'),
+        ),
+      )
+    if ((openRow?.value ?? 0) >= MAX_OPEN_RESCHEDULE_REQUESTS_PER_USER) {
+      throw new BusinessError('待处理的改期申请过多，请先等待老师处理后再提交')
+    }
+    const [inserted] = await tx
+      .insert(rescheduleRequest)
+      .values({
+        tenantId: ctx.tenantId,
+        studentId: data.studentId,
+        lessonId: data.lessonId,
+        requestedById: ctx.userId, // audit stamp (mirrors attendance.recordedBy)
+        requestedStartAt: data.requestedStartAt,
+        requestedEndAt: data.requestedEndAt,
+        reason: data.reason,
+        status: 'pending',
+      })
+      .returning()
+    return inserted as RescheduleRequestRow
   })
   return row
 }

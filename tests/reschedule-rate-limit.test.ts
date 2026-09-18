@@ -104,4 +104,25 @@ describe('createRescheduleRequestCore — 每用户待处理配额 (SEC5)', () =
     const row = await mkRequest(8) // now under the cap again
     expect(row.status).toBe('pending')
   })
+
+  // 复核 CONFIRMED（SEC5 TOCTOU）：cap 的 count→insert 现在在带 per-(tenant,user) advisory lock 的
+  // 事务内完成。无锁时并发突发会各自读到低于 cap 的计数并全部插入而超限；有锁则同用户请求串行化，
+  // 恰好 cap 个成功、其余被业务错误拒绝。
+  it('并发突发不会突破配额（advisory lock 串行化）', async () => {
+    await db.delete(rescheduleRequest).where(eq(rescheduleRequest.tenantId, org)) // 归零 pending
+    const N = 8
+    const results = await Promise.allSettled(Array.from({ length: N }, (_, i) => mkRequest(9 + i)))
+    const ok = results.filter((r) => r.status === 'fulfilled')
+    const rejected = results.filter((r) => r.status === 'rejected')
+    expect(ok.length).toBe(5) // 恰好 cap 个成功，不多不少
+    expect(rejected.length).toBe(N - 5)
+    for (const r of rejected) {
+      expect(String((r as PromiseRejectedResult).reason)).toContain('待处理的改期申请过多')
+    }
+    const persisted = await forTenant(ownerCtx()).count(
+      rescheduleRequest,
+      eq(rescheduleRequest.status, 'pending'),
+    )
+    expect(persisted).toBe(5) // 落库的 pending 数也恰为 cap
+  })
 })
