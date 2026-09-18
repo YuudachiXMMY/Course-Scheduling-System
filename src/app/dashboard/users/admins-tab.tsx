@@ -6,6 +6,7 @@ import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
 import type { CreateStaffInput } from '@/auth/staff'
+import { formatDateTime } from '@/lib/format-datetime'
 
 // 管理员 tab of /dashboard/users — owner/admin accounts. Visible to every org manager, but WRITE controls
 // render ONLY for a super admin — a regular admin sees admins strictly read-only (the "普通 admin 对 admin
@@ -66,6 +67,9 @@ export default async function AdminsTab() {
                     {s.banned && <span className="ml-1 text-xs text-red-500">已停用</span>}
                   </span>
                   <span className="font-mono text-xs text-neutral-500">{s.email}</span>
+                  <span className="text-xs text-neutral-400">
+                    创建于 {formatDateTime(s.createdAt)} · 最近修改 {formatDateTime(s.updatedAt)}
+                  </span>
                 </div>
                 {showControls && (
                   <div className="flex items-center gap-2">

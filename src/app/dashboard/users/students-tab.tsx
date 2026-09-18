@@ -9,6 +9,7 @@ import ExportPanel from '../students/export-panel'
 import PortalAccountForm from '../students/portal-account-form'
 import { listPortalUsers } from './data'
 import { LinkControl, UnlinkButton } from './link-control'
+import { formatDateTime } from '@/lib/format-datetime'
 
 // Students tab of /dashboard/users — the former /dashboard/students page, moved here verbatim, plus a
 // per-student "关联账号" row (assign an existing portal account to this student, or unlink one). The
@@ -62,6 +63,9 @@ export default async function StudentsTab() {
                     <span className="text-sm font-medium">{s.name}</span>
                     <span className="text-xs text-neutral-500">
                       {s.schoolGrade ?? '—'} · 微信 {s.parentWechat ?? '—'}
+                    </span>
+                    <span className="text-xs text-neutral-400">
+                      创建于 {formatDateTime(s.createdAt)} · 最近修改 {formatDateTime(s.updatedAt)}
                     </span>
                   </div>
                   <StudentForm student={s} />
