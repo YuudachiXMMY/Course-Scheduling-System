@@ -19,6 +19,7 @@ vi.mock('@/auth/context', async (importActual) => ({
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }))
 
 import { upsertTeachAttendance } from '@/app/dashboard/teach/[sectionId]/attendance-actions'
+import { upsertAttendance } from '@/app/dashboard/schedule/attendance-actions'
 import { getSectionLessonNotes } from '@/app/dashboard/teach/[sectionId]/data'
 
 const org = 'org_teach_att'
@@ -81,5 +82,17 @@ describe('教务工作台内联出勤 —— upsertTeachAttendance + getSectionL
     expect(notes[les]?.attendance).toEqual({ [stu]: 'absent' })
     const rows = await db.select().from(attendance).where(eq(attendance.lessonId, les))
     expect(rows).toHaveLength(1)
+  })
+
+  // 回归：teach wrapper 不传 note，更新只写 status。锁定"改状态不清空排课抽屉已录备注"——该属性
+  // 完全依赖 forTenant.update → drizzle .set() 跳过 undefined 字段。若底层某天改成显式写 null 就会
+  // 静默丢备注，这条测试会红。先经 schedule upsertAttendance 写入带 note 的行，再经 teach 改 status。
+  it('teach 改状态不清空 schedule 已录的出勤备注', async () => {
+    await upsertAttendance({ lessonId: les, studentId: stu, status: 'present', note: '家长已知会请假' })
+    await upsertTeachAttendance({ lessonId: les, studentId: stu, status: 'late' })
+    const rows = await db.select().from(attendance).where(eq(attendance.lessonId, les))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.status).toBe('late')
+    expect(rows[0]?.note).toBe('家长已知会请假')
   })
 })
