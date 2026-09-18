@@ -4,8 +4,17 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { upsertSharedNote, upsertStudentNote } from '@/app/dashboard/schedule/attendance-actions'
 import { upsertLessonStudentGrade } from './grade-actions'
+import { upsertTeachAttendance } from './attendance-actions'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
 import type { SectionStudent, LessonNoteRow } from './data'
+
+// 四态出勤标签（与 schedule 的 lesson-detail.tsx STATUS_LABELS 对齐）。value 即 attendanceStatus enum。
+const ATT_LABELS = [
+  { value: 'present', label: '出勤' },
+  { value: 'absent', label: '缺席' },
+  { value: 'late', label: '迟到' },
+  { value: 'excused', label: '请假' },
+] as const
 
 // Inline (排课 tab) editor for ONE lesson: the shared Summary note (全班共享) plus, per rostered
 // student, a 点评 (note) and an optional 成绩 (grade). Controlled local state seeded from server data +
@@ -35,6 +44,9 @@ export default function LessonNotesInline({
     }
     return m
   })
+  const [attendance, setAttendance] = useState<Record<string, string>>(() => ({
+    ...initial.attendance,
+  }))
   const [pending, startTransition] = useTransition()
   const { flash, show } = useFlash()
   const router = useRouter()
@@ -85,6 +97,21 @@ export default function LessonNotesInline({
     })
   }
 
+  // 逐生出勤：点击某一态即写库并乐观更新本地高亮。startTransition 内的 await 用 try/catch 兜底，
+  // 失败落 show()（避免生产 React #441 脱敏）。attendanceStatus 无"清空"语义——只在四态间切换。
+  function markAttendance(studentId: string, status: (typeof ATT_LABELS)[number]['value']) {
+    startTransition(async () => {
+      try {
+        await upsertTeachAttendance({ lessonId, studentId, status })
+        setAttendance((prev) => ({ ...prev, [studentId]: status }))
+        show('已保存出勤')
+        router.refresh()
+      } catch {
+        show('保存失败')
+      }
+    })
+  }
+
   // 一键保存本节课的所有更改：脏检查后只提交与 `initial` 不同的字段，避免无谓写入，也避免触发
   // upsertSharedNote / upsertStudentNote 的 body.min(1) 校验（清空 Summary/点评 仍然 out of scope，
   // 见 saveComment）。成绩沿用 saveGrade 的空串→undefined 规则，所以清空成绩会作为一次更改被删除。
@@ -127,6 +154,19 @@ export default function LessonNotesInline({
         const score = cell.score.trim() === '' ? undefined : cell.score
         const maxScore = cell.maxScore.trim() === '' ? undefined : cell.maxScore
         tasks.push(upsertLessonStudentGrade({ lessonId, studentId: s.id, score, maxScore }))
+        saved++
+      }
+
+      // 出勤：attendanceStatus 无清空语义，只在已选态与 initial 不同（即被切换）时提交。
+      const status = attendance[s.id]
+      if (status && status !== (initial.attendance[s.id] ?? '')) {
+        tasks.push(
+          upsertTeachAttendance({
+            lessonId,
+            studentId: s.id,
+            status: status as (typeof ATT_LABELS)[number]['value'],
+          }),
+        )
         saved++
       }
     }
@@ -206,6 +246,29 @@ export default function LessonNotesInline({
                 readOnly={!canManage}
                 onChange={(e) => setComments((prev) => ({ ...prev, [s.id]: e.target.value }))}
               />
+              <div
+                className="flex flex-wrap items-center gap-2"
+                data-testid="lesson-note-attendance"
+                data-student-id={s.id}
+              >
+                <span className="text-xs text-neutral-500">出勤</span>
+                {ATT_LABELS.map((a) => (
+                  <button
+                    key={a.value}
+                    type="button"
+                    aria-pressed={attendance[s.id] === a.value}
+                    disabled={!canManage || pending}
+                    onClick={() => markAttendance(s.id, a.value)}
+                    className={`rounded px-2 py-1 text-xs disabled:opacity-50 ${
+                      attendance[s.id] === a.value
+                        ? 'bg-neutral-900 text-white'
+                        : 'border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-neutral-500">成绩</span>
                 <input
