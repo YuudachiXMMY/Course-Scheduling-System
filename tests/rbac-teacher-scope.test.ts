@@ -204,7 +204,9 @@ describe('数据层归属守卫 — getSectionHeader / getSectionRoster / getSec
     expect(typeof (await getSectionPendingRescheduleCount(teacherACtx, sA1))).toBe('number')
     // Foreign section 404s directly — locks the getSectionReports self-guard and the new pending-count guard.
     await expect(getSectionReports(teacherBCtx, sA1)).rejects.toThrow('NEXT_NOT_FOUND')
-    await expect(getSectionPendingRescheduleCount(teacherBCtx, sA1)).rejects.toThrow('NEXT_NOT_FOUND')
+    await expect(getSectionPendingRescheduleCount(teacherBCtx, sA1)).rejects.toThrow(
+      'NEXT_NOT_FOUND',
+    )
   })
 })
 
@@ -214,7 +216,9 @@ describe('数据层归属守卫 — getSectionHeader / getSectionRoster / getSec
 describe('花名册写路径归属守卫 — enrollStudent / unenrollStudent / listSectionEnrollments（M2 补：写路径）', () => {
   it('a teacher cannot enroll or unenroll students in another teacher’s section', async () => {
     asActor(teacherBCtx)
-    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('无权管理该班级')
+    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow(
+      '无权管理该班级',
+    )
     await expect(unenrollStudent({ studentId: stuA, sectionId: sA1 })).rejects.toThrow(
       '无权管理该班级',
     )

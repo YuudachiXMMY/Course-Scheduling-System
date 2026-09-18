@@ -65,7 +65,9 @@ async function main() {
       )
     }
     if (!FIX) {
-      console.error('[cleanup-room-overlaps] re-run with --fix to cancel the later lesson of each pair')
+      console.error(
+        '[cleanup-room-overlaps] re-run with --fix to cancel the later lesson of each pair',
+      )
       process.exitCode = 1
       return
     }

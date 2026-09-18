@@ -72,8 +72,20 @@ beforeAll(async () => {
     .insert(grade)
     .values({ tenantId: org, studentId: stu, lessonId: lesX, title: '期中', score: '90' })
   await db.insert(note).values([
-    { tenantId: org, studentId: stu, authorId: teacher, body: '内部备注勿外传', visibility: 'internal' },
-    { tenantId: org, studentId: stu, authorId: teacher, body: '家长可见评语', visibility: 'shared' },
+    {
+      tenantId: org,
+      studentId: stu,
+      authorId: teacher,
+      body: '内部备注勿外传',
+      visibility: 'internal',
+    },
+    {
+      tenantId: org,
+      studentId: stu,
+      authorId: teacher,
+      body: '家长可见评语',
+      visibility: 'shared',
+    },
   ])
 })
 

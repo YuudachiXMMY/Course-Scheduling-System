@@ -41,9 +41,18 @@ async function seed() {
   await db.insert(course).values({ id: 'c_ra', tenantId: org, title: '原子改期课程' })
   await db
     .insert(classSection)
-    .values({ id: sec, tenantId: org, courseId: 'c_ra', name: 'RA', teacherId: teacher, capacity: 5 })
+    .values({
+      id: sec,
+      tenantId: org,
+      courseId: 'c_ra',
+      name: 'RA',
+      teacherId: teacher,
+      capacity: 5,
+    })
   await db.insert(student).values({ id: stu, tenantId: org, name: '学生RA' })
-  await db.insert(enrollment).values({ tenantId: org, studentId: stu, sectionId: sec, status: 'active' })
+  await db
+    .insert(enrollment)
+    .values({ tenantId: org, studentId: stu, sectionId: sec, status: 'active' })
   await db.insert(lesson).values({
     id: les,
     tenantId: org,
@@ -98,7 +107,10 @@ describe('改期审批并发原子性 (B19/B20)', () => {
       rescheduleRequest,
       eq(rescheduleRequest.id, reqId),
     )) as (typeof rescheduleRequest.$inferSelect)[]
-    const [lesRow] = (await forTenant(ctx).select(lesson, eq(lesson.id, les))) as (typeof lesson.$inferSelect)[]
+    const [lesRow] = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.id, les),
+    )) as (typeof lesson.$inferSelect)[]
 
     // 终态确定且唯一：既不是仍 pending，也不是"移动了却记为 rejected"的矛盾态。
     expect(['approved', 'rejected']).toContain(reqRow.status)
