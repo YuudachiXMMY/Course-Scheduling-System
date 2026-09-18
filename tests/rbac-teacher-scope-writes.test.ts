@@ -56,10 +56,7 @@ import {
   approveReportCore,
   getReportViewModel,
 } from '@/lib/report-core'
-import {
-  approveRescheduleRequestCore,
-  rejectRescheduleRequestCore,
-} from '@/lib/reschedule-core'
+import { approveRescheduleRequestCore, rejectRescheduleRequestCore } from '@/lib/reschedule-core'
 import { listRescheduleRequests } from '@/app/dashboard/reschedule/data'
 
 const asActor = (ctx: AuthContext) => vi.mocked(requireAuthContext).mockResolvedValue(ctx)
@@ -140,8 +137,22 @@ beforeAll(async () => {
     },
   ])
   await db.insert(progressReport).values([
-    { id: reportA, tenantId: org, studentId: stuA, sectionId: sA1, rubricVersion: 'v1', status: 'draft' },
-    { id: reportB, tenantId: org, studentId: stuB, sectionId: sB1, rubricVersion: 'v1', status: 'draft' },
+    {
+      id: reportA,
+      tenantId: org,
+      studentId: stuA,
+      sectionId: sA1,
+      rubricVersion: 'v1',
+      status: 'draft',
+    },
+    {
+      id: reportB,
+      tenantId: org,
+      studentId: stuB,
+      sectionId: sB1,
+      rubricVersion: 'v1',
+      status: 'draft',
+    },
   ])
   await db.insert(rescheduleRequest).values([
     {
@@ -241,9 +252,13 @@ describe('分享 token 铸造归属守卫（MEDIUM 1）— share-actions', () =>
 describe('学生编辑归属守卫（MEDIUM 1）— students/actions', () => {
   it('updateStudent / archiveStudent / restoreStudent refuse another teacher’s student', async () => {
     asActor(teacherBCtx)
-    await expect(updateStudent(stuA, { name: 'hacked' })).rejects.toThrow('无权修改该学生')
-    await expect(archiveStudent(stuA)).rejects.toThrow('无权归档该学生')
-    await expect(restoreStudent(stuA)).rejects.toThrow('无权恢复该学生')
+    // B29: 这三个 action 现在把授权失败作为 DATA 返回（{ok:false,error}），不再抛出 —— 断言返回契约。
+    expect(await updateStudent(stuA, { name: 'hacked' })).toEqual({
+      ok: false,
+      error: '无权修改该学生',
+    })
+    expect(await archiveStudent(stuA)).toEqual({ ok: false, error: '无权归档该学生' })
+    expect(await restoreStudent(stuA)).toEqual({ ok: false, error: '无权恢复该学生' })
   })
 })
 

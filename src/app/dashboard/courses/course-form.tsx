@@ -25,6 +25,20 @@ export default function CourseForm({
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
+  // B11: 本地表单态仅在挂载时从 props 取种子。父级以稳定 key（course.id）复用本组件跨 router.refresh()，
+  // 同一课程的服务端数据变化（并发编辑 / 本次保存后回填）不会重挂载，陈旧本地态会静默覆盖新值。以
+  // course.id + updatedAt 版本键在渲染期重置本地态（React 官方「随 prop 变化重置 state」写法，避免
+  // effect 内同步 setState 触发级联渲染；纯本地重置，不触发 Server Action，故无刷新回环）。
+  const courseVersion = `${course?.id ?? ''}:${course?.updatedAt?.getTime() ?? 0}`
+  const [prevCourseVersion, setPrevCourseVersion] = useState(courseVersion)
+  if (courseVersion !== prevCourseVersion) {
+    setPrevCourseVersion(courseVersion)
+    setTitle(course?.title ?? '')
+    setSubject(course?.subject ?? '')
+    setLevel(course?.level ?? '')
+    setDuration(String(course?.defaultDurationMinutes ?? 60))
+  }
+
   function submit() {
     setError(null)
     if (!title.trim()) {
@@ -62,10 +76,21 @@ export default function CourseForm({
 
   function archive() {
     if (!course) return
+    setError(null)
     startTransition(async () => {
-      await archiveCourse(course.id)
-      router.refresh()
-      setOpen(false)
+      // B10: archiveCourse 现返回 {ok,error}（见 actions.ts）。检查 res.ok 并 try/catch，避免越权
+      // 点击时 FORBIDDEN 抛错静默失败——失败以组件内错误状态内联提示。
+      try {
+        const res = await archiveCourse(course.id)
+        if (!res.ok) {
+          setError(res.error)
+          return
+        }
+        router.refresh()
+        setOpen(false)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '归档失败')
+      }
     })
   }
 
@@ -84,20 +109,24 @@ export default function CourseForm({
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4 shadow-sm">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+        {/* B13: 输入原本仅有 placeholder，无可访问名称。补 aria-label 满足 WCAG 1.3.1/3.3.2/4.1.2。 */}
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          aria-label="课程名称"
           placeholder="课程名称（如 高一数学）"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          aria-label="科目"
           placeholder="科目"
           value={subject}
           onChange={(e) => setSubject(e.target.value)}
         />
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          aria-label="级别"
           placeholder="级别"
           value={level}
           onChange={(e) => setLevel(e.target.value)}
@@ -105,6 +134,7 @@ export default function CourseForm({
         <input
           type="number"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
+          aria-label="默认时长（分钟）"
           placeholder="默认时长(分钟)"
           value={duration}
           onChange={(e) => setDuration(e.target.value)}

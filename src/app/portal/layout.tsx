@@ -47,12 +47,16 @@ export default async function PortalLayout({ children }: { children: ReactNode }
           >
             通知
             {unread > 0 && (
-              <span
-                aria-hidden
-                className="ml-1 inline-block rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white"
-              >
-                {unread}
-              </span>
+              <>
+                {/* B41：视觉徽章仅呈现数字，对 AT 隐藏；另补 sr-only 文本，让读屏能感知未读数量。 */}
+                <span
+                  aria-hidden
+                  className="ml-1 inline-block rounded-full bg-red-500 px-1.5 text-[10px] font-medium text-white"
+                >
+                  {unread}
+                </span>
+                <span className="sr-only">（{unread} 条未读通知）</span>
+              </>
             )}
           </Link>
           <LogoutButton />

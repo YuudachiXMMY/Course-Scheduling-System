@@ -96,9 +96,11 @@ export default function SectionReportPanel({
         >
           <h3 className="text-sm font-medium text-neutral-700">生成报告草稿</h3>
           <div className="flex flex-wrap items-center gap-3">
+            {/* B35: 报告生成器的表单控件补可访问名称（select 学生 / 起止日期），否则屏幕阅读器无名可念。 */}
             <select
               value={studentId}
               onChange={(e) => setStudentId(e.target.value)}
+              aria-label="学生"
               className="rounded border border-neutral-300 px-2 py-1.5 text-sm"
             >
               {roster.map((s) => (
@@ -141,12 +143,14 @@ export default function SectionReportPanel({
                   type="date"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
+                  aria-label="开始日期"
                   className="rounded border border-neutral-300 px-2 py-1.5 text-sm"
                 />
                 <input
                   type="date"
                   value={to}
                   onChange={(e) => setTo(e.target.value)}
+                  aria-label="结束日期"
                   className="rounded border border-neutral-300 px-2 py-1.5 text-sm"
                 />
               </>

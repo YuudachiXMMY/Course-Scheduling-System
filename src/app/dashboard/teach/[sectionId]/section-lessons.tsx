@@ -193,8 +193,12 @@ export default function SectionLessons({
                           {notesOpenId === l.id ? '笔记点评 ▲' : '笔记点评 ▼'}
                         </button>
                         {canManage && (
+                          // B33: 改期是披露按钮（切换下方改期表单），补 aria-expanded/aria-controls，
+                          // 与相邻「笔记点评」披露按钮一致（后者已带 aria-expanded）。
                           <button
                             type="button"
+                            aria-expanded={editId === l.id}
+                            aria-controls={`reschedule-${l.id}`}
                             onClick={() => (editId === l.id ? setEditId(null) : beginEdit(l))}
                             className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
                           >
@@ -205,7 +209,10 @@ export default function SectionLessons({
                     </div>
 
                     {editId === l.id && (
-                      <div className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-neutral-50 p-2">
+                      <div
+                        id={`reschedule-${l.id}`}
+                        className="flex flex-wrap items-center gap-2 rounded border border-neutral-200 bg-neutral-50 p-2"
+                      >
                         <input
                           type="datetime-local"
                           value={start}

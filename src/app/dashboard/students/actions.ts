@@ -19,18 +19,25 @@ const createStudentSchema = z.object({
 })
 export type CreateStudentInput = z.input<typeof createStudentSchema>
 
-export async function createStudent(input: CreateStudentInput) {
+// P7b-review B29: Server Actions 是公共边界。Next.js 生产会脱敏「抛出」的 Server Action 错误消息
+// （React #441），中文业务错误（'无权修改该学生' 等）与 zod 校验错误会退化成通用文案，前端拿不到
+// 可读原因。改为把成功/失败都作为 DATA 返回（判别式联合），镜像同目录 portal-actions.ts 的
+// ProvisionResult —— 授权/校验语义不变，只把「抛」改成「返回 {ok:false,error}」，让错误文案原样抵达表单。
+export type StudentResult = { ok: true; row: Student } | { ok: false; error: string }
+
+export async function createStudent(input: CreateStudentInput): Promise<StudentResult> {
   const ctx = await requireAuthContext() // 1) verified principal + tenant (ignore any client orgId)
   requirePermission(ctx, { student: ['create'] }) // 2) RBAC guard at the top
-  const data = createStudentSchema.parse(input) // 3) validate + trim before persisting
-  const [row] = await forTenant(ctx).insert(student, {
+  const parsed = createStudentSchema.safeParse(input) // 3) validate + trim before persisting
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  const [row] = (await forTenant(ctx).insert(student, {
     // 4) tenant-scoped write (tenantId injected from ctx)
-    name: data.name,
-    parentWechat: data.parentWechat,
-    schoolGrade: data.schoolGrade,
-  })
+    name: parsed.data.name,
+    parentWechat: parsed.data.parentWechat,
+    schoolGrade: parsed.data.schoolGrade,
+  })) as Student[]
   revalidatePath('/dashboard/students')
-  return row
+  return { ok: true, row }
 }
 
 export async function listStudents(): Promise<Student[]> {
@@ -61,37 +68,38 @@ const updateStudentSchema = z.object({
 })
 export type UpdateStudentInput = z.input<typeof updateStudentSchema>
 
-export async function updateStudent(id: string, input: UpdateStudentInput) {
+export async function updateStudent(id: string, input: UpdateStudentInput): Promise<StudentResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
   // 工作流 E: a section-scoped teacher may only edit a student they teach.
-  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权修改该学生')
-  const data = updateStudentSchema.parse(input)
-  const [row] = await forTenant(ctx).update(student, id, {
-    name: data.name,
-    parentWechat: data.parentWechat,
-    schoolGrade: data.schoolGrade,
-  })
+  if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权修改该学生' }
+  const parsed = updateStudentSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  const [row] = (await forTenant(ctx).update(student, id, {
+    name: parsed.data.name,
+    parentWechat: parsed.data.parentWechat,
+    schoolGrade: parsed.data.schoolGrade,
+  })) as Student[]
   revalidatePath('/dashboard/students')
-  return row
+  return { ok: true, row }
 }
 
 // Soft-delete only: attendance/grade FKs are onDelete('restrict') — a hard delete would throw.
-export async function archiveStudent(id: string) {
+export async function archiveStudent(id: string): Promise<StudentResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
-  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权归档该学生')
-  const [row] = await forTenant(ctx).update(student, id, { status: 'archived' })
+  if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权归档该学生' }
+  const [row] = (await forTenant(ctx).update(student, id, { status: 'archived' })) as Student[]
   revalidatePath('/dashboard/students')
-  return row
+  return { ok: true, row }
 }
 
 // Un-archive: mirror of archiveStudent so a soft-deleted student can be brought back to active.
-export async function restoreStudent(id: string) {
+export async function restoreStudent(id: string): Promise<StudentResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
-  if (!(await actorOwnsStudent(ctx, id))) throw new Error('无权恢复该学生')
-  const [row] = await forTenant(ctx).update(student, id, { status: 'active' })
+  if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权恢复该学生' }
+  const [row] = (await forTenant(ctx).update(student, id, { status: 'active' })) as Student[]
   revalidatePath('/dashboard/students')
-  return row
+  return { ok: true, row }
 }

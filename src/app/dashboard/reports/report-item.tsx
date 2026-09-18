@@ -24,6 +24,15 @@ export function ReportItem({
   readOnly?: boolean
 }) {
   const [text, setText] = useState(report.narrative ?? '')
+  // B17: 叙述草稿本地态原本仅首次挂载取种子。父级以稳定 key（report.id）复用本组件跨 router.refresh()，
+  // 同一报告的服务端叙述变化（并发编辑 / 本次保存后回填）不会重挂载 → 陈旧本地态静默覆盖新值。当服务端
+  // narrative 变化时在渲染期重新同步（React 官方「随 prop 变化重置 state」写法，避免 effect 内同步
+  // setState）。ReportRow 不暴露 updatedAt，narrative 本身即版本信号；身份由父级 key（report.id）锚定。
+  const [prevNarrative, setPrevNarrative] = useState(report.narrative)
+  if (report.narrative !== prevNarrative) {
+    setPrevNarrative(report.narrative)
+    setText(report.narrative ?? '')
+  }
   const approved = report.status === 'approved'
   const locked = approved || readOnly
   const period =
@@ -51,6 +60,8 @@ export function ReportItem({
         <p className="text-sm whitespace-pre-wrap text-neutral-800">{report.narrative}</p>
       ) : (
         <textarea
+          // B17: 补可访问名称，含学生/报告标识，列表项之间可区分（WCAG 1.3.1/3.3.2/4.1.2）。
+          aria-label={`${report.title || `${studentName} 进度报告`} 叙述`}
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={6}

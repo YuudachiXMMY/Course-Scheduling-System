@@ -26,11 +26,18 @@ export default function FeedPanel({
     }
   }
 
+  // B7：requirePermission/insert 失败时 getOrCreateFeed/rotateFeed/revokeFeed 会 throw。React 19 /
+  // Next 16 把 transition 内的未处理拒绝上抛到最近错误边界（dashboard/error.tsx），整段被通用错误屏
+  // 替换。用 try/catch + setMsg 内联呈现错误（与项目 {ok,error}/flash 范式一致），保留面板不崩。
   function create() {
     startTransition(async () => {
-      await getOrCreateFeed()
-      setMsg('已生成订阅链接')
-      router.refresh()
+      try {
+        await getOrCreateFeed()
+        setMsg('已生成订阅链接')
+        router.refresh()
+      } catch {
+        setMsg('生成订阅链接失败，请稍后重试')
+      }
     })
   }
 
@@ -38,18 +45,26 @@ export default function FeedPanel({
     if (!window.confirm('重新生成后，旧链接会立即失效，已订阅的日历需要重新订阅。确定继续？'))
       return
     startTransition(async () => {
-      await rotateFeed()
-      setMsg('已重新生成链接')
-      router.refresh()
+      try {
+        await rotateFeed()
+        setMsg('已重新生成链接')
+        router.refresh()
+      } catch {
+        setMsg('重新生成链接失败，请稍后重试')
+      }
     })
   }
 
   function revoke() {
     if (!window.confirm('停用后，该订阅链接会立即失效。确定继续？')) return
     startTransition(async () => {
-      await revokeFeed()
-      setMsg('已停用订阅')
-      router.refresh()
+      try {
+        await revokeFeed()
+        setMsg('已停用订阅')
+        router.refresh()
+      } catch {
+        setMsg('停用订阅失败，请稍后重试')
+      }
     })
   }
 
