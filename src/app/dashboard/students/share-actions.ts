@@ -9,8 +9,6 @@ import { forTenant } from '@/db/tenant'
 import { shareLink } from '@/db/schema'
 import { getActiveShare, ensureActiveShare } from '@/app/dashboard/students/share-data'
 
-type Share = typeof shareLink.$inferSelect
-
 // One active (non-revoked) share per student. `shareLink` is a NORMAL tenant table here —
 // only the PUBLIC page (src/app/s/[token]/page.tsx via src/lib/share.ts) bypasses forTenant()
 // (P4-2). Mirrors calendar/actions.ts's getOrCreate/rotate/revoke shape.
@@ -38,16 +36,16 @@ export async function rotateShare(studentId: string): Promise<{ token: string }>
   const existing = await getActiveShare(ctx, studentId)
   const token = nanoid(32)
   if (!existing) {
-    const [created] = (await forTenant(ctx).insert(shareLink, {
+    const [created] = await forTenant(ctx).insert(shareLink, {
       studentId,
       token,
       label: '家长课表分享',
-    })) as Share[]
+    })
     revalidatePath('/dashboard/students')
     return { token: created.token }
   }
 
-  const [updated] = (await forTenant(ctx).update(shareLink, existing.id, { token })) as Share[]
+  const [updated] = await forTenant(ctx).update(shareLink, existing.id, { token })
   revalidatePath('/dashboard/students')
   return { token: updated.token }
 }

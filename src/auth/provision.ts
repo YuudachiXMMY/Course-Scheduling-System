@@ -106,8 +106,7 @@ export async function provisionPortalAccountCore(
 ): Promise<{ userId: string; email: string; created: boolean }> {
   const data = provisionSchema.parse(input)
 
-  const s = (await forTenant(ctx).findById(student, data.studentId)) as
-    typeof student.$inferSelect | null
+  const s = await forTenant(ctx).findById(student, data.studentId)
   if (!s) throw new Error('学生不存在')
 
   const email =
@@ -126,10 +125,10 @@ export async function provisionPortalAccountCore(
   try {
     // Idempotent link (tenant-scoped write; tenantId injected by forTenant). Skip if the
     // (tenant, student, user) link already exists — a retry or same-child re-provision is a no-op.
-    const linked = (await forTenant(ctx).select(
+    const linked = await forTenant(ctx).select(
       portalLink,
       and(eq(portalLink.studentId, data.studentId), eq(portalLink.userId, userId)),
-    )) as unknown[]
+    )
     if (linked.length === 0) {
       await forTenant(ctx).insert(portalLink, {
         studentId: data.studentId,
@@ -224,10 +223,10 @@ export async function linkPortalUserCore(
       ? 'student'
       : 'parent')
   // 4) Idempotent insert — the uq_portal_link_student_user unique index is the backstop.
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     portalLink,
     and(eq(portalLink.studentId, data.studentId), eq(portalLink.userId, data.userId)),
-  )) as unknown[]
+  )
   if (existing.length === 0) {
     await forTenant(ctx).insert(portalLink, {
       studentId: data.studentId,

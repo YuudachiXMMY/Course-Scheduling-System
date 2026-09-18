@@ -25,10 +25,10 @@ export default async function PortalReschedulePage() {
     })),
   )
 
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     rescheduleRequest,
     eq(rescheduleRequest.requestedById, ctx.userId),
-  )) as (typeof rescheduleRequest.$inferSelect)[]
+  )
   const requests: RequestRow[] = rows
     .map((r) => ({
       id: r.id,

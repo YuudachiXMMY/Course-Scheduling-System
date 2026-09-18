@@ -37,10 +37,10 @@ export async function runReminderScanCore(
     const title = offset.label === '1h' ? '课程即将开始' : '课前提醒'
     // gt(lower) / lte(upper): exclusive lower, inclusive upper so a lesson on a boundary isn't
     // double-counted between adjacent scans. Only 'scheduled' lessons get reminders.
-    const lessons = (await forTenant(ctx).select(
+    const lessons = await forTenant(ctx).select(
       lesson,
       and(gt(lesson.startAt, from), lte(lesson.startAt, to), eq(lesson.status, 'scheduled')),
-    )) as (typeof lesson.$inferSelect)[]
+    )
 
     for (const l of lessons) {
       const recipients = await resolveLessonRecipientsCore(ctx, l)

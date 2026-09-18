@@ -22,7 +22,7 @@ export async function getPortalSchedule(ctx: AuthContext): Promise<PortalCard[]>
   const ids = await resolveLinkedStudentIds(ctx)
   const cards: PortalCard[] = []
   for (const id of ids) {
-    const s = (await forTenant(ctx).findById(student, id)) as typeof student.$inferSelect | null
+    const s = await forTenant(ctx).findById(student, id)
     if (!s) continue
     cards.push({
       studentId: id,

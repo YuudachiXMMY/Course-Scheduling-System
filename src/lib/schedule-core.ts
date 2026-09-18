@@ -64,9 +64,7 @@ export async function scheduleLessonCore(
   const data = createSchema.parse(input)
 
   // teacherId comes from the section (denormalized) so GiST/conflict never silently exempts the row.
-  const section = (await forTenant(ctx).findById(classSection, data.sectionId)) as
-    | typeof classSection.$inferSelect
-    | null
+  const section = await forTenant(ctx).findById(classSection, data.sectionId)
   if (!section) throw new Error('班级不存在或不属于当前机构')
   // 工作流 E: a section-scoped teacher may only schedule into a section they teach (shared by the
   // dashboard Server Action AND the MCP tool, so both paths are covered here).
@@ -94,7 +92,7 @@ export async function scheduleLessonCore(
       status: 'scheduled',
       isException: true, // ad-hoc lesson (not from the RRULE grid)
     })
-    return { ok: true, event: toEvent(row as typeof lesson.$inferSelect) }
+    return { ok: true, event: toEvent(row) }
   } catch (e) {
     if (isExclusionViolation(e)) throw new ConflictError()
     throw e
@@ -107,7 +105,7 @@ export async function rescheduleLessonCore(
 ): Promise<ScheduleResult> {
   const data = rescheduleSchema.parse(input)
 
-  const existing = (await forTenant(ctx).findById(lesson, data.id)) as typeof lesson.$inferSelect | null
+  const existing = await forTenant(ctx).findById(lesson, data.id)
   if (!existing) throw new Error('课节不存在')
   if (!existing.teacherId) throw new Error('课节缺少教师信息')
   // 工作流 E: a section-scoped teacher may only move a lesson of a section they teach (lesson.teacherId
@@ -135,7 +133,7 @@ export async function rescheduleLessonCore(
       endAt: data.endAt,
       isException: true, // moved off the pattern (P2-8)
     })
-    return { ok: true, event: toEvent(row as typeof lesson.$inferSelect) }
+    return { ok: true, event: toEvent(row) }
   } catch (e) {
     if (isExclusionViolation(e)) throw new ConflictError()
     throw e

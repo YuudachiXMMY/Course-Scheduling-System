@@ -29,8 +29,8 @@ export async function listPortalUsers(ctx: AuthContext): Promise<PortalUserRow[]
   const portalUsers = rows.filter((r) => isPortalRole(r.role))
   if (portalUsers.length === 0) return []
 
-  const links = (await forTenant(ctx).select(portalLink)) as (typeof portalLink.$inferSelect)[]
-  const students = (await forTenant(ctx).select(student)) as (typeof student.$inferSelect)[]
+  const links = await forTenant(ctx).select(portalLink)
+  const students = await forTenant(ctx).select(student)
   const nameById = new Map(students.map((s) => [s.id, s.name]))
   const linksByUser = new Map<string, { id: string; name: string }[]>()
   for (const l of links) {

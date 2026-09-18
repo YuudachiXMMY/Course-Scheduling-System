@@ -51,7 +51,7 @@ export interface SectionStudent {
 // title) don't re-query. A stale / cross-tenant id resolves to teach/not-found.tsx (rendered inside
 // teach/layout.tsx, so the rail is preserved).
 async function requireOwnedSection(ctx: AuthContext, id: string): Promise<Section> {
-  const section = (await forTenant(ctx).findById(classSection, id)) as Section | null
+  const section = await forTenant(ctx).findById(classSection, id)
   if (!section || !actorOwnsSection(ctx, section)) notFound()
   return section
 }
@@ -61,23 +61,20 @@ export async function getSectionHeader(
   id: string,
 ): Promise<{ section: Section; course: Course }> {
   const section = await requireOwnedSection(ctx, id)
-  const parent = (await forTenant(ctx).findById(course, section.courseId)) as Course | null
+  const parent = await forTenant(ctx).findById(course, section.courseId)
   if (!parent) notFound()
   return { section, course: parent }
 }
 
 export async function getSectionRoster(ctx: AuthContext, id: string): Promise<SectionStudent[]> {
   await requireOwnedSection(ctx, id) // 工作流 E: enforce section ownership here, not only via the layout
-  const enrolls = (await forTenant(ctx).select(
+  const enrolls = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, id), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   const ids = [...new Set(enrolls.map((e) => e.studentId))]
   if (ids.length === 0) return []
-  const students = (await forTenant(ctx).select(
-    student,
-    inArray(student.id, ids),
-  )) as (typeof student.$inferSelect)[]
+  const students = await forTenant(ctx).select(student, inArray(student.id, ids))
   return students
     .map((s) => ({ id: s.id, name: s.name }))
     .sort((a, b) => a.name.localeCompare(b.name, 'zh'))
@@ -107,7 +104,7 @@ export async function getSectionLessons(ctx: AuthContext, id: string): Promise<S
   const to = section.termEndDate
     ? localDayBound(section.termEndDate, 'end')
     : now.plus({ days: 120 }).toUTC().toJSDate()
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.sectionId, id),
@@ -115,9 +112,8 @@ export async function getSectionLessons(ctx: AuthContext, id: string): Promise<S
       gte(lesson.startAt, from),
       lte(lesson.startAt, to),
     ),
-  )) as (typeof lesson.$inferSelect)[]
-  const parentTitle =
-    ((await forTenant(ctx).findById(course, section.courseId)) as Course | null)?.title ?? null
+  )
+  const parentTitle = (await forTenant(ctx).findById(course, section.courseId))?.title ?? null
   const nowMs = Date.now()
   return rows
     .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
@@ -142,18 +138,15 @@ export async function getSectionPendingRescheduleCount(
   id: string,
 ): Promise<number> {
   await requireOwnedSection(ctx, id) // 工作流 E: ownership guard (called from the layout, but self-sufficient)
-  const lessons = (await forTenant(ctx).select(
-    lesson,
-    eq(lesson.sectionId, id),
-  )) as (typeof lesson.$inferSelect)[]
+  const lessons = await forTenant(ctx).select(lesson, eq(lesson.sectionId, id))
   if (lessons.length === 0) return 0
   // Push the lesson-membership filter into SQL (inArray) rather than scanning the tenant's entire
   // pending set in memory — this runs per section-layout render. lessonIds is non-empty (guarded above).
   const lessonIds = lessons.map((l) => l.id)
-  const pending = (await forTenant(ctx).select(
+  const pending = await forTenant(ctx).select(
     rescheduleRequest,
     and(eq(rescheduleRequest.status, 'pending'), inArray(rescheduleRequest.lessonId, lessonIds)),
-  )) as (typeof rescheduleRequest.$inferSelect)[]
+  )
   return pending.length
 }
 
@@ -165,9 +158,7 @@ export async function getSectionReports(ctx: AuthContext, id: string): Promise<R
   const roster = await getSectionRoster(ctx, id)
   const rosterIds = new Set(roster.map((r) => r.id))
   if (rosterIds.size === 0) return []
-  const rows = (await forTenant(ctx).select(
-    progressReport,
-  )) as (typeof progressReport.$inferSelect)[]
+  const rows = await forTenant(ctx).select(progressReport)
   const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
   return rows
     .filter((r) => rosterIds.has(r.studentId))
@@ -215,10 +206,7 @@ export async function getSectionLessonNotes(
   for (const id of lessonIds) byLesson[id] = { summary: '', comments: {}, grades: {} }
   if (lessonIds.length === 0) return byLesson // inArray([]) is invalid SQL — guard (see report-data.ts)
 
-  const noteRows = (await forTenant(ctx).select(
-    note,
-    inArray(note.lessonId, lessonIds),
-  )) as (typeof note.$inferSelect)[]
+  const noteRows = await forTenant(ctx).select(note, inArray(note.lessonId, lessonIds))
   // Oldest → newest so a later row wins per key (latest edit reflects current state), matching
   // getLessonNotes in attendance-actions.ts.
   noteRows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
@@ -230,10 +218,7 @@ export async function getSectionLessonNotes(
     else row.summary = n.body
   }
 
-  const gradeRows = (await forTenant(ctx).select(
-    grade,
-    inArray(grade.lessonId, lessonIds),
-  )) as (typeof grade.$inferSelect)[]
+  const gradeRows = await forTenant(ctx).select(grade, inArray(grade.lessonId, lessonIds))
   for (const g of gradeRows) {
     // Only the inline sentinel-title grade belongs in a cell; titled assessments stay out.
     if (!g.lessonId || g.studentId == null || g.title !== QUICK_GRADE_TITLE) continue
@@ -261,14 +246,14 @@ export async function upsertLessonStudentGradeCore(
   ctx: AuthContext,
   data: LessonStudentGradeInput,
 ): Promise<typeof grade.$inferSelect | null> {
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     grade,
     and(
       eq(grade.lessonId, data.lessonId),
       eq(grade.studentId, data.studentId),
       eq(grade.title, QUICK_GRADE_TITLE),
     ),
-  )) as (typeof grade.$inferSelect)[]
+  )
 
   const empty = data.score == null && data.maxScore == null && !data.comment
   if (empty) {
@@ -286,18 +271,14 @@ export async function upsertLessonStudentGradeCore(
     gradedAt: new Date(),
   }
   if (existing[0]) {
-    const [row] = (await forTenant(ctx).update(
-      grade,
-      existing[0].id,
-      values,
-    )) as (typeof grade.$inferSelect)[]
+    const [row] = await forTenant(ctx).update(grade, existing[0].id, values)
     return row
   }
-  const [row] = (await forTenant(ctx).insert(grade, {
+  const [row] = await forTenant(ctx).insert(grade, {
     studentId: data.studentId,
     lessonId: data.lessonId,
     title: QUICK_GRADE_TITLE,
     ...values,
-  })) as (typeof grade.$inferSelect)[]
+  })
   return row
 }

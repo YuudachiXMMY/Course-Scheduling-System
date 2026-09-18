@@ -33,10 +33,7 @@ export function actorOwnsSection(ctx: AuthContext, section: { teacherId: string 
 export async function sectionIdsForActor(ctx: AuthContext): Promise<'all' | string[]> {
   if (isWholeTenantActor(ctx)) return 'all'
   if (!isSectionScopedRole(ctx.role)) return [] // defensive: portal/unknown role → see nothing
-  const rows = (await forTenant(ctx).select(
-    classSection,
-    eq(classSection.teacherId, ctx.userId),
-  )) as (typeof classSection.$inferSelect)[]
+  const rows = await forTenant(ctx).select(classSection, eq(classSection.teacherId, ctx.userId))
   return rows.map((r) => r.id)
 }
 
@@ -46,10 +43,10 @@ export async function studentIdsForActor(ctx: AuthContext): Promise<'all' | stri
   const sections = await sectionIdsForActor(ctx)
   if (sections === 'all') return 'all'
   if (sections.length === 0) return []
-  const enrolls = (await forTenant(ctx).select(
+  const enrolls = await forTenant(ctx).select(
     enrollment,
     and(inArray(enrollment.sectionId, sections), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   return [...new Set(enrolls.map((e) => e.studentId))]
 }
 
@@ -69,9 +66,7 @@ export async function actorOwnsStudent(ctx: AuthContext, studentId: string): Pro
 // 404s), so a guessed same-tenant sectionId can never mutate another teacher's class.
 export async function actorOwnsSectionById(ctx: AuthContext, sectionId: string): Promise<boolean> {
   if (isWholeTenantActor(ctx)) return true
-  const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    | typeof classSection.$inferSelect
-    | null
+  const section = await forTenant(ctx).findById(classSection, sectionId)
   return !!section && actorOwnsSection(ctx, section)
 }
 
@@ -80,8 +75,6 @@ export async function actorOwnsSectionById(ctx: AuthContext, sectionId: string):
 // section, so ownership is the same teacherId === ctx.userId test. A missing/foreign lesson → false.
 export async function actorOwnsLesson(ctx: AuthContext, lessonId: string): Promise<boolean> {
   if (isWholeTenantActor(ctx)) return true
-  const row = (await forTenant(ctx).findById(lesson, lessonId)) as
-    | typeof lesson.$inferSelect
-    | null
+  const row = await forTenant(ctx).findById(lesson, lessonId)
   return !!row && actorOwnsSection(ctx, { teacherId: row.teacherId })
 }

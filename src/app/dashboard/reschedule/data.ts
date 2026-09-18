@@ -28,10 +28,7 @@ export async function listRescheduleRequests(
   ctx: AuthContext,
   status: RescheduleStatus = 'pending',
 ): Promise<ReviewRow[]> {
-  const reqs = (await forTenant(ctx).select(
-    rescheduleRequest,
-    eq(rescheduleRequest.status, status),
-  )) as (typeof rescheduleRequest.$inferSelect)[]
+  const reqs = await forTenant(ctx).select(rescheduleRequest, eq(rescheduleRequest.status, status))
 
   // 工作流 E: the pending queue is tenant-wide, so a section-scoped teacher must only see requests
   // against lessons they teach; whole-tenant staff + superadmin see the whole tenant's queue.
@@ -39,13 +36,9 @@ export async function listRescheduleRequests(
 
   const out: ReviewRow[] = []
   for (const r of reqs) {
-    const l = (await forTenant(ctx).findById(lesson, r.lessonId)) as
-      | typeof lesson.$inferSelect
-      | null
+    const l = await forTenant(ctx).findById(lesson, r.lessonId)
     if (!wholeTenant && !(l && actorOwnsSection(ctx, { teacherId: l.teacherId }))) continue
-    const s = r.studentId
-      ? ((await forTenant(ctx).findById(student, r.studentId)) as typeof student.$inferSelect | null)
-      : null
+    const s = r.studentId ? await forTenant(ctx).findById(student, r.studentId) : null
     out.push({
       id: r.id,
       studentName: s?.name ?? null,

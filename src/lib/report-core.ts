@@ -32,7 +32,7 @@ export async function createReportDraftCore(
     to: input.periodEnd,
   })
   const draft = await draftNarrative(data)
-  const [row] = (await forTenant(ctx).insert(progressReport, {
+  const [row] = await forTenant(ctx).insert(progressReport, {
     studentId: input.studentId,
     sectionId: input.sectionId ?? null,
     title: input.title ?? null,
@@ -43,7 +43,7 @@ export async function createReportDraftCore(
     model: draft.model,
     status: 'draft',
     createdBy: ctx.userId,
-  })) as Report[]
+  })
   return row
 }
 
@@ -52,16 +52,16 @@ export async function updateReportNarrativeCore(
   id: string,
   narrative: string,
 ): Promise<Report> {
-  const existing = (await forTenant(ctx).findById(progressReport, id)) as Report | null
+  const existing = await forTenant(ctx).findById(progressReport, id)
   if (!existing) throw new Error('报告不存在')
   if (!(await actorOwnsStudent(ctx, existing.studentId))) throw new Error('无权修改该报告')
   if (existing.status === 'approved') throw new Error('报告已定稿，不可修改')
-  const [row] = (await forTenant(ctx).update(progressReport, id, { narrative })) as Report[]
+  const [row] = await forTenant(ctx).update(progressReport, id, { narrative })
   return row
 }
 
 export async function approveReportCore(ctx: AuthContext, id: string): Promise<Report> {
-  const existing = (await forTenant(ctx).findById(progressReport, id)) as Report | null
+  const existing = await forTenant(ctx).findById(progressReport, id)
   if (!existing) throw new Error('报告不存在')
   if (!(await actorOwnsStudent(ctx, existing.studentId))) throw new Error('无权定稿该报告')
   if (existing.status === 'approved') throw new Error('报告已定稿')
@@ -72,12 +72,12 @@ export async function approveReportCore(ctx: AuthContext, id: string): Promise<R
     from: existing.periodStart ?? new Date(0),
     to: existing.periodEnd ?? new Date(),
   })
-  const [row] = (await forTenant(ctx).update(progressReport, id, {
+  const [row] = await forTenant(ctx).update(progressReport, id, {
     status: 'approved',
     approvedBy: ctx.userId,
     approvedAt: new Date(),
     statsSnapshot,
-  })) as Report[]
+  })
   return row
 }
 
@@ -89,7 +89,7 @@ export async function getReportViewModel(
   id: string,
   generatedAt: string,
 ): Promise<ReportPdfModel | null> {
-  const r = (await forTenant(ctx).findById(progressReport, id)) as Report | null
+  const r = await forTenant(ctx).findById(progressReport, id)
   if (!r) return null
   // 工作流 E: null (→ route 404) if a section-scoped teacher requests a report whose student is not in
   // a section they teach — the /api/reports/[reportId]/pdf route bypasses the RSC layout guard.

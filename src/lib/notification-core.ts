@@ -44,14 +44,14 @@ export async function createNotificationCore(
   input: CreateNotificationInput,
 ): Promise<Notification | null> {
   if (input.dedupeKey) {
-    const existing = (await forTenant(ctx).select(
+    const existing = await forTenant(ctx).select(
       notification,
       eq(notification.dedupeKey, input.dedupeKey),
-    )) as Notification[]
+    )
     if (existing.length > 0) return null
   }
   try {
-    const [row] = (await forTenant(ctx).insert(notification, {
+    const [row] = await forTenant(ctx).insert(notification, {
       userId: input.userId,
       type: input.type,
       title: input.title,
@@ -60,7 +60,7 @@ export async function createNotificationCore(
       lessonId: input.lessonId ?? null,
       studentId: input.studentId ?? null,
       dedupeKey: input.dedupeKey ?? null,
-    })) as Notification[]
+    })
     return row ?? null
   } catch (e) {
     if (input.dedupeKey && isUniqueViolation(e)) return null // lost the race — already delivered
@@ -72,10 +72,10 @@ export async function createNotificationCore(
 // user_read covers the userId scan) so a long-lived recipient's full history is never loaded into memory.
 export const NOTIFICATION_PAGE_SIZE = 100
 export async function listNotificationsForUserCore(ctx: AuthContext): Promise<Notification[]> {
-  return (await forTenant(ctx)
+  return await forTenant(ctx)
     .select(notification, eq(notification.userId, ctx.userId))
     .orderBy(desc(notification.createdAt))
-    .limit(NOTIFICATION_PAGE_SIZE)) as Notification[]
+    .limit(NOTIFICATION_PAGE_SIZE)
 }
 
 // SQL COUNT(*), not a row fetch — this runs on EVERY dashboard/portal layout render (the unread badge),
@@ -98,10 +98,10 @@ export async function pruneOldNotificationsCore(
   now: Date = new Date(),
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000)
-  const removed = (await forTenant(ctx).deleteWhere(
+  const removed = await forTenant(ctx).deleteWhere(
     notification,
     lt(notification.createdAt, cutoff),
-  )) as Notification[]
+  )
   return removed.length
 }
 
@@ -111,20 +111,20 @@ export async function markNotificationReadCore(
   ctx: AuthContext,
   id: string,
 ): Promise<Notification> {
-  const row = (await forTenant(ctx).findById(notification, id)) as Notification | null
+  const row = await forTenant(ctx).findById(notification, id)
   if (!row || row.userId !== ctx.userId) throw new Error('通知不存在')
-  const [updated] = (await forTenant(ctx).update(notification, id, {
+  const [updated] = await forTenant(ctx).update(notification, id, {
     readAt: new Date(),
-  })) as Notification[]
+  })
   return updated
 }
 
 // Mark every unread notification of the current user read; returns how many were flipped.
 export async function markAllReadCore(ctx: AuthContext): Promise<number> {
-  const unread = (await forTenant(ctx).select(
+  const unread = await forTenant(ctx).select(
     notification,
     and(eq(notification.userId, ctx.userId), isNull(notification.readAt)),
-  )) as Notification[]
+  )
   const now = new Date()
   let count = 0
   for (const n of unread) {
@@ -143,16 +143,16 @@ export async function resolveLessonRecipientsCore(
   const recipients = new Set<string>()
   if (lessonRow.teacherId) recipients.add(lessonRow.teacherId)
 
-  const enrolls = (await forTenant(ctx).select(
+  const enrolls = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, lessonRow.sectionId), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   const studentIds = [...new Set(enrolls.map((e) => e.studentId))]
   if (studentIds.length > 0) {
-    const links = (await forTenant(ctx).select(
+    const links = await forTenant(ctx).select(
       portalLink,
       inArray(portalLink.studentId, studentIds),
-    )) as (typeof portalLink.$inferSelect)[]
+    )
     for (const l of links) if (l.userId) recipients.add(l.userId)
   }
   return [...recipients]

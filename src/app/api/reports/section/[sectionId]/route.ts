@@ -26,8 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   requirePermission(ctx, { report: ['read'] })
   const { sectionId } = await params
 
-  const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    typeof classSection.$inferSelect | null
+  const section = await forTenant(ctx).findById(classSection, sectionId)
   if (!section) return new Response('Not found', { status: 404 })
   // 工作流 E: a plain teacher may only export sections they teach — a guessed same-tenant sectionId 404s
   // (never another teacher's students' APPROVED report PDFs). This route is a sibling of the RSC teach
@@ -35,18 +34,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   // superadmin bypass via actorOwnsSection. 404 (not 403) so it can't be used to probe section existence.
   if (!actorOwnsSection(ctx, section)) return new Response('Not found', { status: 404 })
 
-  const enrollments = (await forTenant(ctx).select(
+  const enrollments = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, sectionId), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
   const studentIds = [...new Set(enrollments.map((e) => e.studentId))]
   const students =
     studentIds.length === 0
       ? []
-      : ((await forTenant(ctx).select(
-          student,
-          inArray(student.id, studentIds),
-        )) as (typeof student.$inferSelect)[])
+      : await forTenant(ctx).select(student, inArray(student.id, studentIds))
 
   // archiver@8 is ESM with named class exports; no .toBuffer() → collect chunks + concat on 'end'.
   const chunks: Buffer[] = []
@@ -60,10 +56,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   const usedNames = new Map<string, number>()
   for (const s of students) {
     // Most-recent APPROVED report for this student.
-    const reports = (await forTenant(ctx).select(
+    const reports = await forTenant(ctx).select(
       progressReport,
       and(eq(progressReport.studentId, s.id), eq(progressReport.status, 'approved')),
-    )) as (typeof progressReport.$inferSelect)[]
+    )
     if (reports.length === 0) continue
     const latest = reports.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!
 

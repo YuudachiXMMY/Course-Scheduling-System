@@ -17,19 +17,16 @@ export function isPortalRole(role: string): boolean {
 // from portalLink keyed by the verified ctx.userId — never from a request param. forTenant already
 // scopes by tenant, so the extra predicate is userId only.
 export async function resolveLinkedStudentIds(ctx: AuthContext): Promise<string[]> {
-  const rows = (await forTenant(ctx).select(
-    portalLink,
-    eq(portalLink.userId, ctx.userId),
-  )) as (typeof portalLink.$inferSelect)[]
+  const rows = await forTenant(ctx).select(portalLink, eq(portalLink.userId, ctx.userId))
   return rows.map((r) => r.studentId)
 }
 
 // Ownership guard for the reschedule write path: the acting user must be linked to `studentId`.
 export async function assertLinkedToStudent(ctx: AuthContext, studentId: string): Promise<void> {
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     portalLink,
     and(eq(portalLink.userId, ctx.userId), eq(portalLink.studentId, studentId)),
-  )) as unknown[]
+  )
   if (rows.length === 0) throw new Error('无权访问该学生')
 }
 
@@ -40,10 +37,7 @@ export async function assertLinkedToStudent(ctx: AuthContext, studentId: string)
 // 会 stamp 全部）。仅约束门户角色（parent/student）——staff 不受同意门约束，直接放行。
 export async function requireConsent(ctx: AuthContext): Promise<void> {
   if (!isPortalRole(ctx.role)) return // staff 不受同意门约束
-  const rows = (await forTenant(ctx).select(
-    portalLink,
-    eq(portalLink.userId, ctx.userId),
-  )) as (typeof portalLink.$inferSelect)[]
+  const rows = await forTenant(ctx).select(portalLink, eq(portalLink.userId, ctx.userId))
   const needsConsent = rows.length > 0 && rows.some((r) => !r.consentedAt)
   if (needsConsent) throw new Error('请先阅读并同意隐私条款')
 }

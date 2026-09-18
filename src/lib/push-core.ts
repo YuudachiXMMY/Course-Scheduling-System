@@ -24,8 +24,6 @@ export interface SaveSubscriptionInput {
   auth: string
 }
 
-type PushSubRow = typeof pushSubscription.$inferSelect
-
 // Push runs ONLY when a VAPID keypair is configured. Optional env → the app runs fully without it.
 function pushConfigured(): boolean {
   return !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY)
@@ -41,10 +39,10 @@ export async function sendPushToUserCore(
 ): Promise<void> {
   if (!pushConfigured()) return // best-effort no-op when unconfigured
   webpush.setVapidDetails(env.VAPID_SUBJECT, env.VAPID_PUBLIC_KEY!, env.VAPID_PRIVATE_KEY!)
-  const subs = (await forTenant(ctx).select(
+  const subs = await forTenant(ctx).select(
     pushSubscription,
     eq(pushSubscription.userId, userId),
-  )) as PushSubRow[]
+  )
   for (const s of subs) {
     // B3: defence in depth — never dereference an endpoint that isn't a trusted push service, even for a
     // legacy row that predates the subscribe-time allow-list.
@@ -88,10 +86,10 @@ export async function saveSubscriptionCore(
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? '订阅信息无效')
   const data = parsed.data
 
-  const existing = (await forTenant(ctx).select(
+  const existing = await forTenant(ctx).select(
     pushSubscription,
     eq(pushSubscription.endpoint, data.endpoint),
-  )) as PushSubRow[]
+  )
   for (const row of existing) {
     await forTenant(ctx).delete(pushSubscription, row.id)
   }
@@ -104,10 +102,10 @@ export async function saveSubscriptionCore(
 
   // B3 (amplification): keep at most MAX per user — prune the oldest overflow so repeated subscribe
   // calls can't grow an unbounded set of server-initiated push targets.
-  const mine = (await forTenant(ctx).select(
+  const mine = await forTenant(ctx).select(
     pushSubscription,
     eq(pushSubscription.userId, ctx.userId),
-  )) as PushSubRow[]
+  )
   if (mine.length > MAX_SUBSCRIPTIONS_PER_USER) {
     const overflow = [...mine]
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
@@ -119,10 +117,10 @@ export async function saveSubscriptionCore(
 // Remove the current user's subscription for `endpoint` (called on unsubscribe). Scoped to the
 // caller's own userId so a user can only drop their own device.
 export async function removeSubscriptionCore(ctx: AuthContext, endpoint: string): Promise<void> {
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     pushSubscription,
     and(eq(pushSubscription.userId, ctx.userId), eq(pushSubscription.endpoint, endpoint)),
-  )) as PushSubRow[]
+  )
   for (const row of rows) {
     await forTenant(ctx).delete(pushSubscription, row.id)
   }

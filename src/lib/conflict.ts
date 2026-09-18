@@ -32,7 +32,7 @@ export async function checkTeacherConflict(
   // Bind the bounds as ISO strings with explicit casts: postgres.js can't infer the param type
   // inside tstzrange(...) and fails to serialize a bare Date there.
   const overlaps = sql`tstzrange(${lesson.startAt}, ${lesson.endAt}, '[)') && tstzrange(${startAt.toISOString()}::timestamptz, ${endAt.toISOString()}::timestamptz, '[)')`
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.teacherId, teacherId),
@@ -40,7 +40,7 @@ export async function checkTeacherConflict(
       excludeLessonId ? ne(lesson.id, excludeLessonId) : undefined,
       overlaps,
     ),
-  )) as (typeof lesson.$inferSelect)[]
+  )
   const conflicts: ConflictSummary[] = rows.map((r) => ({
     id: r.id,
     title: r.title,
@@ -63,14 +63,14 @@ export async function suggestFreeSlots(
   const day = DateTime.fromJSDate(args.startAt).setZone(zone)
   const dayStart = day.set({ hour: 8, minute: 0, second: 0, millisecond: 0 }) // 08:00 local
   const dayEnd = day.set({ hour: 21, minute: 0, second: 0, millisecond: 0 }) // 21:00 local
-  const busy = (await forTenant(ctx).select(
+  const busy = await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.teacherId, args.teacherId),
       ne(lesson.status, 'canceled'),
       sql`${lesson.startAt} >= ${dayStart.toUTC().toISO()}::timestamptz and ${lesson.startAt} < ${dayEnd.toUTC().toISO()}::timestamptz`,
     ),
-  )) as (typeof lesson.$inferSelect)[]
+  )
   const out: Date[] = []
   for (
     let t = dayStart;

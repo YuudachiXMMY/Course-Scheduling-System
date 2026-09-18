@@ -109,8 +109,8 @@ export async function listReports(): Promise<Report[]> {
   // action has no caller today, but scoping it keeps the confinement airtight if it is ever wired up.
   const scope = await studentIdsForActor(ctx)
   if (scope !== 'all' && scope.length === 0) return []
-  return (await forTenant(ctx).select(
+  return await forTenant(ctx).select(
     progressReport,
     scope === 'all' ? undefined : inArray(progressReport.studentId, scope),
-  )) as Report[]
+  )
 }

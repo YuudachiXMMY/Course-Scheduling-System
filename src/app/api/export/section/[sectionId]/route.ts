@@ -31,8 +31,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   requirePermission(ctx, { student: ['read'], lesson: ['read'] })
   const { sectionId } = await params
 
-  const section = (await forTenant(ctx).findById(classSection, sectionId)) as
-    typeof classSection.$inferSelect | null
+  const section = await forTenant(ctx).findById(classSection, sectionId)
   if (!section) return new Response('Not found', { status: 404 })
   // 工作流 E: a plain teacher may only export sections they teach — a guessed same-tenant sectionId 404s
   // (never another teacher's roster, schedules, or a fresh public /s/{token} minted for their students).
@@ -40,19 +39,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   // superadmin bypass via actorOwnsSection. 404 (not 403) so it can't probe section existence.
   if (!actorOwnsSection(ctx, section)) return new Response('Not found', { status: 404 })
 
-  const enrollments = (await forTenant(ctx).select(
+  const enrollments = await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, sectionId), eq(enrollment.status, 'active')),
-  )) as (typeof enrollment.$inferSelect)[]
+  )
 
   const studentIds = [...new Set(enrollments.map((e) => e.studentId))]
   const students =
     studentIds.length === 0
       ? []
-      : ((await forTenant(ctx).select(
-          student,
-          inArray(student.id, studentIds),
-        )) as (typeof student.$inferSelect)[])
+      : await forTenant(ctx).select(student, inArray(student.id, studentIds))
 
   const host = new URL(env.NEXT_PUBLIC_APP_URL).host
 

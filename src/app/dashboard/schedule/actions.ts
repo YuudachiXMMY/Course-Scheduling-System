@@ -99,7 +99,7 @@ export async function getLessonMeta(lessonId: string): Promise<LessonMeta | null
   // 工作流 E: mirror updateLessonAction — location/meetingUrl (Zoom/腾讯会议链接) must not leak to a
   // section-scoped teacher or portal account guessing a same-tenant lessonId.
   if (!(await actorOwnsLesson(ctx, lessonId))) return null
-  const row = (await forTenant(ctx).findById(lesson, lessonId)) as typeof lesson.$inferSelect | null
+  const row = await forTenant(ctx).findById(lesson, lessonId)
   if (!row) return null
   return { location: row.location, meetingUrl: row.meetingUrl, title: row.title }
 }
@@ -111,14 +111,14 @@ export async function cancelSeriesAction(sectionId: string): Promise<{ canceled:
   // future lesson of the section, so a guessed same-tenant sectionId must never reach the loop.
   if (!(await actorOwnsSectionById(ctx, sectionId))) throw new Error('无权取消该班级排课')
   // Cancel all future, non-canceled lessons of the section — stay on the forTenant spine (no raw db.*).
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     lesson,
     and(
       eq(lesson.sectionId, sectionId),
       ne(lesson.status, 'canceled'),
       gte(lesson.startAt, new Date()),
     ),
-  )) as (typeof lesson.$inferSelect)[]
+  )
   for (const row of rows) {
     await forTenant(ctx).update(lesson, row.id, { status: 'canceled' })
   }

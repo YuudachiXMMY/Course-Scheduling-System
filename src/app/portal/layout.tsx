@@ -18,10 +18,7 @@ export default async function PortalLayout({ children }: { children: ReactNode }
   if (!ctx) redirect('/login')
   if (!isPortalRole(ctx.role)) redirect('/dashboard')
 
-  const links = (await forTenant(ctx).select(
-    portalLink,
-    eq(portalLink.userId, ctx.userId),
-  )) as (typeof portalLink.$inferSelect)[]
+  const links = await forTenant(ctx).select(portalLink, eq(portalLink.userId, ctx.userId))
   const needsConsent = links.length > 0 && links.some((l) => !l.consentedAt)
   // Unread badge lives in the layout (always visible), NOT a page — pages render inside the consent
   // gate and would be hidden until consent. ctx is available here (Server Component).

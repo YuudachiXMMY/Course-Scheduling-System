@@ -30,16 +30,16 @@ export async function getReportsPageData(
   // enrolled in the sections they teach); whole-tenant staff see everything. Empty scope → nothing.
   const scope = await studentIdsForActor(ctx)
   if (scope !== 'all' && scope.length === 0) return { reports: [], students: [] }
-  const rows = (await forTenant(ctx).select(
+  const rows = await forTenant(ctx).select(
     progressReport,
     scope === 'all' ? undefined : inArray(progressReport.studentId, scope),
-  )) as (typeof progressReport.$inferSelect)[]
-  const students = (await forTenant(ctx).select(
+  )
+  const students = await forTenant(ctx).select(
     student,
     scope === 'all'
       ? eq(student.status, 'active')
       : and(eq(student.status, 'active'), inArray(student.id, scope)),
-  )) as (typeof student.$inferSelect)[]
+  )
 
   const reports: ReportRow[] = rows
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())

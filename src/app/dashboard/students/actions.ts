@@ -30,12 +30,12 @@ export async function createStudent(input: CreateStudentInput): Promise<StudentR
   requirePermission(ctx, { student: ['create'] }) // 2) RBAC guard at the top
   const parsed = createStudentSchema.safeParse(input) // 3) validate + trim before persisting
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
-  const [row] = (await forTenant(ctx).insert(student, {
+  const [row] = await forTenant(ctx).insert(student, {
     // 4) tenant-scoped write (tenantId injected from ctx)
     name: parsed.data.name,
     parentWechat: parsed.data.parentWechat,
     schoolGrade: parsed.data.schoolGrade,
-  })) as Student[]
+  })
   revalidatePath('/dashboard/students')
   return { ok: true, row }
 }
@@ -47,9 +47,9 @@ export async function listStudents(): Promise<Student[]> {
   // staff see every student. This centralizes the confinement, so every caller (users tabs, courses
   // page, the section roster picker) inherits it.
   const scope = await studentIdsForActor(ctx)
-  if (scope === 'all') return (await forTenant(ctx).select(student)) as Student[] // only THIS tenant's rows
+  if (scope === 'all') return await forTenant(ctx).select(student) // only THIS tenant's rows
   if (scope.length === 0) return []
-  return (await forTenant(ctx).select(student, inArray(student.id, scope))) as Student[]
+  return await forTenant(ctx).select(student, inArray(student.id, scope))
 }
 
 export async function getStudent(id: string): Promise<Student | null> {
@@ -58,7 +58,7 @@ export async function getStudent(id: string): Promise<Student | null> {
   // 工作流 E: mirror updateStudent/archiveStudent — a section-scoped teacher may only read a student
   // enrolled in a section they teach, never any same-tenant student's name/parentWechat/schoolGrade.
   if (!(await actorOwnsStudent(ctx, id))) return null
-  return (await forTenant(ctx).findById(student, id)) as Student | null
+  return await forTenant(ctx).findById(student, id)
 }
 
 const updateStudentSchema = z.object({
@@ -75,11 +75,11 @@ export async function updateStudent(id: string, input: UpdateStudentInput): Prom
   if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权修改该学生' }
   const parsed = updateStudentSchema.safeParse(input)
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
-  const [row] = (await forTenant(ctx).update(student, id, {
+  const [row] = await forTenant(ctx).update(student, id, {
     name: parsed.data.name,
     parentWechat: parsed.data.parentWechat,
     schoolGrade: parsed.data.schoolGrade,
-  })) as Student[]
+  })
   revalidatePath('/dashboard/students')
   return { ok: true, row }
 }
@@ -89,7 +89,7 @@ export async function archiveStudent(id: string): Promise<StudentResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
   if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权归档该学生' }
-  const [row] = (await forTenant(ctx).update(student, id, { status: 'archived' })) as Student[]
+  const [row] = await forTenant(ctx).update(student, id, { status: 'archived' })
   revalidatePath('/dashboard/students')
   return { ok: true, row }
 }
@@ -99,7 +99,7 @@ export async function restoreStudent(id: string): Promise<StudentResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { student: ['update'] })
   if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权恢复该学生' }
-  const [row] = (await forTenant(ctx).update(student, id, { status: 'active' })) as Student[]
+  const [row] = await forTenant(ctx).update(student, id, { status: 'active' })
   revalidatePath('/dashboard/students')
   return { ok: true, row }
 }
