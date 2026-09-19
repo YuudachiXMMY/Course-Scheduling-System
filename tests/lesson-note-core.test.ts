@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@/db'
 import { organization, member, user, course, classSection, lesson, note } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
