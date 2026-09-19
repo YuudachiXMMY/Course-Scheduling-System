@@ -5,6 +5,11 @@ import FullCalendar from '@fullcalendar/react'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import interactionPlugin from '@fullcalendar/interaction'
+// FullCalendar 的原生 Date 无法计算命名时区（如 America/Toronto）的偏移，未注册时区实现时会把
+// timeZone 静默回退为 UTC 强制渲染（官方文档 "faked in UTC"）。luxon3 插件提供命名时区实现，让
+// timeZone={APP_TIME_ZONE} 真正生效，使日历时间与 formatDateTime / schedule-card / 门户 / 报告
+// （均 luxon setZone(Toronto)）保持一致。
+import luxonPlugin from '@fullcalendar/luxon3'
 import type {
   DateSelectArg,
   EventDropArg,
@@ -35,8 +40,16 @@ function renderEventContent(arg: EventContentArg) {
   const names = p.studentNames ?? []
   const shown = names.slice(0, 3).join('、') + (names.length > 3 ? ` 等${names.length}人` : '')
   const place = p.meetingUrl ? '线上' : (p.location ?? '')
+  // arg.timeText 是 FullCalendar 按当前 timeZone（America/Toronto）+ eventTimeFormat 计算出的开始时间。
+  // 自定义 eventContent 会替换掉 FC 默认的 .fc-event-time，故在此显式展示，让用户在事件块上直接看到
+  // 多伦多 wall-clock（此前事件块不显示时间，时区错误只体现在网格位置上，难以察觉）。
   return (
     <div className="overflow-hidden px-1 text-xs leading-tight">
+      {arg.timeText && (
+        <div data-testid="event-time" className="truncate font-medium tabular-nums">
+          {arg.timeText}
+        </div>
+      )}
       <div className="truncate font-medium">{label}</div>
       {shown && <div className="truncate opacity-80">{shown}</div>}
       {place && <div className="truncate opacity-70">{place}</div>}
@@ -206,10 +219,14 @@ export default function ScheduleCalendar({
       )}
 
       <FullCalendar
-        plugins={[timeGridPlugin, dayGridPlugin, interactionPlugin]}
+        plugins={[luxonPlugin, timeGridPlugin, dayGridPlugin, interactionPlugin]}
         initialView="timeGridWeek"
         locale={zhCn}
         timeZone={APP_TIME_ZONE}
+        // 24 小时制 HH:mm，和全应用一致（formatDateTime / schedule-card 均 'HH:mm'），避免日历用
+        // 本地化 12 小时制导致同一时刻两种写法。zh-cn locale 默认会带午别，这里显式统一。
+        eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+        slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
         initialDate={initialDate}
         headerToolbar={{
           left: 'prev,next today',

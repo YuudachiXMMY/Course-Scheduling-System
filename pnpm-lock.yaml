@@ -23,6 +23,9 @@ importers:
       '@fullcalendar/interaction':
         specifier: ^6.1.21
         version: 6.1.21(@fullcalendar/core@6.1.21)
+      '@fullcalendar/luxon3':
+        specifier: ^6.1.21
+        version: 6.1.21(@fullcalendar/core@6.1.21)(luxon@3.7.2)
       '@fullcalendar/react':
         specifier: 6.1.21
         version: 6.1.21(@fullcalendar/core@6.1.21)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -866,6 +869,12 @@ packages:
     resolution: {integrity: sha512-WPYpqtljDWmU0Xm2cOtFrLlocgxv7cgkOppj34Q6OUUat8a6Cnd6kYo2JR+irP223PE5lBYHFNp1qh7SIpJc0w==}
     peerDependencies:
       '@fullcalendar/core': ~6.1.21
+
+  '@fullcalendar/luxon3@6.1.21':
+    resolution: {integrity: sha512-jlRhmxyut94fH7RbdsAexkmR9eJsVeavjVTk94M8GKPiAgEf2q3urFe4rFI5+ThwSTkOX8MPcfFIg8+uvKKZCQ==}
+    peerDependencies:
+      '@fullcalendar/core': ~6.1.21
+      luxon: ^3.0.0
 
   '@fullcalendar/react@6.1.21':
     resolution: {integrity: sha512-TLpmGUd5k/PMdCh8XbeFC9PW9wuGvMms1oCxWgXyjK3EFPXAAd0PLfcvwKdyxoAS5eK1E4RJFkjMHvsYHpimcg==}
@@ -4826,6 +4835,11 @@ snapshots:
   '@fullcalendar/interaction@6.1.21(@fullcalendar/core@6.1.21)':
     dependencies:
       '@fullcalendar/core': 6.1.21
+
+  '@fullcalendar/luxon3@6.1.21(@fullcalendar/core@6.1.21)(luxon@3.7.2)':
+    dependencies:
+      '@fullcalendar/core': 6.1.21
+      luxon: 3.7.2
 
   '@fullcalendar/react@6.1.21(@fullcalendar/core@6.1.21)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
