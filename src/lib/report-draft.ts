@@ -2,6 +2,7 @@ import 'server-only'
 import Anthropic from '@anthropic-ai/sdk'
 import OpenAI from 'openai'
 import { buildReportPrompt, RUBRIC_VERSION } from '@/lib/report-prompt'
+import { sanitizeNarrative, validateNarrative } from '@/lib/report-sanitize'
 import type { ReportData } from '@/lib/report-stats'
 import { env } from '@/env'
 
@@ -16,10 +17,15 @@ export interface DraftResult {
 
 export async function draftNarrative(data: ReportData): Promise<DraftResult> {
   const { system, userJson } = buildReportPrompt({ rubricVersion: RUBRIC_VERSION, data })
-  const { narrative, model } =
+  const { narrative: raw, model } =
     env.REPORT_PROVIDER === 'minimax'
       ? await draftWithMiniMax(system, userJson)
       : await draftWithAnthropic(system, userJson)
+  // P9: 出口侧统一清洗——无论哪个 provider，都在此单一出口剥掉 LLM 夹带的杂鱼（会话式前后缀、
+  // Markdown 残留、代码围栏、多余空行），再对空/拒答兜底抛错，避免把垃圾/空草稿静默落库。数字仍由
+  // DB 渲染进 PDF，模型碰不到，因此清洗只作用于叙述文字。
+  const narrative = sanitizeNarrative(raw)
+  validateNarrative(narrative)
   return { narrative, model, rubricVersion: RUBRIC_VERSION }
 }
 
