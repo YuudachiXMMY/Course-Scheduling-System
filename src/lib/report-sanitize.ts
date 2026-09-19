@@ -53,6 +53,23 @@ function isSignoffLine(line: string): boolean {
   )
 }
 
+// P10: 推理模型（MiniMax-M3 等）把整段思维链以 <think>…</think> 内联在 content 字段返回
+// （reasoning_content 常为 null，无法靠字段分离），若不剥离，英文 chain-of-thought 会被当作叙述
+// 落库、渲染进家长看到的 PDF——这正是「杂鱼信息(ai prompts/thinking)」的主要来源。此处在出口侧
+// 统一剥净，覆盖所有 provider。正常中文正文绝不会出现字面量 <think>，故对干净叙述为 no-op。
+const REASONING_TAGS = 'think|thinking|reasoning'
+function stripReasoning(text: string): string {
+  return (
+    text
+      // 1. 成对块 <think …>…</think>（惰性匹配、跨行、大小写不敏感、允许属性；backref 保证同名闭合）。
+      .replace(new RegExp(`<(${REASONING_TAGS})\\b[^>]*>[\\s\\S]*?<\\/\\1>`, 'gi'), '')
+      // 2. 剩余的未闭合开始标签（截断输出）：思维链是前缀，从该标签起到结尾全部丢弃。
+      .replace(new RegExp(`<(${REASONING_TAGS})\\b[^>]*>[\\s\\S]*$`, 'i'), '')
+      // 3. 孤立的结束标签。
+      .replace(new RegExp(`<\\/(${REASONING_TAGS})>`, 'gi'), '')
+  )
+}
+
 /** 去掉包裹整段输出的代码围栏，以及任何独立成行的 ``` 围栏行。 */
 function stripCodeFences(text: string): string {
   return text
@@ -64,6 +81,9 @@ function stripCodeFences(text: string): string {
 export function sanitizeNarrative(raw: string): string {
   if (!raw) return ''
   let text = raw.replace(/\r\n?/g, '\n')
+
+  // 0. 推理模型思维链 <think>…</think>：必须最先剥离，否则其内部的 Markdown/代码围栏会污染后续步骤。
+  text = stripReasoning(text)
 
   // 1. 代码围栏。
   text = stripCodeFences(text)

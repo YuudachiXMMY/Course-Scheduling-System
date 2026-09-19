@@ -35,6 +35,48 @@ describe('sanitizeNarrative — 干净叙述零改动 (no-op invariant)', () => 
   })
 })
 
+describe('sanitizeNarrative — 剥离推理模型思维链 <think>（P10 反杂鱼）', () => {
+  // MiniMax-M3 等推理模型把整段思维链以 <think>…</think> 内联在 content 字段返回
+  // （reasoning_content 为 null），若不剥离会把英文 chain-of-thought 当作叙述落库、渲染进 PDF。
+  it('剥离位于开头的完整 <think>…</think> 块，仅保留正文', () => {
+    const raw =
+      '<think>The user wants a progress report.\nParagraph 1: attendance\nLet me draft this.</think>\n\n小明表现稳定。'
+    expect(sanitizeNarrative(raw)).toBe('小明表现稳定。')
+  })
+  it('大小写不敏感 + 多行块 + 保留正文分段', () => {
+    const raw = '<THINK>\nreasoning line 1\nreasoning line 2\n</THINK>\n小明出勤良好。\n课堂积极。'
+    expect(sanitizeNarrative(raw)).toBe('小明出勤良好。\n课堂积极。')
+  })
+  it('<thinking> / <reasoning> 变体同样剥离', () => {
+    expect(sanitizeNarrative('<thinking>x</thinking>小明稳定。')).toBe('小明稳定。')
+    expect(sanitizeNarrative('<reasoning>y</reasoning>小明稳定。')).toBe('小明稳定。')
+  })
+  it('带属性的开始标签也剥离', () => {
+    expect(sanitizeNarrative('<think type="internal">z</think>小明稳定。')).toBe('小明稳定。')
+  })
+  it('未闭合的 <think>（截断输出）连同其后内容一并剥离', () => {
+    // 只有思维链、无正文 → 剥净后为空（交给 validateNarrative 兜底抛错）
+    expect(sanitizeNarrative('<think>truncated reasoning without a closing tag')).toBe('')
+  })
+  it('思维链在前、正文在后：未闭合时保留前置正文（防御性）', () => {
+    expect(sanitizeNarrative('小明表现稳定。\n<think>后续思考被截断')).toBe('小明表现稳定。')
+  })
+  it('孤立的 </think> 结束标签也移除', () => {
+    expect(sanitizeNarrative('小明表现稳定。</think>')).toBe('小明表现稳定。')
+  })
+  it('think 块与其它杂鱼组合：一次剥净且幂等', () => {
+    const raw =
+      '<think>reasoning</think>\n好的，以下是报告：\n\n小明**表现稳定**。\n\n希望这份报告对您有帮助。'
+    const once = sanitizeNarrative(raw)
+    expect(once).toBe('小明表现稳定。')
+    expect(sanitizeNarrative(once)).toBe(once)
+  })
+  it('no-op：正常正文中不含 think 标签不受影响', () => {
+    const clean = '小明本月思维活跃，值得表扬。'
+    expect(sanitizeNarrative(clean)).toBe(clean)
+  })
+})
+
 describe('sanitizeNarrative — 剥离代码围栏', () => {
   it('整体被 ``` 包裹时解包', () => {
     expect(sanitizeNarrative('```\n小明表现稳定。\n```')).toBe('小明表现稳定。')
