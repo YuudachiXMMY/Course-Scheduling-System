@@ -196,6 +196,7 @@ interface LessonGradeCell {
 
 export interface LessonNoteRow {
   summary: string // shared lesson note (note.studentId = null)
+  summaryVisibility: 'internal' | 'shared' // 共享笔记是否「对外开放」给门户学生/家长（无笔记时默认 internal）
   comments: Record<string, string> // studentId -> per-student 点评 (note.studentId set)
   grades: Record<string, LessonGradeCell> // studentId -> 课堂成绩 (grade.title = QUICK_GRADE_TITLE)
   attendance: Record<string, AttendanceStatus> // studentId -> 出勤状态 (attendanceStatus enum union)
@@ -211,7 +212,14 @@ export async function getSectionLessonNotes(
   lessonIds: string[],
 ): Promise<Record<string, LessonNoteRow>> {
   const byLesson: Record<string, LessonNoteRow> = {}
-  for (const id of lessonIds) byLesson[id] = { summary: '', comments: {}, grades: {}, attendance: {} }
+  for (const id of lessonIds)
+    byLesson[id] = {
+      summary: '',
+      summaryVisibility: 'internal', // 默认内部；仅当存在共享笔记时用其 visibility 覆盖
+      comments: {},
+      grades: {},
+      attendance: {},
+    }
   if (lessonIds.length === 0) return byLesson // inArray([]) is invalid SQL — guard (see report-data.ts)
 
   const noteRows = await forTenant(ctx).select(note, inArray(note.lessonId, lessonIds))
@@ -223,7 +231,10 @@ export async function getSectionLessonNotes(
     const row = byLesson[n.lessonId]
     if (!row) continue
     if (n.studentId) row.comments[n.studentId] = n.body
-    else row.summary = n.body
+    else {
+      row.summary = n.body
+      row.summaryVisibility = n.visibility // 供教师端「对外开放」开关回显当前状态
+    }
   }
 
   const gradeRows = await forTenant(ctx).select(grade, inArray(grade.lessonId, lessonIds))
