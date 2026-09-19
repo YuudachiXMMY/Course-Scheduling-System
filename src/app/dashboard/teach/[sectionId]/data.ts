@@ -17,6 +17,7 @@ import {
 } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 import { actorOwnsSection } from '@/auth/scope'
+import type { AttendanceStatus } from '@/lib/report-stats'
 import type { AuthContext } from '@/auth/context'
 import type { ReportRow } from '@/app/dashboard/reports/data'
 
@@ -197,7 +198,7 @@ export interface LessonNoteRow {
   summary: string // shared lesson note (note.studentId = null)
   comments: Record<string, string> // studentId -> per-student 点评 (note.studentId set)
   grades: Record<string, LessonGradeCell> // studentId -> 课堂成绩 (grade.title = QUICK_GRADE_TITLE)
-  attendance: Record<string, string> // studentId -> 出勤状态 (attendanceStatus: present/absent/late/excused)
+  attendance: Record<string, AttendanceStatus> // studentId -> 出勤状态 (attendanceStatus enum union)
 }
 
 // Load the note/grade matrix for a whole section's lessons in one pass. note & grade both hang off
