@@ -12,6 +12,7 @@ import type { AuthContext } from '@/auth/context'
 export interface PortalLessonNote {
   id: string // note.id
   lessonId: string
+  sectionId: string // 所属班级 id（客户端「按课程班级」筛选用；不外发额外信息，行级 scope 已收敛）
   sectionLabel: string // "课程名 · 班级名"
   lessonDate: string // 课节日期（YYYY-MM-DD，按 APP_TIME_ZONE）
   body: string // Markdown + LaTeX 源文，客户端用 MarkdownView 渲染
@@ -76,6 +77,7 @@ export async function getPortalLessonNotes(ctx: AuthContext): Promise<PortalLess
       return {
         id: n.id,
         lessonId: n.lessonId!,
+        sectionId: l.sectionId,
         sectionLabel: labelBySection.get(l.sectionId) ?? l.sectionId,
         lessonDate: localDay(l.startAt),
         body: n.body,

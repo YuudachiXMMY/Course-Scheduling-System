@@ -19,6 +19,9 @@ import path from 'node:path'
 const reportsDir = fileURLToPath(new URL('../src/app/portal/reports', import.meta.url))
 const read = (rel: string) => readFileSync(path.join(reportsDir, rel), 'utf8')
 
+const notesDir = fileURLToPath(new URL('../src/app/portal/notes', import.meta.url))
+const readNote = (rel: string) => readFileSync(path.join(notesDir, rel), 'utf8')
+
 // 字符级扫描去掉注释、但保留字符串（模块说明符要留着）。逐字符处理，避免把字符串里的 `//`、`/*` 当注释，
 // 也避免把注释里描述性的 `import 'server-only'` / `from './data'` 文本当成真实代码（验证者实证的误伤）。
 function stripComments(src: string): string {
@@ -144,6 +147,13 @@ describe('B2 回归 — portal/reports 客户端 / 服务端 bundle 边界', () 
     expect(fromData, 'WHOLE_SCHEDULE_KEY 不得来自 server-only 的 ./data').toBeUndefined()
   })
 
+  it('filter.ts（被客户端组件导入的纯逻辑）不得对 server-only 的 ./data 建立运行时依赖', () => {
+    expect(
+      runtimeDataRefs(read('filter.ts')),
+      'reports/filter.ts 只能从 ./data 做 import type，绝不值导入',
+    ).toEqual([])
+  })
+
   it('constants.ts 保持无 server 依赖（无 server-only / @/db / @/auth 导入）', () => {
     const constants = stripComments(read('constants.ts'))
     // 去注释后再匹配：不误伤注释里描述 data.ts 的 `import 'server-only'` 文本。
@@ -155,6 +165,37 @@ describe('B2 回归 — portal/reports 客户端 / 服务端 bundle 边界', () 
     expect(
       serverSpecs.map((i) => i.spec),
       'constants.ts 从 @/db 或 @/auth 导入 → 会把 server 链带回客户端',
+    ).toEqual([])
+  })
+})
+
+// ── 同一 bundle 边界不变量扩展到 portal/notes（本次新增 notes-list.tsx 客户端筛选 + filter.ts 纯逻辑） ──────
+//
+// notes/data.ts 同样 `import 'server-only'`（postgres 驱动 / @/auth/portal 依赖链）。新的 'use client' 组件
+// notes-list.tsx 只能从 ./data 做 `import type`，其依赖的纯逻辑 filter.ts 亦然 —— 任一处对 ./data 建立运行时
+// 依赖都会把 server 链打进 client bundle，next build 失败。这里守住 notes 侧与 reports 侧同构的边界。
+const notesClientTsxFiles = readdirSync(notesDir).filter(
+  (f) => f.endsWith('.tsx') && isClientModule(readNote(f)),
+)
+
+describe('bundle 边界 — portal/notes 客户端 / 服务端', () => {
+  it("notes-list.tsx 存在且是 'use client' 组件（守卫的锚点）", () => {
+    expect(notesClientTsxFiles).toContain('notes-list.tsx')
+  })
+
+  it("任何 'use client' 模块都不得对 server-only 的 ./data 建立运行时依赖", () => {
+    for (const file of notesClientTsxFiles) {
+      expect(
+        runtimeDataRefs(readNote(file)),
+        `${file} 对 server-only ./data 建立了运行时依赖 → 会把 postgres/@auth 链打进 client bundle`,
+      ).toEqual([])
+    }
+  })
+
+  it('filter.ts（被客户端组件导入的纯逻辑）不得对 server-only 的 ./data 建立运行时依赖', () => {
+    expect(
+      runtimeDataRefs(readNote('filter.ts')),
+      'notes/filter.ts 只能从 ./data 做 import type，绝不值导入',
     ).toEqual([])
   })
 })
