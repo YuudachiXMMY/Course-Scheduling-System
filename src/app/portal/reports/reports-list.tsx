@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { WHOLE_SCHEDULE_KEY } from './data'
+import { WHOLE_SCHEDULE_KEY } from './constants'
 import type {
   PortalReportRow,
   PortalStudentOption,

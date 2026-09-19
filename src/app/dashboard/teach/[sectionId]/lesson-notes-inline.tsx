@@ -6,6 +6,7 @@ import { upsertSharedNote, upsertStudentNote } from '@/app/dashboard/schedule/at
 import { upsertLessonStudentGrade } from './grade-actions'
 import { upsertTeachAttendance } from './attendance-actions'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
+import type { AttendanceStatus } from '@/lib/report-stats'
 import type { SectionStudent, LessonNoteRow } from './data'
 
 // 四态出勤标签（与 schedule 的 lesson-detail.tsx STATUS_LABELS 对齐）。value 即 attendanceStatus enum。
@@ -44,7 +45,7 @@ export default function LessonNotesInline({
     }
     return m
   })
-  const [attendance, setAttendance] = useState<Record<string, string>>(() => ({
+  const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>(() => ({
     ...initial.attendance,
   }))
   const [pending, startTransition] = useTransition()
@@ -164,7 +165,7 @@ export default function LessonNotesInline({
           upsertTeachAttendance({
             lessonId,
             studentId: s.id,
-            status: status as (typeof ATT_LABELS)[number]['value'],
+            status,
           }),
         )
         saved++

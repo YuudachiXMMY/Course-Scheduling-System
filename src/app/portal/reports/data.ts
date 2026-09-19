@@ -4,6 +4,7 @@ import { forTenant } from '@/db/tenant'
 import { requireConsent, resolveLinkedStudentIds } from '@/auth/portal'
 import { progressReport, student, classSection, course } from '@/db/schema'
 import { sectionDisplayName } from '@/lib/ical-feed'
+import { WHOLE_SCHEDULE_KEY } from './constants'
 import type { AuthContext } from '@/auth/context'
 
 // Serializable shapes for the client list (Dates → ISO date strings, so the RSC → client boundary
@@ -36,10 +37,8 @@ export interface PortalReportsData {
 }
 
 const WHOLE_SCHEDULE_LABEL = '全程'
-// Non-empty sentinel for the whole-schedule (sectionId === null) filter bucket. MUST stay non-empty
-// so it never collides with the reports-list "全部课程" (show-all) `<option value="">` — an empty
-// key there would short-circuit the filter and make 「全程」 behave identically to 「全部课程」.
-export const WHOLE_SCHEDULE_KEY = '__whole__'
+// WHOLE_SCHEDULE_KEY lives in ./constants (server-import-free) so reports-list.tsx (a Client Component)
+// can import the value without pulling this `server-only` module into the client bundle.
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
 
 // Portal report loader (Phase 5). Faces UNTRUSTED users, so every read is row-scoped to the
