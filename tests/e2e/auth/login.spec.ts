@@ -14,12 +14,12 @@ test.describe('登录与角色分发', () => {
     await expect(page.getByRole('heading', { name: '仪表盘' })).toBeVisible()
   })
 
-  test('家长(consented)登录后进入 /portal 并看到「我的课表」', async ({ page }) => {
+  test('家长(consented)登录后进入 /portal 并看到「课表」', async ({ page }) => {
     const login = new LoginPage(page)
     await login.goto()
     await login.login(E2E_ACCOUNTS.parent.email, E2E_ACCOUNTS.parent.password)
     await expect(page).toHaveURL(/\/portal/)
-    await expect(page.getByRole('heading', { name: '我的课表' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '课表' })).toBeVisible()
   })
 
   test('密码错误时停留在 /login 并显示错误', async ({ page }) => {
