@@ -263,7 +263,15 @@ export default function SectionLessons({
                       <LessonNotesInline
                         lessonId={l.id}
                         roster={roster}
-                        initial={notes[l.id] ?? { summary: '', comments: {}, grades: {}, attendance: {} }}
+                        initial={
+                          notes[l.id] ?? {
+                            summary: '',
+                            summaryVisibility: 'internal',
+                            comments: {},
+                            grades: {},
+                            attendance: {},
+                          }
+                        }
                         canManage={canManage}
                       />
                     )}

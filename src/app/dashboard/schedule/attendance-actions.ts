@@ -2,12 +2,14 @@
 
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
 import { actorOwnsLesson } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { attendance, note, enrollment, student, lesson } from '@/db/schema'
+import { sharedNoteSchema, studentNoteSchema } from '@/lib/note-schema'
+import { upsertSharedNoteCore } from '@/lib/lesson-note-core'
 
 export interface RosterEntry {
   studentId: string
@@ -130,12 +132,9 @@ export async function getLessonNotes(lessonId: string): Promise<LessonNotes> {
   return { shared, perStudent }
 }
 
-const sharedNoteSchema = z.object({
-  lessonId: z.string().trim().min(1),
-  body: z.string().trim().min(1, '笔记不能为空').max(2000),
-})
-
 // Shared lesson note (studentId = null): upsert the single row so it can be viewed and edited later.
+// body 上限已放宽（SHARED_NOTE_MAX，支持 md+latex 长文），并可携带 visibility 让教师逐条「对外开放」
+// 给门户的学生/家长。落库委托给 upsertSharedNoteCore（可测核心，见 lesson-note-core.ts）。
 export async function upsertSharedNote(input: z.input<typeof sharedNoteSchema>) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { lesson: ['update'] })
@@ -143,34 +142,10 @@ export async function upsertSharedNote(input: z.input<typeof sharedNoteSchema>) 
   // 工作流 E: a section-scoped teacher may only write a note on a lesson they teach.
   if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权编辑该课节笔记')
 
-  const existing = await forTenant(ctx).select(
-    note,
-    and(eq(note.lessonId, data.lessonId), isNull(note.studentId)),
-  )
-
-  if (existing[0]) {
-    const [row] = await forTenant(ctx).update(note, existing[0].id, {
-      body: data.body,
-      authorId: ctx.userId,
-    })
-    revalidatePath('/dashboard/schedule')
-    return row
-  }
-  const [row] = await forTenant(ctx).insert(note, {
-    lessonId: data.lessonId,
-    authorId: ctx.userId,
-    body: data.body,
-    visibility: 'internal',
-  })
+  const row = await upsertSharedNoteCore(ctx, data)
   revalidatePath('/dashboard/schedule')
   return row
 }
-
-const studentNoteSchema = z.object({
-  lessonId: z.string().trim().min(1),
-  studentId: z.string().trim().min(1),
-  body: z.string().trim().min(1, '点评不能为空').max(2000),
-})
 
 // Per-student comment (studentId set): each student's own note for the lesson, upserted independently.
 export async function upsertStudentNote(input: z.input<typeof studentNoteSchema>) {

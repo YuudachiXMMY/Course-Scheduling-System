@@ -6,6 +6,7 @@ import { upsertSharedNote, upsertStudentNote } from '@/app/dashboard/schedule/at
 import { upsertLessonStudentGrade } from './grade-actions'
 import { upsertTeachAttendance } from './attendance-actions'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
+import MarkdownView from '@/lib/markdown-view'
 import type { AttendanceStatus } from '@/lib/report-stats'
 import type { SectionStudent, LessonNoteRow } from './data'
 
@@ -37,6 +38,10 @@ export default function LessonNotesInline({
   canManage: boolean
 }) {
   const [summary, setSummary] = useState(() => initial.summary)
+  // 「对外开放」：共享笔记是否 visibility='shared'，对门户学生/家长可见。种子来自服务端 summaryVisibility。
+  const [shared, setShared] = useState(() => initial.summaryVisibility === 'shared')
+  // 预览开关：把 summary 当 Markdown + LaTeX 渲染，便于教师所见即所得地校对公式/排版。
+  const [preview, setPreview] = useState(false)
   const [comments, setComments] = useState<Record<string, string>>(() => ({ ...initial.comments }))
   const [grades, setGrades] = useState<Record<string, { score: string; maxScore: string }>>(() => {
     const m: Record<string, { score: string; maxScore: string }> = {}
@@ -58,7 +63,11 @@ export default function LessonNotesInline({
       return
     }
     startTransition(async () => {
-      await upsertSharedNote({ lessonId, body: summary })
+      await upsertSharedNote({
+        lessonId,
+        body: summary,
+        visibility: shared ? 'shared' : 'internal',
+      })
       show('已保存本节课笔记')
       router.refresh()
     })
@@ -123,10 +132,14 @@ export default function LessonNotesInline({
     let saved = 0
     let skippedEmpty = 0
 
-    // Summary（全班共享笔记）
-    if (summary !== initial.summary) {
+    // Summary（全班共享笔记）：正文改动，或「对外开放」开关被切换，都需落库。visibility-only 的变更
+    // 也要保存，否则教师翻动开关但没改正文时开关状态会丢失。upsert 需 body.min(1)，故仍要求正文非空。
+    const visibilityChanged = shared !== (initial.summaryVisibility === 'shared')
+    if (summary !== initial.summary || visibilityChanged) {
       if (summary.trim()) {
-        tasks.push(upsertSharedNote({ lessonId, body: summary }))
+        tasks.push(
+          upsertSharedNote({ lessonId, body: summary, visibility: shared ? 'shared' : 'internal' }),
+        )
         saved++
       } else {
         skippedEmpty++ // 清空 Summary out of scope
@@ -206,24 +219,60 @@ export default function LessonNotesInline({
 
       <div className="flex flex-col gap-1">
         {/* B32: 父页面标题为 h2，本组内联标题原为 h5（跳过 h3/h4）——降为 h3 保持层级连续。 */}
-        <h3 className="text-xs font-medium text-neutral-700">本节课笔记（全班共享 · Summary）</h3>
-        <textarea
-          className="min-h-16 rounded border border-neutral-300 px-2 py-1 text-sm"
-          placeholder="今天讲了…"
-          aria-label="本节课笔记（全班共享）"
-          value={summary}
-          readOnly={!canManage}
-          onChange={(e) => setSummary(e.target.value)}
-        />
-        {canManage && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-medium text-neutral-700">本节课笔记（全班共享 · Summary）</h3>
+          {/* 支持 Markdown + LaTeX（$…$ / $$…$$）——预览开关让教师所见即所得地校对。 */}
           <button
             type="button"
-            disabled={pending}
-            onClick={saveSummary}
-            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+            aria-pressed={preview}
+            onClick={() => setPreview((p) => !p)}
+            className="rounded border border-neutral-300 px-2 py-0.5 text-[11px] text-neutral-600 hover:bg-neutral-50"
           >
-            保存笔记
+            {preview ? '编辑' : '预览'}
           </button>
+        </div>
+        {preview ? (
+          summary.trim() ? (
+            <div className="min-h-16 rounded border border-neutral-200 bg-white px-3 py-2">
+              <MarkdownView>{summary}</MarkdownView>
+            </div>
+          ) : (
+            <p className="min-h-16 rounded border border-dashed border-neutral-300 px-3 py-2 text-sm text-neutral-400">
+              暂无内容可预览
+            </p>
+          )
+        ) : (
+          <textarea
+            className="min-h-16 rounded border border-neutral-300 px-2 py-1 text-sm"
+            placeholder="今天讲了…（支持 Markdown 与 LaTeX 公式，如 $E=mc^2$）"
+            aria-label="本节课笔记（全班共享）"
+            value={summary}
+            readOnly={!canManage}
+            onChange={(e) => setSummary(e.target.value)}
+          />
+        )}
+        {canManage && (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={saveSummary}
+              className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              保存笔记
+            </button>
+            {/* 逐条「对外开放」：勾选后该课节笔记 visibility='shared'，门户的关联学生/家长可见。 */}
+            <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <input
+                type="checkbox"
+                checked={shared}
+                disabled={pending}
+                onChange={(e) => setShared(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              对外开放（学生 / 家长可见）
+            </label>
+          </div>
         )}
       </div>
 
