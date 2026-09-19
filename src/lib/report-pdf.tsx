@@ -1,6 +1,14 @@
 import 'server-only'
 import path from 'node:path'
 import { Document, Page, Text, View, StyleSheet, Font, renderToBuffer } from '@react-pdf/renderer'
+import {
+  wrapCjkText,
+  narrativeMaxWidthEm,
+  REPORT_PAGE_PADDING,
+  REPORT_BODY_FONT_SIZE,
+  A4_WIDTH_PT,
+  A4_HEIGHT_PT,
+} from '@/lib/report-pdf-layout'
 
 // P5: PDF progress report, Chromium-free via @react-pdf/renderer. Numbers come from `model`
 // (rendered from the DB), never from the LLM. CJK MUST use a locally-registered .ttf — a Google
@@ -39,7 +47,12 @@ export interface ReportPdfModel {
 }
 
 const styles = StyleSheet.create({
-  page: { fontFamily: 'NotoSansSC', fontSize: 11, padding: 40, color: '#1a1a1a' },
+  page: {
+    fontFamily: 'NotoSansSC',
+    fontSize: REPORT_BODY_FONT_SIZE,
+    padding: REPORT_PAGE_PADDING,
+    color: '#1a1a1a',
+  },
   h1: { fontSize: 20, marginBottom: 2 },
   sub: { fontSize: 10, color: '#666', marginBottom: 16 },
   badge: { fontSize: 9, color: '#666' },
@@ -64,9 +77,12 @@ const styles = StyleSheet.create({
 function ReportDocument({ model: m }: { model: ReportPdfModel }) {
   const period = m.periodStart && m.periodEnd ? `${m.periodStart} 至 ${m.periodEnd}` : '—'
   const paras = (m.narrative ?? '').split(/\n+/).filter((p) => p.trim().length > 0)
+  // @react-pdf 无 CJK 断行,会让长中文整行冲出页面或在错处折行。用嵌入字体的字符宽度
+  // 把每段预折成不超内容宽度的硬行(逐字断、拉丁词不拆、避头尾),渲染侧不再二次折行。
+  const narrativeWidthEm = narrativeMaxWidthEm()
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
+      <Page size={[A4_WIDTH_PT, A4_HEIGHT_PT]} style={styles.page}>
         <Text style={styles.h1}>{m.title || `${m.studentName} 进度报告`}</Text>
         <Text style={styles.sub}>
           {m.studentName}
@@ -128,7 +144,7 @@ function ReportDocument({ model: m }: { model: ReportPdfModel }) {
           ) : (
             paras.map((p, i) => (
               <Text key={i} style={styles.para}>
-                {p}
+                {wrapCjkText(p, narrativeWidthEm).join('\n')}
               </Text>
             ))
           )}
