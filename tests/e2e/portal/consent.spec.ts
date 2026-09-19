@@ -10,21 +10,21 @@ import { authStatePath } from '../fixtures/seed-constants'
 test.describe('Portal 首登同意门', () => {
   test.use({ storageState: authStatePath('parentNoConsent') })
 
-  test('未同意家长首访 /portal 命中同意门，同意后进入「我的课表」', async ({ page, seed }) => {
+  test('未同意家长首访 /portal 命中同意门，同意后进入「课表」', async ({ page, seed }) => {
     await page.goto('/portal')
 
     // The consent gate blocks content: heading + acknowledge button, and NO schedule yet.
     await expect(page.getByRole('heading', { name: '数据处理告知与同意' })).toBeVisible()
     const acknowledge = page.getByRole('button', { name: '我已阅读并同意' })
     await expect(acknowledge).toBeVisible()
-    await expect(page.getByRole('heading', { name: '我的课表' })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: '课表' })).toHaveCount(0)
 
     // Acknowledge → server action stamps consentedAt → router.refresh() swaps the gate for the page.
     await acknowledge.click()
 
     // Gate is gone and the linked student's (studentB) schedule now renders.
     await expect(page.getByRole('heading', { name: '数据处理告知与同意' })).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '我的课表' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '课表' })).toBeVisible()
     await expect(
       page.getByTestId('schedule-card').filter({ hasText: `${seed.studentB.name} 的课表` }),
     ).toBeVisible()

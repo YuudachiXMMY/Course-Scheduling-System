@@ -57,7 +57,7 @@ test.describe('RBAC — 根路径角色分发', () => {
     test('parent 访问 / 被分发到 /portal', async ({ page }) => {
       await page.goto('/')
       await expect(page).toHaveURL(/\/portal/)
-      await expect(page.getByRole('heading', { name: '我的课表' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '课表' })).toBeVisible()
     })
   })
 })

@@ -131,9 +131,15 @@ describe('report RBAC (can)', () => {
     expect(can('assistant', { report: ['approve'] })).toBe(false)
     expect(can('assistant', { report: ['create'] })).toBe(false)
   })
-  it('parent/student have no report access (MVP)', () => {
-    expect(can('parent', { report: ['read'] })).toBe(false)
-    expect(can('student', { report: ['read'] })).toBe(false)
+  it('parent/student can read/list reports (portal) but NOT create/update/approve', () => {
+    for (const role of ['parent', 'student']) {
+      // Phase 5: 家长/学生门户仅查看 approved 报告（行级隔离由 portal-scope 保证）
+      expect(can(role, { report: ['read'] })).toBe(true)
+      expect(can(role, { report: ['list'] })).toBe(true)
+      expect(can(role, { report: ['create'] })).toBe(false)
+      expect(can(role, { report: ['update'] })).toBe(false)
+      expect(can(role, { report: ['approve'] })).toBe(false)
+    }
   })
 })
 
