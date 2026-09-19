@@ -43,6 +43,12 @@ export default async function PortalLayout({ children }: { children: ReactNode }
             改期申请
           </Link>
           <Link
+            href="/portal/notes"
+            className="text-neutral-700 hover:text-neutral-900 hover:underline"
+          >
+            课节笔记
+          </Link>
+          <Link
             href="/portal/reports"
             className="text-neutral-700 hover:text-neutral-900 hover:underline"
           >
