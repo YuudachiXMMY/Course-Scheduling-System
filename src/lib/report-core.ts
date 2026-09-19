@@ -5,6 +5,7 @@ import { forTenant } from '@/db/tenant'
 import { progressReport } from '@/db/schema'
 import { getReportData } from '@/lib/report-data'
 import { draftNarrative } from '@/lib/report-draft'
+import { sanitizeNarrative } from '@/lib/report-sanitize'
 import type { ReportPdfModel } from '@/lib/report-pdf'
 
 // P5: report mutation core — shared by server actions (web) and testable directly with a ctxFor
@@ -56,7 +57,10 @@ export async function updateReportNarrativeCore(
   if (!existing) throw new Error('报告不存在')
   if (!(await actorOwnsStudent(ctx, existing.studentId))) throw new Error('无权修改该报告')
   if (existing.status === 'approved') throw new Error('报告已定稿，不可修改')
-  const [row] = await forTenant(ctx).update(progressReport, id, { narrative })
+  // P9: 教师保存时也做保守清洗——剥掉粘贴/遗留草稿夹带的 Markdown 与前后缀寒暄等杂鱼。对干净正文是
+  // no-op，因此不惊扰教师的正常排版；空值不拦（教师可清空重写），空/拒答的兜底只在 AI 起草出口处。
+  const cleaned = sanitizeNarrative(narrative)
+  const [row] = await forTenant(ctx).update(progressReport, id, { narrative: cleaned })
   return row
 }
 

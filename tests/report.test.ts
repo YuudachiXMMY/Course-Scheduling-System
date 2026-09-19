@@ -82,9 +82,18 @@ describe('report-stats aggregators', () => {
 describe('buildReportPrompt', () => {
   it('system rubric forbids fabricating facts', () => {
     const { system } = buildReportPrompt({ rubricVersion: RUBRIC_VERSION, data: sampleData })
-    expect(system).toBe(RUBRIC.v2) // SEC3: default is now v2 (adds the injection-separation guard)
+    expect(system).toBe(RUBRIC.v3) // P9: default is now v3 (hardens the anti-junk output rules)
     expect(system).toContain('绝不得编造')
     expect(system).toContain('数据库渲染')
+  })
+  it('P9: v3 rubric 显式禁止前后缀寒暄、Markdown 与自称 AI', () => {
+    expect(RUBRIC_VERSION).toBe('v3')
+    const { system } = buildReportPrompt({ rubricVersion: RUBRIC_VERSION, data: sampleData })
+    expect(system).toBe(RUBRIC.v3)
+    expect(system).toContain('不要任何 Markdown')
+    expect(system).toContain('不要任何前后缀')
+    expect(system).toContain('作为AI')
+    expect(system).toContain('不要用括号注明数据缺失')
   })
   it('SEC3: the current rubric carries the prompt-injection separation guard', () => {
     const { system, userJson } = buildReportPrompt({
@@ -109,9 +118,13 @@ describe('buildReportPrompt', () => {
     const { system } = buildReportPrompt({ rubricVersion: 'v1', data: sampleData })
     expect(system).toBe(RUBRIC.v1) // reproducibility: old reports keep their original rubric
   })
+  it('still resolves an already-drafted v2 report to the exact v2 rubric', () => {
+    const { system } = buildReportPrompt({ rubricVersion: 'v2', data: sampleData })
+    expect(system).toBe(RUBRIC.v2) // reproducibility: v2 reports keep their original rubric
+  })
   it('falls back to the default rubric for an unknown version', () => {
     const { system } = buildReportPrompt({ rubricVersion: 'nope', data: sampleData })
-    expect(system).toBe(RUBRIC.v2)
+    expect(system).toBe(RUBRIC.v3)
   })
 })
 
@@ -198,6 +211,34 @@ describe('draftNarrative', () => {
     // Never send Opus-4.8-rejected sampling params.
     expect(arg.temperature).toBeUndefined()
     expect(arg.top_p).toBeUndefined()
+  })
+
+  it('P9: 剥离模型夹带的杂鱼（前缀/Markdown/后缀），narrative 只留干净叙述', async () => {
+    createMock.mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: '好的，以下是为小明起草的进度报告：\n\n小明**本月表现稳定**，出勤良好。\n\n希望这份报告对您有帮助。',
+        },
+      ],
+    })
+    const { draftNarrative } = await import('@/lib/report-draft')
+    const res = await draftNarrative(sampleData)
+    expect(res.narrative).toBe('小明本月表现稳定，出勤良好。')
+  })
+
+  it('P9: 模型返回空输出时抛错（不落库空草稿）', async () => {
+    createMock.mockResolvedValue({ content: [{ type: 'text', text: '   ' }] })
+    const { draftNarrative } = await import('@/lib/report-draft')
+    await expect(draftNarrative(sampleData)).rejects.toThrow(/空叙述/)
+  })
+
+  it('P9: 模型拒答时抛错', async () => {
+    createMock.mockResolvedValue({
+      content: [{ type: 'text', text: '抱歉，我无法完成该请求。' }],
+    })
+    const { draftNarrative } = await import('@/lib/report-draft')
+    await expect(draftNarrative(sampleData)).rejects.toThrow(/拒绝/)
   })
 
   it('throws (does not call the API) when ANTHROPIC_API_KEY is unset', async () => {

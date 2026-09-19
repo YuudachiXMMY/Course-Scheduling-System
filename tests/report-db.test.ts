@@ -167,6 +167,21 @@ describe('progress reports — DB integration (report-core + report-data)', () =
     await expect(approveReportCore(ctx, draft.id)).rejects.toThrow('已定稿')
   })
 
+  it('P9: 教师保存时剥掉杂鱼（Markdown/前后缀），落库为干净叙述', async () => {
+    const ctx = ctxFor(org, userId)
+    const draft = await createReportDraftCore(ctx, {
+      studentId,
+      periodStart: WINDOW.from,
+      periodEnd: WINDOW.to,
+    })
+    const edited = await updateReportNarrativeCore(
+      ctx,
+      draft.id,
+      '好的，以下是报告：\n\n小明**表现稳定**。\n\n希望这份报告对您有帮助。',
+    )
+    expect(edited.narrative).toBe('小明表现稳定。')
+  })
+
   it('section-level (per-term) grades are bounded by the period window (M2)', async () => {
     const ctx = ctxFor(org, userId)
     // in-window term grade (no lesson) — should appear
