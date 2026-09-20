@@ -72,6 +72,12 @@ export default async function PortalLayout({ children }: { children: ReactNode }
               </>
             )}
           </Link>
+          <Link
+            href="/portal/account"
+            className="text-neutral-700 hover:text-neutral-900 hover:underline"
+          >
+            账户
+          </Link>
           <LogoutButton />
         </nav>
       </header>
