@@ -5,6 +5,7 @@ import { isAdminRole, roleLabel } from '@/auth/roles'
 import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
+import ResetPasswordControl from './reset-password-control'
 import type { CreateStaffInput } from '@/auth/staff'
 import { formatDateTime } from '@/lib/format-datetime'
 
@@ -61,9 +62,10 @@ export default async function TeachersTab() {
                   </span>
                 </div>
                 {!isSelf && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <StaffRoleControl userId={s.userId} currentRole={s.role} options={assignable} />
                     <StaffActiveToggle userId={s.userId} banned={s.banned} />
+                    <ResetPasswordControl targetUserId={s.userId} />
                   </div>
                 )}
               </li>

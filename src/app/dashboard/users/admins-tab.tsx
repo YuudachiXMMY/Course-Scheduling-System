@@ -5,6 +5,7 @@ import { isAdminRole, roleLabel } from '@/auth/roles'
 import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
+import ResetPasswordControl from './reset-password-control'
 import type { CreateStaffInput } from '@/auth/staff'
 import { formatDateTime } from '@/lib/format-datetime'
 
@@ -51,7 +52,9 @@ export default async function AdminsTab() {
               .map((r) => r.trim())
               .includes('owner')
             // Write controls: super admin only, and never on the owner row or on yourself — the last-owner
-            // and self guards in the core would reject those anyway, so hide them to keep UI == capability.
+            // guard (role/deactivate cores) and the self guards (setStaffRoleCore / deactivateStaffCore /
+            // resetUserPasswordCore all reject a self target) would reject those anyway, so hide them to
+            // keep UI == capability.
             const showControls = isSuper && !isOwner && !isSelf
             return (
               <li
@@ -72,9 +75,10 @@ export default async function AdminsTab() {
                   </span>
                 </div>
                 {showControls && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <StaffRoleControl userId={s.userId} currentRole={s.role} options={assignable} />
                     <StaffActiveToggle userId={s.userId} banned={s.banned} />
+                    <ResetPasswordControl targetUserId={s.userId} />
                   </div>
                 )}
               </li>
