@@ -4,6 +4,14 @@ import { headers } from 'next/headers'
 import { z } from 'zod'
 import { auth } from '@/auth/auth'
 import { requireAuthContext } from '@/auth/context'
+import { consumeRateLimit, resetRateLimit } from '@/lib/rate-limit'
+
+// Throttle self-service password changes per user. The current-password check exists to stop a
+// hijacked/short-lived session from being turned into permanent takeover; without a limit an attacker
+// holding a valid session could script unlimited currentPassword guesses through this action (it does not
+// go through better-auth's HTTP rate-limit middleware). 5 attempts / 15 min is far above any legitimate
+// use (a person changes their own password rarely) yet makes online guessing impractical.
+const CHANGE_PW_LIMIT = { limit: 5, windowMs: 15 * 60_000 }
 
 // Self-service "输入当前密码修改" Server Action, shared by /dashboard/account (staff) and /portal/account
 // (parent/student). Thin wrapper over auth.api.changePassword, which verifies currentPassword against the
@@ -28,7 +36,14 @@ export async function changeOwnPassword(
     return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
   }
   // Must be a logged-in principal — changePassword needs the session cookie on the request headers.
-  await requireAuthContext()
+  const ctx = await requireAuthContext()
+  // Throttle per user AFTER auth (so a rejected attempt is tied to a real principal, and the too-short
+  // case above never consumes a slot). A blocked caller is turned away before the currentPassword is ever
+  // checked, capping how fast the secret can be guessed.
+  const gate = consumeRateLimit(`change-pw:${ctx.userId}`, CHANGE_PW_LIMIT)
+  if (!gate.allowed) {
+    return { ok: false, error: `尝试过于频繁，请 ${Math.ceil(gate.retryAfterMs / 1000)} 秒后再试` }
+  }
   try {
     await auth.api.changePassword({
       body: {
@@ -40,6 +55,9 @@ export async function changeOwnPassword(
       },
       headers: await headers(),
     })
+    // Legitimate success clears the counter so a user who mistyped a couple of times then got it right is
+    // not left throttled.
+    resetRateLimit(`change-pw:${ctx.userId}`)
     return { ok: true }
   } catch (e) {
     console.error('changeOwnPassword failed', e)
