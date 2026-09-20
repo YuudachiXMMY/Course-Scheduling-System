@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { DateTime } from 'luxon'
 import type { AuthContext } from '@/auth/context'
 import { actorOwnsSection } from '@/auth/scope'
+import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { lesson, classSection } from '@/db/schema'
 import { checkTeacherConflict } from '@/lib/conflict'
@@ -101,10 +102,14 @@ export async function scheduleLessonCore(
 export async function rescheduleLessonCore(
   ctx: AuthContext,
   input: z.input<typeof rescheduleSchema>,
+  // H7: optional transaction executor. Defaults to the module db (byte-identical for the dashboard
+  // Server Action and the MCP tool). approveRescheduleRequestCore passes its `tx` so the lesson MOVE
+  // commits in the SAME transaction as the request CLAIM — either both land or both roll back.
+  exec: Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'> = db,
 ): Promise<ScheduleResult> {
   const data = rescheduleSchema.parse(input)
 
-  const existing = await forTenant(ctx).findById(lesson, data.id)
+  const existing = await forTenant(ctx, exec).findById(lesson, data.id)
   if (!existing) throw new Error('课节不存在')
   if (!existing.teacherId) throw new Error('课节缺少教师信息')
   // 工作流 E: a section-scoped teacher may only move a lesson of a section they teach (lesson.teacherId
@@ -113,7 +118,7 @@ export async function rescheduleLessonCore(
 
   // CR10: the lesson row carries no zone; load its section for recurrenceTimezone so suggestions use the
   // section's business-hours window (defaults to APP_TIME_ZONE). Missing section → fall back.
-  const section = await forTenant(ctx).findById(classSection, existing.sectionId)
+  const section = await forTenant(ctx, exec).findById(classSection, existing.sectionId)
   const zone = section?.recurrenceTimezone ?? ZONE
 
   const check = await checkTeacherConflict(ctx, {
@@ -133,7 +138,7 @@ export async function rescheduleLessonCore(
   }
 
   try {
-    const [row] = await forTenant(ctx).update(lesson, data.id, {
+    const [row] = await forTenant(ctx, exec).update(lesson, data.id, {
       startAt: data.startAt,
       endAt: data.endAt,
       isException: true, // moved off the pattern (P2-8)
