@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPortalUser } from './user-actions'
+import { MIN_PASSWORD_LENGTH } from '@/auth/password-policy'
 
 // Owner/admin affordance on the 家长 tab: mint a parent/student login WITHOUT binding a student yet.
 // On success the (synthesized or entered) login email is shown so the tutor can hand it (+ the
@@ -91,7 +92,7 @@ export default function UserForm() {
         <input
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
-          placeholder="密码（至少 8 位）"
+          placeholder={`密码（至少 ${MIN_PASSWORD_LENGTH} 位）`}
           aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

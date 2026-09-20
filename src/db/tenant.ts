@@ -17,17 +17,28 @@ type TenantSelect<Row> = Promise<Row[]> & {
   offset(n: number): TenantSelect<Row>
 }
 
+// The subset of the drizzle client the tenant helpers (and the conflict/schedule cores) touch. Both the
+// module `db` and a drizzle transaction handle `tx` satisfy it, so a caller inside db.transaction(tx => …)
+// can pass `tx` to join the same transaction. Exported so conflict.ts / schedule-core.ts / schedule/data.ts
+// share this one definition instead of each re-inlining the same Pick<…>.
+export type TenantExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+
 // tenantId comes ONLY from the verified AuthContext — never from request params/body.
 //
 // M1: this wrapper is the ONLY sanctioned path to tenant-scoped data. There is no RLS backstop yet
 // (see docs/adr/0001-tenant-isolation-rls.md) — a raw db.select().from(tenantTable) elsewhere would
 // silently cross tenants. Do not bypass forTenant() for tenant tables.
-export function forTenant(ctx: AuthContext) {
+//
+// H7: optional `exec` executor. Defaults to the module `db` (zero change for the ~170 existing callers),
+// but a caller inside db.transaction(tx => …) can pass `tx` so its scoped reads/writes join that ONE
+// transaction — letting reschedule's claim+move commit or roll back atomically. Only the query-builder
+// methods forTenant uses are required, and both `db` and a drizzle `tx` satisfy them.
+export function forTenant(ctx: AuthContext, exec: TenantExecutor = db) {
   const scope = (t: TenantTable) => eq(t.tenantId, ctx.tenantId)
   return {
     select<T extends TenantTable>(t: T, extra?: SQL): TenantSelect<T['$inferSelect']> {
       const table = t as unknown as PgTable
-      return db
+      return exec
         .select()
         .from(table)
         .where(extra ? and(scope(t), extra) : scope(t)) as unknown as TenantSelect<
@@ -37,14 +48,14 @@ export function forTenant(ctx: AuthContext) {
     // Tenant-scoped COUNT(*) — returns a scalar instead of loading rows into memory (hot paths like
     // the unread badge that only need a number). `extra` narrows within the tenant, never across it.
     async count<T extends TenantTable>(t: T, extra?: SQL): Promise<number> {
-      const [row] = await db
+      const [row] = await exec
         .select({ value: countRows() })
         .from(t as unknown as PgTable)
         .where(extra ? and(scope(t), extra) : scope(t))
       return row?.value ?? 0
     },
     async findById<T extends TenantTable>(t: T, id: string): Promise<T['$inferSelect'] | null> {
-      const rows = await db
+      const rows = await exec
         .select()
         .from(t as unknown as PgTable)
         .where(and(scope(t), eq(t.id, id)))
@@ -55,7 +66,7 @@ export function forTenant(ctx: AuthContext) {
       t: T,
       values: Record<string, unknown>,
     ): Promise<T['$inferSelect'][]> {
-      return db
+      return exec
         .insert(t as unknown as PgTable)
         .values({ ...values, tenantId: ctx.tenantId }) // forces tenantId
         .returning() as unknown as Promise<T['$inferSelect'][]>
@@ -68,7 +79,7 @@ export function forTenant(ctx: AuthContext) {
       const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
       void _t
       void _id
-      return db
+      return exec
         .update(t as unknown as PgTable)
         .set(safe)
         .where(and(scope(t), eq(t.id, id)))
@@ -88,7 +99,7 @@ export function forTenant(ctx: AuthContext) {
       const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
       void _t
       void _id
-      return db
+      return exec
         .update(t as unknown as PgTable)
         .set(safe)
         .where(and(scope(t), eq(t.id, id), extra))
@@ -108,14 +119,14 @@ export function forTenant(ctx: AuthContext) {
       const { tenantId: _t, id: _id, ...safe } = values as Record<string, unknown>
       void _t
       void _id
-      return db
+      return exec
         .update(t as unknown as PgTable)
         .set(safe)
         .where(and(scope(t), extra))
         .returning() as unknown as Promise<T['$inferSelect'][]>
     },
     delete<T extends TenantTable>(t: T, id: string): Promise<T['$inferSelect'][]> {
-      return db
+      return exec
         .delete(t as unknown as PgTable)
         .where(and(scope(t), eq(t.id, id)))
         .returning() as unknown as Promise<T['$inferSelect'][]>
@@ -126,7 +137,7 @@ export function forTenant(ctx: AuthContext) {
     // whole-table wipe), but note it bounds CROSS-tenant blast radius only: a tautological `extra`
     // (e.g. sql`true`) would still delete every row of this tenant, so callers must scope it themselves.
     deleteWhere<T extends TenantTable>(t: T, extra: SQL): Promise<T['$inferSelect'][]> {
-      return db
+      return exec
         .delete(t as unknown as PgTable)
         .where(and(scope(t), extra))
         .returning() as unknown as Promise<T['$inferSelect'][]>

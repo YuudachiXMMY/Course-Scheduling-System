@@ -75,5 +75,10 @@ export const env = createEnv({
   },
   emptyStringAsUndefined: true,
   // DEVIATION: allow container builds (no secrets in the build context) to skip validation.
-  skipValidation: !!process.env.SKIP_ENV_VALIDATION,
+  // L-auth: scope the escape hatch to the BUILD phase only. Next sets NEXT_PHASE=phase-production-build
+  // during `next build` (the docker image build, where secrets are absent). Requiring that phase means a
+  // stray SKIP_ENV_VALIDATION in the RUNTIME environment can no longer silently bypass secret-strength
+  // checks (BETTER_AUTH_SECRET/MCP_BEARER_TOKEN/CRON_SECRET .min(32), ADMIN_PASSWORD .min(16)).
+  skipValidation:
+    !!process.env.SKIP_ENV_VALIDATION && process.env.NEXT_PHASE === 'phase-production-build',
 })

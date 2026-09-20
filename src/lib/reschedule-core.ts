@@ -81,7 +81,9 @@ export async function createRescheduleRequestCore(
   // with a per-(tenant,user) transaction-scoped advisory lock, then re-count and insert inside the txn so
   // the loser sees the winner's committed row. tenantId is kept in every WHERE / on the insert for M1.
   const row = await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:${ctx.userId}`}))`)
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:${ctx.userId}`}))`,
+    )
     const [openRow] = await tx
       .select({ value: count() })
       .from(rescheduleRequest)
@@ -124,6 +126,18 @@ async function assertReviewerOwnsRequestLesson(ctx: AuthContext, lessonId: strin
     throw new BusinessError('无权处理该申请')
 }
 
+// H7 internal control-flow sentinels: thrown inside the approve transaction to ABORT (and thus roll
+// back the claim), then translated to the public ApproveResult / BusinessError outside the txn.
+class AlreadyHandledError extends Error {}
+class SoftConflictError extends Error {
+  constructor(
+    public conflicts: { id: string; title: string | null }[],
+    public suggestions: string[],
+  ) {
+    super('CONFLICT')
+  }
+}
+
 // Teacher/admin approve: move the lesson via rescheduleLessonCore (same conflict check + GiST backstop
 // as the calendar UI). Only flip the request to 'approved' when the move succeeds; on a soft CONFLICT
 // or a GiST race, leave it 'pending' and surface the conflict so the reviewer can pick another time.
@@ -135,57 +149,54 @@ export async function approveRescheduleRequestCore(
   if (!req) throw new BusinessError('申请不存在')
   if (req.status !== 'pending') throw new BusinessError('申请已处理')
   if (!req.requestedStartAt || !req.requestedEndAt) throw new BusinessError('申请缺少目标时间')
+  // Capture as non-null locals so the transaction closure below keeps the narrowing.
+  const targetStartAt = req.requestedStartAt
+  const targetEndAt = req.requestedEndAt
   await assertReviewerOwnsRequestLesson(ctx, req.lessonId)
 
-  // B19/B20: atomically CLAIM the request (pending → approved) BEFORE moving the lesson. A single
-  // guarded UPDATE is the compare-and-set: if a concurrent approve/reject/cancel already transitioned
-  // it, 0 rows come back and we bail — so we can never move a lesson yet record the request as rejected,
-  // nor fire a duplicate outcome notification (the two-approver race in the review).
-  const [claimed] = await forTenant(ctx).updateWhere(
-    rescheduleRequest,
-    requestId,
-    eq(rescheduleRequest.status, 'pending'),
-    { status: 'approved', reviewedById: ctx.userId, reviewedAt: new Date() },
-  )
-  if (!claimed) throw new BusinessError('申请已处理')
-
-  // Compensating rollback: if the move can't happen, release the claim back to pending so the request is
-  // reviewable again — never a stuck 'approved' whose lesson never actually moved.
-  const releaseClaim = async () => {
-    await forTenant(ctx).update(rescheduleRequest, requestId, {
-      status: 'pending',
-      reviewedById: null,
-      reviewedAt: null,
-    })
-  }
-
-  let result
+  // B19/B20 + H7: CLAIM (pending → approved) and MOVE the lesson in ONE transaction so the two either
+  // both commit or both roll back. Previously the guarded claim committed on its own statement and the
+  // move ran as a SECOND independent statement — a crash in between (OOM/SIGKILL/deploy/pod eviction)
+  // left the request stuck 'approved' with the lesson unmoved, and every review path guards
+  // status='pending', so it was unrecoverable. The guarded compare-and-set (status='pending') still
+  // serialises concurrent approve/reject/cancel: the loser gets 0 rows and bails; the row lock is held
+  // for the whole transaction. A soft conflict or a GiST race throws to abort the txn (rolling the claim
+  // back to pending), then is translated to a CONFLICT result outside.
+  let claimed: RescheduleRequestRow
+  let event: CalendarEvent
   try {
-    result = await rescheduleLessonCore(ctx, {
-      id: req.lessonId,
-      startAt: req.requestedStartAt,
-      endAt: req.requestedEndAt,
+    const res = await db.transaction(async (tx) => {
+      const [c] = await forTenant(ctx, tx).updateWhere(
+        rescheduleRequest,
+        requestId,
+        eq(rescheduleRequest.status, 'pending'),
+        { status: 'approved', reviewedById: ctx.userId, reviewedAt: new Date() },
+      )
+      if (!c) throw new AlreadyHandledError()
+      // Move via the SAME tx so it commits atomically with the claim (byte-identical conflict check +
+      // GiST backstop as the calendar UI).
+      const move = await rescheduleLessonCore(
+        ctx,
+        { id: req.lessonId, startAt: targetStartAt, endAt: targetEndAt },
+        tx,
+      )
+      if (!move.ok) throw new SoftConflictError(move.conflicts, move.suggestions)
+      return { claimed: c, event: move.event }
     })
+    claimed = res.claimed
+    event = res.event
   } catch (e) {
-    await releaseClaim()
-    // GiST race (23P01) → rescheduleLessonCore throws ConflictError. Treat like a soft conflict:
-    // leave the request pending so the reviewer retries with a different time.
+    if (e instanceof AlreadyHandledError) throw new BusinessError('申请已处理')
+    if (e instanceof SoftConflictError)
+      return { ok: false, error: 'CONFLICT', conflicts: e.conflicts, suggestions: e.suggestions }
+    // GiST race (23P01) → ConflictError from rescheduleLessonCore aborts the txn; the claim rolled back,
+    // so the request stays pending and the reviewer can retry with another time.
     if (e instanceof ConflictError)
       return { ok: false, error: 'CONFLICT', conflicts: [], suggestions: [] }
     throw e
   }
 
-  if (!result.ok) {
-    await releaseClaim()
-    return {
-      ok: false,
-      error: 'CONFLICT',
-      conflicts: result.conflicts,
-      suggestions: result.suggestions,
-    }
-  }
-
-  // P7b: notify the requester + teacher that the reschedule was approved. Side effect only — a
+  // P7b: notify the requester + teacher AFTER the transaction commits. Side effect only — a
   // notification failure must NOT undo the approval (which already moved the lesson).
   try {
     const movedLesson = await forTenant(ctx).findById(lesson, req.lessonId)
@@ -193,7 +204,7 @@ export async function approveRescheduleRequestCore(
   } catch (e) {
     console.error('notify reschedule approved failed', e)
   }
-  return { ok: true, request: claimed, event: result.event }
+  return { ok: true, request: claimed, event }
 }
 
 // Optional reviewer note (a reject reason). Trimmed + capped to mirror the request's own `reason`

@@ -1,12 +1,12 @@
 import { requireAuthContext } from '@/auth/context'
-import { requirePermission } from '@/auth/authorize'
+import { requirePagePermission } from '@/auth/authorize'
 import { env } from '@/env'
 import { getActiveFeed } from './data'
 import FeedPanel from './feed-panel'
 
 export default async function CalendarSettingsPage() {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { lesson: ['read'] })
+  requirePagePermission(ctx, { lesson: ['read'] })
 
   const feed = await getActiveFeed(ctx)
   const httpsUrl = feed ? `${env.NEXT_PUBLIC_APP_URL}/api/calendar/${feed.token}` : null

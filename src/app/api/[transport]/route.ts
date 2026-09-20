@@ -22,7 +22,11 @@ const verifyToken = async (_req: Request, bearerToken?: string): Promise<AuthInf
   const a = Buffer.from(bearerToken)
   const b = Buffer.from(expected)
   if (a.length !== b.length || !timingSafeEqual(a, b)) return undefined
-  return { token: bearerToken, clientId: 'course-scheduler', scopes: ['schedule:read', 'schedule:write'] }
+  return {
+    token: bearerToken,
+    clientId: 'course-scheduler',
+    scopes: ['schedule:read', 'schedule:write'],
+  }
 }
 
 const authHandler = withMcpAuth(handler, verifyToken, {
@@ -30,6 +34,36 @@ const authHandler = withMcpAuth(handler, verifyToken, {
   resourceUrl: env.MCP_RESOURCE_URL, // audience validation (anti confused-deputy) when set
 })
 
+// L-mcp: audience (confused-deputy) validation is a silent no-op unless MCP_RESOURCE_URL is set. The
+// static bearer still gates every call (required:true above), so this is defence-in-depth, not the sole
+// control — but an operator should still notice the gap.
+const AUDIENCE_DISABLED = Boolean(env.MCP_BEARER_TOKEN) && !env.MCP_RESOURCE_URL
+const AUDIENCE_WARNING =
+  '[mcp] MCP_RESOURCE_URL 未设置：audience（confused-deputy）校验被跳过；生产环境建议设为公开 MCP URL。'
+
+// Warn once at module load…
+if (AUDIENCE_DISABLED) {
+  console.warn(AUDIENCE_WARNING)
+}
+
+// …and re-emit at request time, throttled to at most hourly. The module-load warning fires once and can
+// be lost to a cold-start log-ingestion gap; a throttled request-time re-emit resurfaces the gap without
+// spamming a line on every call.
+const AUDIENCE_WARN_INTERVAL_MS = 60 * 60 * 1000
+let lastAudienceWarnAt = 0
+const guardedHandler = (
+  ...args: Parameters<typeof authHandler>
+): ReturnType<typeof authHandler> => {
+  if (AUDIENCE_DISABLED) {
+    const now = Date.now()
+    if (now - lastAudienceWarnAt > AUDIENCE_WARN_INTERVAL_MS) {
+      lastAudienceWarnAt = now
+      console.warn(AUDIENCE_WARNING)
+    }
+  }
+  return authHandler(...args)
+}
+
 // Stateless → only GET + POST (no SSE/DELETE session, no Redis). The [transport] segment is a
 // harmless 2.x holdover; clients POST to /api/mcp.
-export { authHandler as GET, authHandler as POST }
+export { guardedHandler as GET, guardedHandler as POST }

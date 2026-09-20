@@ -28,6 +28,7 @@ vi.mock('@/lib/report-draft', () => ({
 }))
 
 import { getReportData } from '@/lib/report-data'
+import { acknowledgeCrossBorderAiCore } from '@/lib/report-consent'
 import {
   createReportDraftCore,
   updateReportNarrativeCore,
@@ -82,6 +83,10 @@ describe('progress reports — DB integration (report-core + report-data)', () =
     await db
       .insert(member)
       .values([{ id: 'm_report', organizationId: org, userId, role: 'owner', createdAt: now }])
+
+    // H3: createReportDraftCore now gates on a one-time org cross-border-AI acknowledgment. Record it so
+    // the drafting lifecycle tests exercise the real path (not the un-acknowledged block).
+    await acknowledgeCrossBorderAiCore(ctxFor(org, userId))
 
     const ctx = ctxFor(org, userId)
     const [c] = (await forTenant(ctx).insert(course, { title: '数学' })) as { id: string }[]

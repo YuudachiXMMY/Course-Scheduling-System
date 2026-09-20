@@ -119,11 +119,11 @@ describe('provisionPortalAccount validation (EH7)', () => {
       studentId: 's1',
       name: '张三',
       kind: 'parent',
-      password: '123', // < 8 chars → schema message '密码至少 8 位'
+      password: '123', // < 12 chars → schema message '密码至少 12 位'
     })
     expect(res.ok).toBe(false)
     if (!res.ok) {
-      expect(res.error).toBe('密码至少 8 位')
+      expect(res.error).toBe('密码至少 12 位')
       // Must NOT be the raw ZodError JSON dump (brackets/braces from the issues array).
       expect(res.error).not.toMatch(/[[\]{}]/)
     }

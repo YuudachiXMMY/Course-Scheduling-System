@@ -50,7 +50,13 @@ test.describe('排课日历', () => {
     // 跳到本周后，有界地向后翻，直到该未来课节出现在网格中（每周例课，通常 1–2 次即可）。
     // 每次翻页后先等工具栏标题文本变化（= FullCalendar 导航重渲染已落定）再读 count，避免用无自动
     // 重试的 count() 在重渲染完成前读到 0 而误翻过目标周（CI-only flaky）。
-    await page.locator('.fc-today-button').click()
+    // FullCalendar DISABLES 「今天」 whenever the view already shows today, and the calendar loads on the
+    // current week — so on a fresh load this button is disabled. Playwright's click waits for the element
+    // to become actionable (enabled), so an unconditional click here hangs the full 15s and times out
+    // (the observed CI failure). We only need it to guarantee a known "current week" start; when it is
+    // already disabled we are on that week, so click only when it is actionable.
+    const todayButton = page.locator('.fc-today-button')
+    if (await todayButton.isEnabled()) await todayButton.click()
     const event = page.getByTestId(`calendar-event-${lessonId}`)
     const title = page.locator('.fc-toolbar-title')
     for (let i = 0; i < 8 && (await event.count()) === 0; i++) {

@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm'
 import { db, schema } from '@/db'
 import { member, organization as organizationTable } from '@/db/schema' // re-exported from auth-schema via barrel (R8)
 import { ac, orgRoles, adminAc, adminRoles } from '@/auth/permissions'
+import { MIN_PASSWORD_LENGTH } from '@/auth/password-policy'
 
 export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
@@ -16,7 +17,12 @@ export const auth = betterAuth({
   // /sign-up/email endpoint reject every request (EMAIL_PASSWORD_SIGN_UP_DISABLED) — verified present
   // in better-auth 1.7.4. It does NOT affect auth.api.createUser (/admin/create-user), so the env
   // admin seed and any future staff/portal provisioning keep minting accounts server-side.
-  emailAndPassword: { enabled: true, requireEmailVerification: false, disableSignUp: true },
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: false,
+    disableSignUp: true,
+    minPasswordLength: MIN_PASSWORD_LENGTH, // L-auth: align Better Auth's own floor with the app schemas
+  },
   advanced: { database: { generateId: () => nanoid() } }, // R3: align auth ids with app nanoid PKs
   session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   databaseHooks: {

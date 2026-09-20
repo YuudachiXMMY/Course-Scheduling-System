@@ -3,6 +3,8 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createReportDraft, type ReportResult } from './actions'
+import { acknowledgeCrossBorderAi } from './consent-actions'
+import { CrossBorderAckNotice } from './cross-border-ack'
 import type { ReportRow, StudentOption } from './data'
 import { ReportItem } from './report-item'
 
@@ -18,6 +20,9 @@ export default function ReportPanel({
 }) {
   const [pending, startTransition] = useTransition()
   const [err, setErr] = useState<string | null>(null)
+  // H3: when the org has not yet acknowledged cross-border AI processing, the first draft attempt
+  // surfaces a one-time notice instead of erroring out.
+  const [needsAck, setNeedsAck] = useState(false)
   const router = useRouter()
   const nameOf = new Map(students.map((s) => [s.id, s.name]))
 
@@ -41,6 +46,25 @@ export default function ReportPanel({
     })
   }
 
+  // createReportDraft returns problems as data (see actions.ts) so a missing API key / drafting
+  // failure shows a helpful message instead of the redacted "React error #441" crash. On the first
+  // draft in an un-acknowledged org it returns needsCrossBorderAck → show the one-time notice.
+  async function submitDraft() {
+    const res = await createReportDraft({
+      studentId,
+      periodStart,
+      periodEnd,
+      title: title.trim() || undefined,
+    })
+    if (!res.ok) {
+      if (res.needsCrossBorderAck) setNeedsAck(true)
+      setErr(res.error)
+      return
+    }
+    setNeedsAck(false)
+    router.refresh()
+  }
+
   function generate(e: React.FormEvent) {
     e.preventDefault()
     if (!studentId || !periodStart || !periodEnd) {
@@ -49,21 +73,29 @@ export default function ReportPanel({
     }
     setErr(null)
     startTransition(async () => {
-      // createReportDraft returns problems as data (see actions.ts) so a missing API key / drafting
-      // failure shows a helpful message instead of the redacted "React error #441" crash. The
-      // try/catch additionally covers a throw before the action's internal guard (auth/permission).
       try {
-        const res = await createReportDraft({
-          studentId,
-          periodStart,
-          periodEnd,
-          title: title.trim() || undefined,
-        })
-        if (!res.ok) {
-          setErr(res.error)
+        await submitDraft()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
+      }
+    })
+  }
+
+  // H3: record the org's one-time cross-border acknowledgment, then retry the draft immediately.
+  function confirmAckAndGenerate() {
+    setErr(null)
+    startTransition(async () => {
+      // acknowledgeCrossBorderAi() 的 requireAuthContext/requirePermission 守卫在其内部 try 之前，
+      // 会话过期/权限丢失时会 throw 而非返回 {ok:false}；连同 submitDraft 一起包进 try，避免未处理
+      // rejection 让按钮静默复位、用户零反馈。
+      try {
+        const ack = await acknowledgeCrossBorderAi()
+        if (!ack.ok) {
+          setErr(ack.error ?? '确认失败')
           return
         }
-        router.refresh()
+        setNeedsAck(false)
+        await submitDraft()
       } catch (e) {
         setErr(e instanceof Error ? e.message : '操作失败')
       }
@@ -125,6 +157,7 @@ export default function ReportPanel({
             </button>
           </div>
           {err && <p className="text-xs text-red-600">{err}</p>}
+          {needsAck && <CrossBorderAckNotice onConfirm={confirmAckAndGenerate} pending={pending} />}
         </form>
       )}
 

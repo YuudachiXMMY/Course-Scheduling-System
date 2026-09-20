@@ -101,17 +101,15 @@ describe('resetUserPasswordCore — admin password reset (DB integration)', () =
       .values([
         { id: seedOwnerId, name: 'Owner', email: 'seedowner_reset@x.com', emailVerified: true },
       ])
-    await db
-      .insert(member)
-      .values([
-        {
-          id: 'm_seed_owner_reset',
-          organizationId: org,
-          userId: seedOwnerId,
-          role: 'owner',
-          createdAt: now,
-        },
-      ])
+    await db.insert(member).values([
+      {
+        id: 'm_seed_owner_reset',
+        organizationId: org,
+        userId: seedOwnerId,
+        role: 'owner',
+        createdAt: now,
+      },
+    ])
   })
   afterAll(cleanup)
 
@@ -176,15 +174,13 @@ describe('resetUserPasswordCore — admin password reset (DB integration)', () =
     await db
       .insert(user)
       .values({ id: uid, name: 'NoCred', email: 'nocred_reset@x.com', emailVerified: true })
-    await db
-      .insert(member)
-      .values({
-        id: 'm_nocred_reset',
-        organizationId: org,
-        userId: uid,
-        role: 'parent',
-        createdAt: new Date(),
-      })
+    await db.insert(member).values({
+      id: 'm_nocred_reset',
+      organizationId: org,
+      userId: uid,
+      role: 'parent',
+      createdAt: new Date(),
+    })
     await expect(resetUserPasswordCore(ownerCtx(), uid, 'whatever-password-123')).rejects.toThrow(
       '该账号无法重置密码',
     )
@@ -193,7 +189,7 @@ describe('resetUserPasswordCore — admin password reset (DB integration)', () =
   it('rejects a too-short new password before touching the DB', async () => {
     const target = await mintMember('portal3_reset@x.com', 'parent', org)
     await expect(resetUserPasswordCore(ownerCtx(), target, 'short')).rejects.toThrow(
-      '密码至少 8 位',
+      '密码至少 12 位',
     )
     expect(await verifyPassword(target, 'initial-password-123')).toBe(true)
   })

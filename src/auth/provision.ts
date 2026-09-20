@@ -7,6 +7,7 @@ import { db } from '@/db'
 import { user as userTable, member, account, student, portalLink } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { isPortalRole } from '@/auth/portal'
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
 import { env } from '@/env'
 import type { AuthContext } from '@/auth/context'
 
@@ -24,7 +25,7 @@ export const provisionSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空').max(100),
   kind: z.enum(['parent', 'student']),
   loginId: z.string().trim().max(100).optional(), // optional real email; else a placeholder is synthesized
-  password: z.string().min(8, '密码至少 8 位'),
+  password: z.string().min(MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE),
 })
 export type ProvisionPortalInput = z.input<typeof provisionSchema>
 
@@ -175,7 +176,7 @@ const createPortalUserSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空').max(100),
   kind: z.enum(['parent', 'student']),
   loginId: z.string().trim().max(100).optional(), // optional real email; else a placeholder is synthesized
-  password: z.string().min(8, '密码至少 8 位'),
+  password: z.string().min(MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE),
 })
 export type CreatePortalUserInput = z.input<typeof createPortalUserSchema>
 

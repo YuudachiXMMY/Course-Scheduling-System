@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAuthContext } from '@/auth/context'
-import { requirePermission } from '@/auth/authorize'
+import { requirePagePermission } from '@/auth/authorize'
 import { isWholeTenantActor } from '@/auth/scope'
 import { listCourses, listSections } from './actions'
 import { listTeachers } from './data'
@@ -12,7 +12,7 @@ import CourseRestore from './course-restore'
 
 export default async function CoursesPage() {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { course: ['list'] })
+  requirePagePermission(ctx, { course: ['list'] })
   // CR2: only whole-tenant admins get the teacher picker; fetch the assignable list only for them.
   const canAssignTeacher = isWholeTenantActor(ctx)
   const [courses, sections, students, teachers] = await Promise.all([

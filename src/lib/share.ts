@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '@/db'
 import { shareLink, sectionShareLink, enrollment, lesson, classSection, course } from '@/db/schema'
 import { type FeedLesson, feedWindow, sectionDisplayName } from '@/lib/ical-feed'
@@ -29,25 +29,27 @@ export function sliceLessonsForSections(
   window: { from: Date; to: Date },
 ): FeedLesson[] {
   const active = new Set(activeSectionIds)
-  return rows
-    .filter(
-      (r) =>
-        active.has(r.sectionId) &&
-        r.status !== 'canceled' &&
-        r.startAt >= window.from &&
-        r.startAt < window.to,
-    )
-    .map((r) => ({
-      id: r.id,
-      title: r.title,
-      startAt: r.startAt,
-      endAt: r.endAt,
-      location: r.location,
-    }))
-    // Order by start time ascending so the shared schedule card renders lessons by date —
-    // the DB query has no ORDER BY, so row order is otherwise undefined. Single sort point
-    // covers both the public share page and the authenticated preview path.
-    .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
+  return (
+    rows
+      .filter(
+        (r) =>
+          active.has(r.sectionId) &&
+          r.status !== 'canceled' &&
+          r.startAt >= window.from &&
+          r.startAt < window.to,
+      )
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        location: r.location,
+      }))
+      // Order by start time ascending so the shared schedule card renders lessons by date —
+      // the DB query has no ORDER BY, so row order is otherwise undefined. Single sort point
+      // covers both the public share page and the authenticated preview path.
+      .sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
+  )
 }
 
 // A lesson row only stores a title when it was manually renamed off-pattern; auto-materialized
@@ -86,7 +88,14 @@ export async function getShareByToken(token: string) {
   const [row] = await db
     .select()
     .from(shareLink)
-    .where(and(eq(shareLink.token, token), isNull(shareLink.revokedAt)))
+    .where(
+      and(
+        eq(shareLink.token, token),
+        isNull(shareLink.revokedAt),
+        // H6: expired tokens 404 like revoked ones. NULL expiry = never expires (grandfathered).
+        or(isNull(shareLink.expiresAt), gt(shareLink.expiresAt, new Date())),
+      ),
+    )
     .limit(1)
   return row ?? null
 }
@@ -144,7 +153,14 @@ export async function getSectionShareByToken(token: string) {
   const [row] = await db
     .select()
     .from(sectionShareLink)
-    .where(and(eq(sectionShareLink.token, token), isNull(sectionShareLink.revokedAt)))
+    .where(
+      and(
+        eq(sectionShareLink.token, token),
+        isNull(sectionShareLink.revokedAt),
+        // H6: expired tokens 404 like revoked ones. NULL expiry = never expires (grandfathered).
+        or(isNull(sectionShareLink.expiresAt), gt(sectionShareLink.expiresAt, new Date())),
+      ),
+    )
     .limit(1)
   return row ?? null
 }
