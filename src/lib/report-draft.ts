@@ -15,6 +15,13 @@ export interface DraftResult {
   rubricVersion: string
 }
 
+// H4: bound how long a report draft can block. Both SDKs default to a 10-minute timeout with 2 retries
+// (~30 min worst case), and this call runs synchronously inside a teacher's Server Action — a hung or
+// slow provider would pin request-handling capacity and can cascade into a site-wide stall. Cap each
+// attempt at 2 minutes and allow a single retry (≈4 min worst case) so a stuck provider fails fast.
+const LLM_TIMEOUT_MS = 120_000
+const LLM_MAX_RETRIES = 1
+
 export async function draftNarrative(data: ReportData): Promise<DraftResult> {
   const { system, userJson } = buildReportPrompt({ rubricVersion: RUBRIC_VERSION, data })
   const { narrative: raw, model } =
@@ -36,7 +43,11 @@ async function draftWithAnthropic(
   if (!env.ANTHROPIC_API_KEY) {
     throw new Error('未配置 Claude API Key（ANTHROPIC_API_KEY），无法起草报告')
   }
-  const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
+  const client = new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    timeout: LLM_TIMEOUT_MS,
+    maxRetries: LLM_MAX_RETRIES,
+  })
   const res = await client.messages.create({
     model: env.ANTHROPIC_MODEL,
     max_tokens: 2048,
@@ -61,7 +72,12 @@ async function draftWithMiniMax(
     throw new Error('未配置 MiniMax API Key（MINIMAX_API_KEY），无法起草报告')
   }
   // MiniMax(CN)OpenAI 兼容端点。区域必须与 Key 一致(api.minimaxi.com,尾字母 i)。
-  const client = new OpenAI({ apiKey: env.MINIMAX_API_KEY, baseURL: env.MINIMAX_BASE_URL })
+  const client = new OpenAI({
+    apiKey: env.MINIMAX_API_KEY,
+    baseURL: env.MINIMAX_BASE_URL,
+    timeout: LLM_TIMEOUT_MS,
+    maxRetries: LLM_MAX_RETRIES,
+  })
   const res = await client.chat.completions.create({
     model: env.MINIMAX_MODEL,
     // OpenAI Chat 路由用 max_completion_tokens(非 Anthropic 的 max_tokens)。
