@@ -181,7 +181,7 @@ export async function approveRescheduleRequestCore(
         tx,
       )
       if (!move.ok) throw new SoftConflictError(move.conflicts, move.suggestions)
-      return { claimed: c as RescheduleRequestRow, event: move.event }
+      return { claimed: c, event: move.event }
     })
     claimed = res.claimed
     event = res.event

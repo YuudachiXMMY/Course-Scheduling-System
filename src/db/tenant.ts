@@ -17,6 +17,12 @@ type TenantSelect<Row> = Promise<Row[]> & {
   offset(n: number): TenantSelect<Row>
 }
 
+// The subset of the drizzle client the tenant helpers (and the conflict/schedule cores) touch. Both the
+// module `db` and a drizzle transaction handle `tx` satisfy it, so a caller inside db.transaction(tx => …)
+// can pass `tx` to join the same transaction. Exported so conflict.ts / schedule-core.ts / schedule/data.ts
+// share this one definition instead of each re-inlining the same Pick<…>.
+export type TenantExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+
 // tenantId comes ONLY from the verified AuthContext — never from request params/body.
 //
 // M1: this wrapper is the ONLY sanctioned path to tenant-scoped data. There is no RLS backstop yet
@@ -29,7 +35,7 @@ type TenantSelect<Row> = Promise<Row[]> & {
 // methods forTenant uses are required, and both `db` and a drizzle `tx` satisfy them.
 export function forTenant(
   ctx: AuthContext,
-  exec: Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'> = db,
+  exec: TenantExecutor = db,
 ) {
   const scope = (t: TenantTable) => eq(t.tenantId, ctx.tenantId)
   return {

@@ -63,7 +63,7 @@ export default function ChangePasswordForm() {
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
-        新密码（至少 12 位）
+        新密码（至少 {MIN_PASSWORD_LENGTH} 位）
         <input
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"

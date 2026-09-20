@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { createStaffUser } from './staff-actions'
 import type { CreateStaffInput } from '@/auth/staff'
+import { MIN_PASSWORD_LENGTH } from '@/auth/password-policy'
 
 // Create a staff login (teacher/assistant/admin). `roleOptions` is decided by the caller/tab and is the
 // tier gate made visible: the 管理员 tab only passes an `admin` option, and only renders this form for a
@@ -102,7 +103,7 @@ export default function StaffForm({
         <input
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
-          placeholder="密码（至少 12 位）"
+          placeholder={`密码（至少 ${MIN_PASSWORD_LENGTH} 位）`}
           aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

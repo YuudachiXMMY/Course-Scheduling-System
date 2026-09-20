@@ -2,7 +2,7 @@ import 'server-only'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { db } from '@/db'
-import { forTenant } from '@/db/tenant'
+import { forTenant, type TenantExecutor } from '@/db/tenant'
 import { lesson } from '@/db/schema'
 import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
@@ -12,7 +12,7 @@ import type { AuthContext } from '@/auth/context'
 // otherwise they borrow a SECOND connection from the shared pool while the txn still reserves the first,
 // and ~pool-size concurrent approvals deadlock the pool (postgres-js has no acquire timeout). Defaults to
 // the module db for every other caller (byte-identical).
-type Exec = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
+type Exec = TenantExecutor
 
 export interface ConflictSummary {
   id: string

@@ -4,7 +4,7 @@ import { DateTime } from 'luxon'
 import type { AuthContext } from '@/auth/context'
 import { actorOwnsSection } from '@/auth/scope'
 import { db } from '@/db'
-import { forTenant } from '@/db/tenant'
+import { forTenant, type TenantExecutor } from '@/db/tenant'
 import { lesson, classSection } from '@/db/schema'
 import { checkTeacherConflict } from '@/lib/conflict'
 import { ConflictError, isExclusionViolation } from '@/lib/errors'
@@ -105,7 +105,7 @@ export async function rescheduleLessonCore(
   // H7: optional transaction executor. Defaults to the module db (byte-identical for the dashboard
   // Server Action and the MCP tool). approveRescheduleRequestCore passes its `tx` so the lesson MOVE
   // commits in the SAME transaction as the request CLAIM — either both land or both roll back.
-  exec: Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'> = db,
+  exec: TenantExecutor = db,
 ): Promise<ScheduleResult> {
   const data = rescheduleSchema.parse(input)
 

@@ -68,7 +68,7 @@ export default function ResetPasswordControl({
       <input
         type="password"
         className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
-        placeholder="新密码（至少 12 位）"
+        placeholder={`新密码（至少 ${MIN_PASSWORD_LENGTH} 位）`}
         aria-label="新密码"
         value={password}
         onChange={(e) => setPassword(e.target.value)}

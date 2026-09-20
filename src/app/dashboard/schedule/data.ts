@@ -2,7 +2,7 @@ import 'server-only'
 import { and, eq, gte, inArray, lt, ne } from 'drizzle-orm'
 import { DateTime } from 'luxon'
 import { db } from '@/db'
-import { forTenant } from '@/db/tenant'
+import { forTenant, type TenantExecutor } from '@/db/tenant'
 import { sectionIdsForActor } from '@/auth/scope'
 import { lesson, classSection, course, enrollment, student } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
@@ -91,7 +91,7 @@ export async function hydrateLessonEvent(
   // transaction, this MUST reuse that `tx` connection — otherwise these 4 reads borrow extra pool
   // connections while the txn holds one, risking pool-exhaustion deadlock under concurrent approvals.
   // Defaults to the module db for every other caller (byte-identical).
-  exec: Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'> = db,
+  exec: TenantExecutor = db,
 ): Promise<CalendarEvent> {
   const section = await forTenant(ctx, exec).findById(classSection, row.sectionId)
   const parentCourse = section

@@ -181,15 +181,20 @@ export async function reactivateStaffCore(ctx: AuthContext, targetUserId: string
   // L-auth: symmetric with deactivateStaffCore's multi-org refuse. Reactivate clears the GLOBAL
   // user.banned flag, so for a multi-org user it would silently lift a ban another org may have
   // imposed (based on conduct THIS org can't see). Refuse for multi-org users.
-  const memberships = await db
-    .select({ id: member.id })
-    .from(member)
-    .where(eq(member.userId, targetUserId))
-  if (memberships.length > 1) {
-    throw new Error('该用户属于多个机构，不能在此清除全局封禁（可能撤销其它机构的处置）；请联系平台管理员')
-  }
-  await db
-    .update(userTable)
-    .set({ banned: false, banReason: null, banExpires: null })
-    .where(eq(userTable.id, targetUserId))
+  // The multi-org count and the un-ban run in ONE transaction (symmetric with deactivateStaffCore) so a
+  // second org membership added between the check and the write can't slip through and let this clear a
+  // global ban for a user who has since become multi-org.
+  await db.transaction(async (tx) => {
+    const memberships = await tx
+      .select({ id: member.id })
+      .from(member)
+      .where(eq(member.userId, targetUserId))
+    if (memberships.length > 1) {
+      throw new Error('该用户属于多个机构，不能在此清除全局封禁（可能撤销其它机构的处置）；请联系平台管理员')
+    }
+    await tx
+      .update(userTable)
+      .set({ banned: false, banReason: null, banExpires: null })
+      .where(eq(userTable.id, targetUserId))
+  })
 }
