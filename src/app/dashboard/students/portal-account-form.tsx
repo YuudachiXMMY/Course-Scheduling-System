@@ -7,15 +7,24 @@ import { provisionPortalAccount } from './portal-actions'
 // Owner/admin affordance on the students list: mint a parent/student login for this student. On
 // success, the synthesized login email is shown so the tutor can hand it (+ the password they set)
 // to the family — WeChat parents have no real email.
+//
+// `fixedKind` pins the account kind and hides the type <select> — the 学生 tab uses fixedKind="student"
+// so the per-student "开通学生门户账号" affordance always mints a STUDENT login (parents are now managed
+// on the 家长 tab, via UserForm). The prop stays optional for backward-compat, but the ONLY current call
+// site pins it to "student", so the both-kinds <select> branch below is currently unexercised.
 export default function PortalAccountForm({
   studentId,
   studentName,
+  fixedKind,
+  buttonLabel,
 }: {
   studentId: string
   studentName: string
+  fixedKind?: 'parent' | 'student'
+  buttonLabel?: string
 }) {
   const [open, setOpen] = useState(false)
-  const [kind, setKind] = useState<'parent' | 'student'>('parent')
+  const [kind, setKind] = useState<'parent' | 'student'>(fixedKind ?? 'parent')
   const [name, setName] = useState('')
   const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
@@ -56,7 +65,7 @@ export default function PortalAccountForm({
         className="self-start rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
         onClick={() => setOpen(true)}
       >
-        开通登录
+        {buttonLabel ?? '开通登录'}
       </button>
     )
   }
@@ -70,17 +79,20 @@ export default function PortalAccountForm({
       className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-3 shadow-sm"
     >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-xs">
-          账号类型
-          <select
-            className="rounded border border-neutral-300 px-2 py-1 text-sm"
-            value={kind}
-            onChange={(e) => setKind(e.target.value as 'parent' | 'student')}
-          >
-            <option value="parent">家长</option>
-            <option value="student">学生</option>
-          </select>
-        </label>
+        {/* fixedKind 时（学生 tab 的「开通学生门户账号」）隐藏类型选择，kind 已固定为 student。 */}
+        {!fixedKind && (
+          <label className="flex flex-col gap-1 text-xs">
+            账号类型
+            <select
+              className="rounded border border-neutral-300 px-2 py-1 text-sm"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as 'parent' | 'student')}
+            >
+              <option value="parent">家长</option>
+              <option value="student">学生</option>
+            </select>
+          </label>
+        )}
         <input
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
           placeholder={`显示名（默认「${studentName}」）`}
