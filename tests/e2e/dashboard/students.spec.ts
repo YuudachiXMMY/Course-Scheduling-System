@@ -16,16 +16,20 @@ function activeList(page: Page) {
 function archivedList(page: Page) {
   return page.locator('h3', { hasText: '已归档' }).locator('xpath=./following-sibling::ul[1]')
 }
+// Anchor a row on its TITLE (the font-medium student-name span), not on arbitrary row text. After 开通,
+// a student login is named after the student and then appears as an <option> in EVERY other row's 关联
+// picker — a native <select>'s option text counts toward the <li>'s textContent, so a plain
+// `filter({ hasText: name })` would also match those rows (strict-mode violation). Only the owning row
+// carries the name in a `.font-medium` heading span; <option>s are not spans, so this excludes them.
 function activeRow(page: Page, name: string) {
-  return activeList(page).locator('li').filter({ hasText: name })
+  return activeList(page)
+    .locator(':scope > li')
+    .filter({ has: page.locator('span.font-medium', { hasText: name }) })
 }
 
 // Fill the always-open top create form (the only open StudentForm on a fresh page → placeholders are
 // unique) and assert the new student surfaces in the active list.
-async function createStudent(
-  page: Page,
-  opts: { name: string; wechat?: string; grade?: string },
-) {
+async function createStudent(page: Page, opts: { name: string; wechat?: string; grade?: string }) {
   await page.getByPlaceholder('姓名').fill(opts.name)
   if (opts.wechat) await page.getByPlaceholder('家长微信').fill(opts.wechat)
   if (opts.grade) await page.getByPlaceholder('年级').fill(opts.grade)
@@ -93,7 +97,7 @@ test.describe('学生管理', () => {
     await expect(row.locator('code')).toContainText('/s/')
   })
 
-  test('为学生开通门户登录并显示登录邮箱', async ({ page }) => {
+  test('为学生开通「学生门户账号」，登录状态合并显示在学生行内', async ({ page }) => {
     const name = `E2E临时-开通-${Date.now()}`
     await page.goto('/dashboard/users?tab=students')
     // Fresh, uniquely-named student → the synthesized login email is unique (portal_<nanoid>@…),
@@ -101,12 +105,21 @@ test.describe('学生管理', () => {
     await createStudent(page, { name, grade: '初三' })
 
     const row = activeRow(page, name)
-    await row.getByRole('button', { name: '开通登录' }).click()
-    // Defaults: kind=家长, 显示名 falls back to the student's name, 登录邮箱 auto-generated. Only the
-    // password (≥ 8) is required.
+    // 合并后：学生行不再有单独的「学生门户账号」列表，登录状态就在行内。开通前显示「未开通」。
+    await expect(row.getByText('学生登录：未开通')).toBeVisible()
+
+    // 学生行的开通入口固定创建 student 账号（无账号类型下拉）；显示名默认学生名、登录邮箱自动生成，
+    // 只需填密码（≥ 8）。
+    await row.getByRole('button', { name: '开通学生门户账号' }).click()
     await row.getByPlaceholder('密码（至少 8 位）').fill('E2ePortalPw1')
     await row.getByRole('button', { name: '开通', exact: true }).click()
 
-    await expect(row.getByText(/已开通！登录邮箱：/)).toBeVisible()
+    // 核心新行为：开通成功后 router.refresh，学生行从「未开通+开通表单」切换到「已开通」分支——登录邮箱
+    // 持久合并展示在该学生行内（不再是顶部独立账号列表；比原先的瞬时提示更持久，导师可随时复制转交），
+    // 并就地提供重置密码入口。合成邮箱形如 portal_<nanoid>@<域名>。
+    await expect(row.getByText(/学生登录：\s*portal_.*@/)).toBeVisible()
+    await expect(row.getByRole('button', { name: '重置密码' })).toBeVisible()
+    // 合并后不再出现「未开通」文案。
+    await expect(row.getByText('学生登录：未开通')).toHaveCount(0)
   })
 })

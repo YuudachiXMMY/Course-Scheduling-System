@@ -37,10 +37,27 @@ export default async function StudentsTab() {
       linkedByStudent.set(s.id, arr)
     }
   }
-  // Student-role portal logins get their OWN management list on this tab (the 家长 tab now shows parents
-  // only). Derived from portalUsers (already fetched) — comma-multi aware, so a 'parent,student' account
-  // still surfaces here as well as on 家长.
+  // 学生门户账号「合二为一」到在读学生：不再有顶部独立账号列表，每个在读学生行内直接显示其 student-kind
+  // 登录状态（已开通 → 邮箱 + 重置密码；未开通 → 开通入口）。comma-multi aware：'parent,student' 账号也算。
+  const activeIds = new Set(active.map((s) => s.id))
   const studentAccounts = portalUsers.filter((u) => hasRole(u.role, 'student'))
+  const studentLoginsByStudent = new Map<
+    string,
+    { userId: string; name: string; email: string }[]
+  >()
+  for (const u of studentAccounts) {
+    for (const s of u.students) {
+      if (!activeIds.has(s.id)) continue // 归档/其他学生不在活跃列表，跳过（避免挂错行）
+      const arr = studentLoginsByStudent.get(s.id) ?? []
+      arr.push({ userId: u.userId, name: u.name, email: u.email })
+      studentLoginsByStudent.set(s.id, arr)
+    }
+  }
+  // 兜底：role=student 但未关联任何在读学生的孤立账号（可经家长 tab 的 UserForm 直接建出，无学生行可挂靠）。
+  // 仅在非空时渲染 —— 保住其唯一的管理入口（改密），不是与学生行冗余的并列表。
+  const orphanStudentAccounts = studentAccounts.filter(
+    (u) => !u.students.some((s) => activeIds.has(s.id)),
+  )
 
   return (
     <section className="flex flex-col gap-6">
@@ -48,41 +65,6 @@ export default async function StudentsTab() {
         <h2 className="text-lg font-semibold">学生</h2>
       </div>
       <StudentForm />
-      {canManageUsers && (
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
-            学生门户账号（{studentAccounts.length}）
-          </h3>
-          <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
-            {studentAccounts.length === 0 && (
-              <li className="px-4 py-8 text-center text-sm text-neutral-500">
-                暂无学生门户账号（可在下方学生条目「开通登录」中创建）
-              </li>
-            )}
-            {studentAccounts.map((u) => (
-              <li
-                key={u.userId}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-              >
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">
-                    {u.name} <span className="text-xs font-normal text-neutral-500">{u.role}</span>
-                  </span>
-                  <span className="font-mono text-xs text-neutral-500">{u.email}</span>
-                  <span className="text-xs text-neutral-400">
-                    关联学生：
-                    {u.students.length > 0 ? u.students.map((s) => s.name).join('、') : '暂无'}
-                  </span>
-                  <span className="text-xs text-neutral-400">
-                    创建于 {formatDateTime(u.createdAt)} · 最近修改 {formatDateTime(u.updatedAt)}
-                  </span>
-                </div>
-                <ResetPasswordControl targetUserId={u.userId} />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
           在读学生（{active.length}）
@@ -116,7 +98,37 @@ export default async function StudentsTab() {
                   token={shareByStudent.get(s.id)?.token ?? null}
                   shareOrigin={env.NEXT_PUBLIC_APP_URL}
                 />
-                <PortalAccountForm studentId={s.id} studentName={s.name} />
+                {/* 学生登录（合并视图）：已开通→邮箱+重置密码；未开通→固定 student 的开通入口。 */}
+                {canManageUsers &&
+                  (() => {
+                    const logins = studentLoginsByStudent.get(s.id) ?? []
+                    if (logins.length === 0) {
+                      return (
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                          <span>学生登录：未开通</span>
+                          <PortalAccountForm
+                            studentId={s.id}
+                            studentName={s.name}
+                            fixedKind="student"
+                            buttonLabel="开通学生门户账号"
+                          />
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="flex flex-col gap-1.5 text-xs text-neutral-500">
+                        {logins.map((l) => (
+                          <div key={l.userId} className="flex flex-wrap items-center gap-2">
+                            <span>
+                              学生登录：
+                              <span className="font-mono text-neutral-600">{l.email}</span>
+                            </span>
+                            <ResetPasswordControl targetUserId={l.userId} />
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 {canManageUsers && (
                   <div className="flex flex-col gap-1.5">
                     <span className="text-xs text-neutral-500">
@@ -150,6 +162,32 @@ export default async function StudentsTab() {
           })}
         </ul>
       </div>
+      {canManageUsers && orphanStudentAccounts.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
+            未关联学生的学生账号（{orphanStudentAccounts.length}）
+          </h3>
+          <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
+            {orphanStudentAccounts.map((u) => (
+              <li
+                key={u.userId}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">
+                    {u.name} <span className="text-xs font-normal text-neutral-500">{u.role}</span>
+                  </span>
+                  <span className="font-mono text-xs text-neutral-500">{u.email}</span>
+                  <span className="text-xs text-neutral-400">
+                    尚未关联任何在读学生，可在上方学生条目「关联家长/学生账号」中关联
+                  </span>
+                </div>
+                <ResetPasswordControl targetUserId={u.userId} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {archived.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
