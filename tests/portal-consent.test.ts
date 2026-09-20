@@ -9,9 +9,9 @@ import { getPortalSchedule } from '@/app/portal/data'
 import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // Slice F（B40）——门户同意门服务端复检。layout.tsx 的 ConsentGate 只在渲染层拦截（UX 级）；门户的
-// Server Action 与数据加载器必须在触碰个人数据前独立复检 consentedAt，否则一个从未点"我已阅读并同意"
-// 的家长/学生可直接调用这些动作，绕过 PIPL/未成年人同意门。这里锁住 requireConsent 及其在加载器/动作
-// 层的接入。
+// Server Action 与数据加载器必须在触碰个人数据前独立复检 consentedAt，否则一个从未消除数据处理告知
+// 窗口的家长/学生可直接调用这些动作，绕过 PIPEDA/未成年人同意门。这里锁住 requireConsent 及其在加载器/
+// 动作层的接入。
 
 // createRescheduleRequest（'use server'）内部调用 requireAuthContext()（会话 cookie）——仅覆写该导出，
 // 用 importActual 保留 AuthError，使 requirePermission 仍能工作；库加载器（getPortalSchedule）与

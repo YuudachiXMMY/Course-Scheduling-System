@@ -11,8 +11,9 @@ import LogoutButton from '@/app/dashboard/logout-button'
 import ConsentGate from './consent-gate'
 
 // Role-gated portal shell (parent/student only). UX-level guard ONLY — every page/action re-checks
-// via requireAuthContext + requirePermission + the portalLink row scope. Renders a one-time consent
-// gate (P7a-9) in place of the children until the user has acknowledged the data notice.
+// via requireAuthContext + requirePermission + the portalLink row scope. Renders a one-time PIPEDA
+// data-notice modal (P7a-9) in place of the children until the user has acknowledged it (agreeing or
+// closing the window both count as consent).
 export default async function PortalLayout({ children }: { children: ReactNode }) {
   const ctx = await getAuthContext()
   if (!ctx) redirect('/login')
