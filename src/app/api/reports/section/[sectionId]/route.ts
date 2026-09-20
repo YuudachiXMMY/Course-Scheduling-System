@@ -12,6 +12,11 @@ import { renderReportPdf } from '@/lib/report-pdf'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+// Mirror the PNG batch export cap (export/section): reject before the render loop, which serializes N
+// PDF renders, so an oversized section can't monopolize the single-VPS worker and pile up an unbounded
+// queue behind the mutex.
+const MAX_EXPORT_STUDENTS = 60
+
 const stamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
 
 // Sanitize a student name into a safe ZIP entry folder (mirror export/section/route.ts).
@@ -45,6 +50,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
       studentIds.length === 0
         ? []
         : await forTenant(ctx).select(student, inArray(student.id, studentIds))
+
+    if (students.length > MAX_EXPORT_STUDENTS) {
+      return new Response(
+        `学生过多（${students.length} 名），单次最多导出 ${MAX_EXPORT_STUDENTS} 名，请缩小范围后重试。`,
+        { status: 413 },
+      )
+    }
 
     // archiver@8 is ESM with named class exports; no .toBuffer() → collect chunks + concat on 'end'.
     const chunks: Buffer[] = []
