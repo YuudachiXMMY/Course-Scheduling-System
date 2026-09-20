@@ -9,6 +9,7 @@ import ExportPanel from '../students/export-panel'
 import PortalAccountForm from '../students/portal-account-form'
 import { listPortalUsers } from './data'
 import { LinkControl, UnlinkButton } from './link-control'
+import ResetPasswordControl from './reset-password-control'
 import { formatDateTime } from '@/lib/format-datetime'
 
 // Students tab of /dashboard/users — the former /dashboard/students page, moved here verbatim, plus a
@@ -35,6 +36,15 @@ export default async function StudentsTab() {
       linkedByStudent.set(s.id, arr)
     }
   }
+  // Student-role portal logins get their OWN management list on this tab (the 家长 tab now shows parents
+  // only). Derived from portalUsers (already fetched) — comma-multi aware, so a 'parent,student' account
+  // still surfaces here as well as on 家长.
+  const studentAccounts = portalUsers.filter((u) =>
+    u.role
+      .split(',')
+      .map((r) => r.trim())
+      .includes('student'),
+  )
 
   return (
     <section className="flex flex-col gap-6">
@@ -42,6 +52,41 @@ export default async function StudentsTab() {
         <h2 className="text-lg font-semibold">学生</h2>
       </div>
       <StudentForm />
+      {canManageUsers && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
+            学生门户账号（{studentAccounts.length}）
+          </h3>
+          <ul className="divide-y divide-neutral-200 rounded-lg border border-neutral-200">
+            {studentAccounts.length === 0 && (
+              <li className="px-4 py-8 text-center text-sm text-neutral-500">
+                暂无学生门户账号（可在下方学生条目「开通登录」中创建）
+              </li>
+            )}
+            {studentAccounts.map((u) => (
+              <li
+                key={u.userId}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm font-medium">
+                    {u.name} <span className="text-xs font-normal text-neutral-500">{u.role}</span>
+                  </span>
+                  <span className="font-mono text-xs text-neutral-500">{u.email}</span>
+                  <span className="text-xs text-neutral-400">
+                    关联学生：
+                    {u.students.length > 0 ? u.students.map((s) => s.name).join('、') : '暂无'}
+                  </span>
+                  <span className="text-xs text-neutral-400">
+                    创建于 {formatDateTime(u.createdAt)} · 最近修改 {formatDateTime(u.updatedAt)}
+                  </span>
+                </div>
+                <ResetPasswordControl targetUserId={u.userId} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
           在读学生（{active.length}）

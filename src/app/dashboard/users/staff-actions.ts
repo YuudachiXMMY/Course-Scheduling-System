@@ -10,6 +10,7 @@ import {
   reactivateStaffCore,
   type CreateStaffInput,
 } from '@/auth/staff'
+import { resetUserPasswordCore } from '@/auth/password'
 
 // Staff-management Server Actions (teachers/admins tabs). Five-step boundary: trusted principal →
 // COARSE gate (member:create — is this actor a manager at all; teacher/assistant fail here) → FINE
@@ -62,6 +63,27 @@ export async function deactivateStaff(targetUserId: string): Promise<MutResult> 
     console.error('deactivateStaff failed', e)
     if (e instanceof AuthError) return { ok: false, error: '无权停用该员工' }
     return { ok: false, error: e instanceof Error ? e.message : '停用失败' }
+  }
+}
+
+// Admin "帮忙重置密码" for ANY account in the org (portal parent/student OR staff teacher/assistant/admin).
+// Same five-step boundary: coarse member:create gate here, fine tiered gate inside the core
+// (assertCanManageRole — a regular manager cannot reset an admin/owner). AuthError('FORBIDDEN') from the
+// core is translated to a Chinese message so the raw code never leaks; other errors surface as data.
+export async function resetUserPassword(
+  targetUserId: string,
+  newPassword: string,
+): Promise<MutResult> {
+  const ctx = await requireAuthContext()
+  try {
+    requirePermission(ctx, { member: ['create'] })
+    await resetUserPasswordCore(ctx, targetUserId, newPassword)
+    revalidatePath('/dashboard/users')
+    return { ok: true }
+  } catch (e) {
+    console.error('resetUserPassword failed', e)
+    if (e instanceof AuthError) return { ok: false, error: '无权重置该账号密码' }
+    return { ok: false, error: e instanceof Error ? e.message : '重置密码失败' }
   }
 }
 

@@ -19,7 +19,15 @@ export type PortalUserRow = {
 // List every portal login (parent/student) in the tutor's org, each with the students it is linked to.
 // member is NOT a tenant table (keyed by organizationId, which equals tenantId here), so it is queried
 // directly (not via forTenant). portalLink/student ARE tenant tables and go through forTenant.
-export async function listPortalUsers(ctx: AuthContext): Promise<PortalUserRow[]> {
+//
+// `opts.kind` splits the list by tab: the 家长 tab passes 'parent' and the 学生 tab passes 'student', so a
+// pure-student login never leaks into 家长 (the reported bug). The filter is comma-multi aware — a rare
+// 'parent,student' account matches BOTH kinds (it genuinely belongs on both tabs). Omit opts to get every
+// portal login unfiltered (the students-tab assign picker still offers all logins to link).
+export async function listPortalUsers(
+  ctx: AuthContext,
+  opts?: { kind?: 'parent' | 'student' },
+): Promise<PortalUserRow[]> {
   const rows = await db
     .select({
       userId: user.id,
@@ -33,8 +41,16 @@ export async function listPortalUsers(ctx: AuthContext): Promise<PortalUserRow[]
     .innerJoin(user, eq(user.id, member.userId))
     .where(eq(member.organizationId, ctx.tenantId))
   // member.role may be a comma-separated multi-role string ('parent,student'), so filter in JS via
-  // isPortalRole — an inArray(member.role, [...]) would miss the composite values.
-  const portalUsers = rows.filter((r) => isPortalRole(r.role))
+  // isPortalRole — an inArray(member.role, [...]) would miss the composite values. When opts.kind is set,
+  // narrow to accounts whose parsed role list contains that kind (same comma-multi parsing).
+  const portalUsers = rows.filter((r) => {
+    if (!isPortalRole(r.role)) return false
+    if (!opts?.kind) return true
+    return r.role
+      .split(',')
+      .map((x) => x.trim())
+      .includes(opts.kind)
+  })
   if (portalUsers.length === 0) return []
 
   const links = await forTenant(ctx).select(portalLink)

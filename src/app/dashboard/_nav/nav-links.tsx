@@ -89,6 +89,9 @@ export default function NavLinks({
         )}
       </NavLink>
       <NavLink href="/dashboard/calendar">日历订阅</NavLink>
+      <NavLink href="/dashboard/account" activePrefix="/dashboard/account">
+        账户
+      </NavLink>
       <LogoutButton />
     </nav>
   )
