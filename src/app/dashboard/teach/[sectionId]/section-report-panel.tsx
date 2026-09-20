@@ -101,13 +101,16 @@ export default function SectionReportPanel({
   function confirmAckAndGenerate() {
     setErr(null)
     startTransition(async () => {
-      const ack = await acknowledgeCrossBorderAi()
-      if (!ack.ok) {
-        setErr(ack.error ?? '确认失败')
-        return
-      }
-      setNeedsAck(false)
+      // acknowledgeCrossBorderAi() 的 requireAuthContext/requirePermission 守卫在其内部 try 之前，
+      // 会话过期/权限丢失时会 throw 而非返回 {ok:false}；连同 submitDraft 一起包进 try，避免未处理
+      // rejection 让按钮静默复位、用户零反馈。
       try {
+        const ack = await acknowledgeCrossBorderAi()
+        if (!ack.ok) {
+          setErr(ack.error ?? '确认失败')
+          return
+        }
+        setNeedsAck(false)
         await submitDraft()
       } catch (e) {
         setErr(e instanceof Error ? e.message : '操作失败')
