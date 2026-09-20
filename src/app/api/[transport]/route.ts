@@ -22,7 +22,11 @@ const verifyToken = async (_req: Request, bearerToken?: string): Promise<AuthInf
   const a = Buffer.from(bearerToken)
   const b = Buffer.from(expected)
   if (a.length !== b.length || !timingSafeEqual(a, b)) return undefined
-  return { token: bearerToken, clientId: 'course-scheduler', scopes: ['schedule:read', 'schedule:write'] }
+  return {
+    token: bearerToken,
+    clientId: 'course-scheduler',
+    scopes: ['schedule:read', 'schedule:write'],
+  }
 }
 
 const authHandler = withMcpAuth(handler, verifyToken, {

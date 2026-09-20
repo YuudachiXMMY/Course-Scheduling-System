@@ -3,11 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { shareLink, student } from '@/db/schema'
 import { getShareByToken } from '@/lib/share'
-import {
-  SHARE_TOKEN_TTL_DAYS,
-  defaultShareExpiry,
-  isTokenTimeActive,
-} from '@/lib/share-ttl'
+import { SHARE_TOKEN_TTL_DAYS, defaultShareExpiry, isTokenTimeActive } from '@/lib/share-ttl'
 import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // H6: capability tokens must expire. Pure-logic tests pin the TTL decision (incl. the NULL =

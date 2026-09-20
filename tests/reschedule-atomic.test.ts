@@ -39,16 +39,14 @@ async function seed() {
   await cleanup()
   await seedOrg(org)
   await db.insert(course).values({ id: 'c_ra', tenantId: org, title: '原子改期课程' })
-  await db
-    .insert(classSection)
-    .values({
-      id: sec,
-      tenantId: org,
-      courseId: 'c_ra',
-      name: 'RA',
-      teacherId: teacher,
-      capacity: 5,
-    })
+  await db.insert(classSection).values({
+    id: sec,
+    tenantId: org,
+    courseId: 'c_ra',
+    name: 'RA',
+    teacherId: teacher,
+    capacity: 5,
+  })
   await db.insert(student).values({ id: stu, tenantId: org, name: '学生RA' })
   await db
     .insert(enrollment)

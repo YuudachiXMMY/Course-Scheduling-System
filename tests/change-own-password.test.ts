@@ -82,11 +82,17 @@ describe('changeOwnPassword — self-service password change', () => {
     // turned away BEFORE auth is called, so a stolen session cannot script unlimited guesses.
     changePasswordMock.mockRejectedValue({ body: { code: 'INVALID_PASSWORD' } })
     for (let i = 0; i < 5; i++) {
-      const r = await changeOwnPassword({ currentPassword: `guess-${i}-xx`, newPassword: 'new-password-456' })
+      const r = await changeOwnPassword({
+        currentPassword: `guess-${i}-xx`,
+        newPassword: 'new-password-456',
+      })
       expect(r).toEqual({ ok: false, error: '当前密码不正确' })
     }
     expect(changePasswordMock).toHaveBeenCalledTimes(5)
-    const blocked = await changeOwnPassword({ currentPassword: 'guess-6-xx', newPassword: 'new-password-456' })
+    const blocked = await changeOwnPassword({
+      currentPassword: 'guess-6-xx',
+      newPassword: 'new-password-456',
+    })
     expect(blocked.ok).toBe(false)
     if (!blocked.ok) expect(blocked.error).toContain('尝试过于频繁')
     // auth was NOT consulted for the blocked attempt
@@ -102,12 +108,18 @@ describe('changeOwnPassword — self-service password change', () => {
     // now succeed → counter resets
     changePasswordMock.mockReset()
     changePasswordMock.mockResolvedValueOnce({ token: 'new' })
-    const ok = await changeOwnPassword({ currentPassword: 'right-one-123', newPassword: 'new-password-456' })
+    const ok = await changeOwnPassword({
+      currentPassword: 'right-one-123',
+      newPassword: 'new-password-456',
+    })
     expect(ok).toEqual({ ok: true })
     // 5 fresh attempts are allowed again (would have been blocked on the 1st if the counter hadn't reset)
     changePasswordMock.mockReset()
     changePasswordMock.mockRejectedValue({ body: { code: 'INVALID_PASSWORD' } })
-    const r = await changeOwnPassword({ currentPassword: 'guess-again-1', newPassword: 'new-password-456' })
+    const r = await changeOwnPassword({
+      currentPassword: 'guess-again-1',
+      newPassword: 'new-password-456',
+    })
     expect(r).toEqual({ ok: false, error: '当前密码不正确' })
     expect(changePasswordMock).toHaveBeenCalledTimes(1)
   })

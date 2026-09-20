@@ -42,8 +42,7 @@ export type CreateReportInput = z.input<typeof createSchema>
 // H3: `needsCrossBorderAck` signals the panel to surface a one-time cross-border-AI acknowledgment
 // prompt (org has not yet acknowledged). Optional so update/approve results are unaffected.
 export type ReportResult =
-  | { ok: true; report: Report }
-  | { ok: false; error: string; needsCrossBorderAck?: boolean }
+  { ok: true; report: Report } | { ok: false; error: string; needsCrossBorderAck?: boolean }
 
 export async function createReportDraft(input: CreateReportInput): Promise<ReportResult> {
   const ctx = await requireAuthContext()
@@ -70,7 +69,8 @@ export async function createReportDraft(input: CreateReportInput): Promise<Repor
     if (e instanceof CrossBorderAiAckRequiredError) {
       return {
         ok: false,
-        error: '首次使用 AI 起草报告前，请确认：这会将学生数据（姓名已脱敏）发送至境外 AI 服务处理。',
+        error:
+          '首次使用 AI 起草报告前，请确认：这会将学生数据（姓名已脱敏）发送至境外 AI 服务处理。',
         needsCrossBorderAck: true,
       }
     }

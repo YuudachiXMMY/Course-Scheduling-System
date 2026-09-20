@@ -81,7 +81,9 @@ export async function createRescheduleRequestCore(
   // with a per-(tenant,user) transaction-scoped advisory lock, then re-count and insert inside the txn so
   // the loser sees the winner's committed row. tenantId is kept in every WHERE / on the insert for M1.
   const row = await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:${ctx.userId}`}))`)
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`${ctx.tenantId}:${ctx.userId}`}))`,
+    )
     const [openRow] = await tx
       .select({ value: count() })
       .from(rescheduleRequest)
