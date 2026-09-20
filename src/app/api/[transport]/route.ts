@@ -30,6 +30,15 @@ const authHandler = withMcpAuth(handler, verifyToken, {
   resourceUrl: env.MCP_RESOURCE_URL, // audience validation (anti confused-deputy) when set
 })
 
+// L-mcp: audience (confused-deputy) validation is a silent no-op unless MCP_RESOURCE_URL is set. Warn
+// once at module load so an operator notices the gap rather than it failing open unremarked. The static
+// bearer still gates every call (required:true above), so this is defence-in-depth, not the sole control.
+if (env.MCP_BEARER_TOKEN && !env.MCP_RESOURCE_URL) {
+  console.warn(
+    '[mcp] MCP_RESOURCE_URL 未设置：audience（confused-deputy）校验被跳过；生产环境建议设为公开 MCP URL。',
+  )
+}
+
 // Stateless → only GET + POST (no SSE/DELETE session, no Redis). The [transport] segment is a
 // harmless 2.x holdover; clients POST to /api/mcp.
 export { authHandler as GET, authHandler as POST }

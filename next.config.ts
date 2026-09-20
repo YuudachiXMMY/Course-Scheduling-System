@@ -28,11 +28,19 @@ const nextConfig: NextConfig = {
       },
       {
         source: '/s/:token*',
-        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+          // Token-gated per-student data: never let a shared/browser cache store the rendered page, so
+          // a forwarded/leaked link can't be replayed from cache after the token is revoked.
+          { key: 'Cache-Control', value: 'private, no-store' },
+        ],
       },
       {
         source: '/sec/:token*',
-        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+          { key: 'Cache-Control', value: 'private, no-store' },
+        ],
       },
     ]
   },

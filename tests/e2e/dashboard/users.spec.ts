@@ -32,7 +32,7 @@ test.describe('用户管理', () => {
     await page.getByRole('button', { name: '新建账号' }).click()
     await page.getByPlaceholder('显示名').fill(name)
     await page.getByPlaceholder('登录邮箱').fill(email)
-    await page.getByPlaceholder('密码（至少 8 位）').fill('E2eStaffPw1')
+    await page.getByPlaceholder('密码（至少 12 位）').fill('E2eStaffPw12')
     await page.getByRole('button', { name: '新建', exact: true }).click()
 
     await expect(page.getByText(/已新建账号！登录邮箱：/)).toBeVisible()
@@ -45,7 +45,7 @@ test.describe('用户管理', () => {
     await page.goto('/dashboard/users?tab=parents')
     await page.getByRole('button', { name: '新建用户' }).click()
     await page.getByPlaceholder('显示名').fill(name)
-    await page.getByPlaceholder('密码（至少 8 位）').fill('E2ePortalPw1')
+    await page.getByPlaceholder('密码（至少 12 位）').fill('E2ePortalPw1')
     await page.getByRole('button', { name: '新建', exact: true }).click()
 
     await expect(page.getByText(/已新建！登录邮箱：/)).toBeVisible()
@@ -67,7 +67,7 @@ test.describe('用户管理', () => {
     await page.goto('/dashboard/users?tab=parents')
     await page.getByRole('button', { name: '新建用户' }).click()
     await page.getByPlaceholder('显示名').fill(parentName)
-    await page.getByPlaceholder('密码（至少 8 位）').fill('E2ePortalPw1')
+    await page.getByPlaceholder('密码（至少 12 位）').fill('E2ePortalPw1')
     await page.getByRole('button', { name: '新建', exact: true }).click()
     await expect(page.getByText(/已新建！登录邮箱：/)).toBeVisible()
 

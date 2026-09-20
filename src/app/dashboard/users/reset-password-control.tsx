@@ -23,7 +23,7 @@ export default function ResetPasswordControl({
   function submit() {
     setError(null)
     if (password.length < 8) {
-      setError('密码至少 8 位')
+      setError('密码至少 12 位')
       return
     }
     startTransition(async () => {
@@ -67,7 +67,7 @@ export default function ResetPasswordControl({
       <input
         type="password"
         className="rounded border border-neutral-300 px-2 py-0.5 text-xs"
-        placeholder="新密码（至少 8 位）"
+        placeholder="新密码（至少 12 位）"
         aria-label="新密码"
         value={password}
         onChange={(e) => setPassword(e.target.value)}

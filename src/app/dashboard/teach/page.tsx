@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { requireAuthContext } from '@/auth/context'
-import { requirePermission } from '@/auth/authorize'
+import { requirePagePermission } from '@/auth/authorize'
 import { listCourses, listSections } from '../courses/actions'
 
 // Index: land on the first section of a non-archived course, else an empty-state CTA. The selection
@@ -8,7 +8,7 @@ import { listCourses, listSections } from '../courses/actions'
 // runs when no section is chosen).
 export default async function TeachIndexPage() {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { course: ['list'] })
+  requirePagePermission(ctx, { course: ['list'] })
   const [courses, sections] = await Promise.all([listCourses(), listSections()])
   const archivedCourseIds = new Set(courses.filter((c) => c.isArchived).map((c) => c.id))
   const first = sections.find((s) => !archivedCourseIds.has(s.courseId))

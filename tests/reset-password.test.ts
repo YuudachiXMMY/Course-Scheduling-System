@@ -193,7 +193,7 @@ describe('resetUserPasswordCore — admin password reset (DB integration)', () =
   it('rejects a too-short new password before touching the DB', async () => {
     const target = await mintMember('portal3_reset@x.com', 'parent', org)
     await expect(resetUserPasswordCore(ownerCtx(), target, 'short')).rejects.toThrow(
-      '密码至少 8 位',
+      '密码至少 12 位',
     )
     expect(await verifyPassword(target, 'initial-password-123')).toBe(true)
   })

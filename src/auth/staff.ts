@@ -7,6 +7,7 @@ import { user as userTable, member, session } from '@/db/schema'
 import { deprovisionPortalMember } from '@/auth/provision'
 import { assertCanManageRole } from '@/auth/staff-authz'
 import { STAFF_ROLES } from '@/auth/roles'
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
 import type { AuthContext } from '@/auth/context'
 
 // Staff-account cores for /dashboard/users (teachers/admins tabs). Headless like provision.ts: each takes
@@ -25,7 +26,7 @@ const STAFF_CREATE_KINDS = ['teacher', 'assistant', 'admin'] as const
 const createStaffSchema = z.object({
   name: z.string().trim().min(1, '姓名不能为空').max(100),
   email: z.string().trim().email('请输入有效邮箱').max(100),
-  password: z.string().min(8, '密码至少 8 位'),
+  password: z.string().min(MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE),
   role: z.enum(STAFF_CREATE_KINDS),
 })
 export type CreateStaffInput = z.input<typeof createStaffSchema>
@@ -152,6 +153,17 @@ export async function deactivateStaffCore(ctx: AuthContext, targetUserId: string
   await db.transaction(async (tx) => {
     if (roleList(role).includes('owner') && (await lockUsableOwnerCount(tx, ctx.tenantId)) <= 1) {
       throw new Error('不能停用唯一的负责人')
+    }
+    // L-auth: deactivate flips the GLOBAL user.banned flag and deletes ALL of the user's sessions, so a
+    // user who is staff in more than one org would be locked out of the OTHER orgs too (cross-org
+    // overreach). Refuse for multi-org users — mirrors deprovisionPortalMember's memberships>1 guard.
+    // A per-org membership removal is the fuller fix (deferred); refusing is the safe minimal one.
+    const memberships = await tx
+      .select({ id: member.id })
+      .from(member)
+      .where(eq(member.userId, targetUserId))
+    if (memberships.length > 1) {
+      throw new Error('该用户属于多个机构，不能通过停用（全局封禁）操作；请改用移除成员')
     }
     await tx
       .update(userTable)

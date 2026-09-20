@@ -63,7 +63,7 @@ describe('changeOwnPassword — self-service password change', () => {
       currentPassword: 'old-password-123',
       newPassword: 'short',
     })
-    expect(res).toEqual({ ok: false, error: '密码至少 8 位' })
+    expect(res).toEqual({ ok: false, error: '密码至少 12 位' })
     expect(changePasswordMock).not.toHaveBeenCalled()
   })
 

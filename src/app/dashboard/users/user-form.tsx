@@ -91,7 +91,7 @@ export default function UserForm() {
         <input
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
-          placeholder="密码（至少 8 位）"
+          placeholder="密码（至少 12 位）"
           aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

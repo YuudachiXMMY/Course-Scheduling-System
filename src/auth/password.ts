@@ -5,6 +5,7 @@ import { auth } from '@/auth/auth'
 import { db } from '@/db'
 import { member, account, session } from '@/db/schema'
 import { assertCanManageRole } from '@/auth/staff-authz'
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
 import type { AuthContext } from '@/auth/context'
 
 // Admin "帮忙重置密码" core. Headless like staff.ts (setStaffRoleCore / deactivateStaffCore): the admin
@@ -19,7 +20,7 @@ import type { AuthContext } from '@/auth/context'
 // Tenancy + tiered RBAC guard the target exactly like the staff cores: the target must be a member of the
 // acting org, and assertCanManageRole reserves admin/owner targets for a super admin while still requiring
 // member:create for everyone else (so a non-manager ctx is refused even for a portal target).
-const newPasswordSchema = z.string().min(8, '密码至少 8 位')
+const newPasswordSchema = z.string().min(MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE)
 
 export async function resetUserPasswordCore(
   ctx: AuthContext,
@@ -30,7 +31,7 @@ export async function resetUserPasswordCore(
   // raw serialized ZodError — staff-actions.ts returns e.message verbatim and the control renders it.
   // Mirrors account-actions.ts / provisionPortalAccount's boundary validation.
   const parsed = newPasswordSchema.safeParse(newPassword)
-  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? '密码至少 8 位')
+  if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? PASSWORD_MIN_MESSAGE)
   const password = parsed.data
 
   // Self-guard (mirrors setStaffRoleCore / deactivateStaffCore): the admin-reset path skips the

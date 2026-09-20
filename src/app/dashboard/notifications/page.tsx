@@ -1,5 +1,5 @@
 import { requireAuthContext } from '@/auth/context'
-import { requirePermission } from '@/auth/authorize'
+import { requirePagePermission } from '@/auth/authorize'
 import PushSubscribeButton from '@/components/push-subscribe-button'
 import { listNotifications } from './data'
 import NotificationPanel from './notification-panel'
@@ -7,7 +7,7 @@ import NotificationPanel from './notification-panel'
 // Staff notification center. Two-layer auth — the page gates (below) and each action re-gates.
 export default async function NotificationsPage() {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { notification: ['list'] })
+  requirePagePermission(ctx, { notification: ['list'] })
   const items = await listNotifications(ctx)
 
   return (

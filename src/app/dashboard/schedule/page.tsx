@@ -1,12 +1,12 @@
 import { requireAuthContext } from '@/auth/context'
-import { requirePermission } from '@/auth/authorize'
+import { requirePagePermission } from '@/auth/authorize'
 import { listSections } from '../courses/actions'
 import { listLessonsInRange } from './data'
 import ScheduleCalendar from './calendar'
 
 export default async function SchedulePage() {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { lesson: ['list'] })
+  requirePagePermission(ctx, { lesson: ['list'] })
   // 工作流 E: both the calendar events and the section picker are confined to what this actor may see
   // (teacher → only their own sections/lessons) — listSections() already applies sectionIdsForActor.
   const events = await listLessonsInRange(ctx)

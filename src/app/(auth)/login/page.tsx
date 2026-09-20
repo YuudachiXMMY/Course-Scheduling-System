@@ -36,7 +36,7 @@ export default function LoginPage() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="rounded border border-neutral-300 px-3 py-2"
+          className="rounded border border-neutral-300 px-3 py-2 text-base"
           autoComplete="email"
         />
       </label>
@@ -47,7 +47,7 @@ export default function LoginPage() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="rounded border border-neutral-300 px-3 py-2"
+          className="rounded border border-neutral-300 px-3 py-2 text-base"
           autoComplete="current-password"
         />
       </label>

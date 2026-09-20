@@ -21,7 +21,7 @@ export default function ChangePasswordForm() {
     setError(null)
     setOk(false)
     if (newPassword.length < 8) {
-      setError('新密码至少 8 位')
+      setError('新密码至少 12 位')
       return
     }
     if (newPassword !== confirm) {
@@ -62,7 +62,7 @@ export default function ChangePasswordForm() {
         />
       </label>
       <label className="flex flex-col gap-1 text-sm">
-        新密码（至少 8 位）
+        新密码（至少 12 位）
         <input
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
