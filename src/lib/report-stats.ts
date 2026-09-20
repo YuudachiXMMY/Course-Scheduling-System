@@ -57,3 +57,25 @@ export function averageScore(scores: (number | null)[]): number | null {
   if (present.length === 0) return null
   return Math.round((present.reduce((a, b) => a + b, 0) / present.length) * 10) / 10
 }
+
+// Bound the note text that flows into the LLM prompt. Shared notes can be arbitrarily long Markdown/
+// LaTeX, so even a capped COUNT of notes can balloon a single draft to hundreds of KB — inflating token
+// cost and latency, and (with H4's timeout) risking a slow/failed draft. Cap each note and the running
+// total, preserving order (callers pass most-recent-first). Pure + client-safe so it stays unit-testable.
+export function capNotesForPrompt(
+  bodies: string[],
+  opts: { maxTotalChars?: number; maxPerNote?: number } = {},
+): string[] {
+  const maxTotal = opts.maxTotalChars ?? 20_000
+  const maxPer = opts.maxPerNote ?? 4_000
+  const out: string[] = []
+  let used = 0
+  for (const raw of bodies) {
+    if (used >= maxTotal) break
+    const perCap = Math.min(maxPer, maxTotal - used)
+    const body = raw.length > perCap ? raw.slice(0, perCap) : raw
+    out.push(body)
+    used += body.length
+  }
+  return out
+}

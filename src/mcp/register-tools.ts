@@ -47,7 +47,7 @@ const fail = (text: string) => ({ content: [{ type: 'text' as const, text }], is
 
 // Central error → MCP-content mapping. Every tool body runs inside this so AuthError / ConflictError
 // / ZodError / plain business-rule Errors surface as clean isError text, never a leaked stack.
-async function runTool(fn: () => Promise<ReturnType<typeof ok> | ReturnType<typeof fail>>) {
+export async function runTool(fn: () => Promise<ReturnType<typeof ok> | ReturnType<typeof fail>>) {
   try {
     return await fn()
   } catch (e) {
@@ -65,8 +65,34 @@ async function runTool(fn: () => Promise<ReturnType<typeof ok> | ReturnType<type
     if (e instanceof ConflictError) return fail('时间冲突，无法保存')
     if (e instanceof z.ZodError)
       return fail(`参数校验失败：${e.issues.map((i) => i.message).join('；')}`)
+    // CWE-209: a raw database error message leaks table/column/constraint names (schema recon). The
+    // `postgres` driver's errors carry a SQLSTATE `code` + `routine`, unlike our intentional business
+    // Errors (e.g. `new Error('班级不存在')`) which are safe, curated, user-facing messages. Redact ONLY
+    // the former (logged server-side); pass the latter through so the model still gets actionable text.
+    if (isDatabaseError(e)) {
+      console.error('[mcp] database error', e)
+      return fail('操作失败，请稍后再试')
+    }
     return fail(e instanceof Error ? e.message : '未知错误')
   }
+}
+
+// True for any schema-leaking database error, walking the `.cause` chain. Two shapes leak:
+//   1. drizzle-orm wraps EVERY query error in a DrizzleQueryError whose message is
+//      "Failed query: <full SQL with real table/column names>\nparams: <bound values>" — schema recon +
+//      possible PII — and carries `query`/`params`; the raw driver error is stashed on `.cause`.
+//   2. the underlying `postgres` driver error carries a SQLSTATE `code` + server `routine`.
+// Our own business errors (e.g. `new Error('班级不存在')`) have none of these, so their curated messages
+// still pass through. Redacting when a DB error appears anywhere in the cause chain is the safe default.
+function isDatabaseError(e: unknown): boolean {
+  for (let cur: unknown = e, depth = 0; cur != null && depth < 5; depth++) {
+    if (typeof cur !== 'object') break
+    const o = cur as Record<string, unknown>
+    if ('query' in o && 'params' in o) return true // DrizzleQueryError wrapper
+    if (typeof o.code === 'string' && 'routine' in o) return true // raw postgres driver error
+    cur = o.cause
+  }
+  return false
 }
 
 // P6-4/5/6/7: every tool follows resolveMcpAuthContext → requirePermission → (parse) → forTenant/core.

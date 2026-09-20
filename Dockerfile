@@ -42,6 +42,13 @@ RUN node_modules/.bin/esbuild scripts/migrate.ts \
       --bundle --platform=node --format=esm --target=node24 \
       --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
       --external:cloudflare:sockets --outfile=dist/migrate.mjs
+# B1: self-contained orphan-tenant cleanup, run by the entrypoint BEFORE migrate so an upgrade of a DB
+# holding orphan tenant_id rows no longer crash-loops at 0016. Same shape as migrate (postgres + dotenv
+# only, no @/ imports), so the same bundle flags apply.
+RUN node_modules/.bin/esbuild scripts/cleanup-orphan-tenants.ts \
+      --bundle --platform=node --format=esm --target=node24 \
+      --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
+      --external:cloudflare:sockets --outfile=dist/cleanup-orphan-tenants.mjs
 # Self-contained admin seed: bundle better-auth + drizzle + postgres into one .mjs. Unlike migrate,
 # seed-admin reuses @/db & @/auth/auth, which transitively `import 'server-only'` — the extra
 # --conditions=react-server resolves that to an empty module (same trick as db:seed:e2e) so the bundle
@@ -82,6 +89,7 @@ COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright ./node_modu
 COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright-core ./node_modules/playwright-core
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/dist/migrate.mjs ./dist/migrate.mjs
+COPY --from=build --chown=nextjs:nodejs /app/dist/cleanup-orphan-tenants.mjs ./dist/cleanup-orphan-tenants.mjs
 COPY --from=build --chown=nextjs:nodejs /app/dist/seed-admin.mjs ./dist/seed-admin.mjs
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=build --chown=nextjs:nodejs /app/docker/entrypoint.sh ./entrypoint.sh
