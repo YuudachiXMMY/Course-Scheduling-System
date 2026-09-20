@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { changeOwnPassword } from '@/auth/account-actions'
+import { MIN_PASSWORD_LENGTH } from '@/auth/password-policy'
 
 // Self-service "输入当前密码修改" form, shared by /dashboard/account (staff) and /portal/account
 // (parent/student). Client-side we only guard the obvious (new === confirm, min length) for fast feedback;
@@ -20,8 +21,8 @@ export default function ChangePasswordForm() {
   function submit() {
     setError(null)
     setOk(false)
-    if (newPassword.length < 8) {
-      setError('新密码至少 12 位')
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setError(`新密码至少 ${MIN_PASSWORD_LENGTH} 位`)
       return
     }
     if (newPassword !== confirm) {

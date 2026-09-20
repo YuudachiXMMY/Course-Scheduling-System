@@ -178,6 +178,16 @@ export async function deactivateStaffCore(ctx: AuthContext, targetUserId: string
 export async function reactivateStaffCore(ctx: AuthContext, targetUserId: string): Promise<void> {
   const role = await requireStaffTarget(ctx, targetUserId)
   assertCanManageRole(ctx, role)
+  // L-auth: symmetric with deactivateStaffCore's multi-org refuse. Reactivate clears the GLOBAL
+  // user.banned flag, so for a multi-org user it would silently lift a ban another org may have
+  // imposed (based on conduct THIS org can't see). Refuse for multi-org users.
+  const memberships = await db
+    .select({ id: member.id })
+    .from(member)
+    .where(eq(member.userId, targetUserId))
+  if (memberships.length > 1) {
+    throw new Error('该用户属于多个机构，不能在此清除全局封禁（可能撤销其它机构的处置）；请联系平台管理员')
+  }
   await db
     .update(userTable)
     .set({ banned: false, banReason: null, banExpires: null })

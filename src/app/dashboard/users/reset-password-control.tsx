@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { resetUserPassword } from './staff-actions'
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
 
 // Per-row "重置密码" control for the users page (all four tabs). Serializable props only (no function
 // props) so an RSC tab can render it. The server tab decides WHETHER to render it (tier + self visibility);
@@ -22,8 +23,8 @@ export default function ResetPasswordControl({
 
   function submit() {
     setError(null)
-    if (password.length < 8) {
-      setError('密码至少 12 位')
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(PASSWORD_MIN_MESSAGE)
       return
     }
     startTransition(async () => {

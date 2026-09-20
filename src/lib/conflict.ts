@@ -1,10 +1,18 @@
 import 'server-only'
 import { and, eq, ne, sql } from 'drizzle-orm'
 import { DateTime } from 'luxon'
+import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { lesson } from '@/db/schema'
 import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
+
+// H7: optional transaction executor threaded from the schedule cores. When approveRescheduleRequestCore
+// runs the move inside a db.transaction, these read-only pre-checks MUST use that same `tx` connection —
+// otherwise they borrow a SECOND connection from the shared pool while the txn still reserves the first,
+// and ~pool-size concurrent approvals deadlock the pool (postgres-js has no acquire timeout). Defaults to
+// the module db for every other caller (byte-identical).
+type Exec = Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'>
 
 export interface ConflictSummary {
   id: string
@@ -35,12 +43,13 @@ export async function checkTeacherConflict(
     // recurrenceTimezone by the schedule cores; defaults to APP_TIME_ZONE (the app-wide default).
     zone?: string
   },
+  exec: Exec = db,
 ): Promise<ConflictCheck> {
   const { teacherId, startAt, endAt, excludeLessonId, zone } = args
   // Bind the bounds as ISO strings with explicit casts: postgres.js can't infer the param type
   // inside tstzrange(...) and fails to serialize a bare Date there.
   const overlaps = sql`tstzrange(${lesson.startAt}, ${lesson.endAt}, '[)') && tstzrange(${startAt.toISOString()}::timestamptz, ${endAt.toISOString()}::timestamptz, '[)')`
-  const rows = await forTenant(ctx).select(
+  const rows = await forTenant(ctx, exec).select(
     lesson,
     and(
       eq(lesson.teacherId, teacherId),
@@ -56,7 +65,7 @@ export async function checkTeacherConflict(
     endAt: r.endAt,
   }))
   const suggestions = conflicts.length
-    ? await suggestFreeSlots(ctx, { teacherId, startAt, endAt, zone })
+    ? await suggestFreeSlots(ctx, { teacherId, startAt, endAt, zone }, exec)
     : []
   return { hasConflict: conflicts.length > 0, conflicts, suggestions }
 }
@@ -66,6 +75,7 @@ export async function checkTeacherConflict(
 export async function suggestFreeSlots(
   ctx: AuthContext,
   args: { teacherId: string; startAt: Date; endAt: Date; zone?: string },
+  exec: Exec = db,
 ): Promise<Date[]> {
   const zone = args.zone ?? APP_TIME_ZONE
   const durationMs = args.endAt.getTime() - args.startAt.getTime()
@@ -76,7 +86,7 @@ export async function suggestFreeSlots(
   // lesson beginning before dayStart (e.g. 07:30–08:30) still occupies early slots; filtering by
   // startAt alone missed it and wrongly offered 08:00/08:30 as free. Mirror checkTeacherConflict's
   // tstzrange overlap (half-open '[)') and its explicit ::timestamptz casts (postgres.js param typing).
-  const busy = await forTenant(ctx).select(
+  const busy = await forTenant(ctx, exec).select(
     lesson,
     and(
       eq(lesson.teacherId, args.teacherId),

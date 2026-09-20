@@ -1,6 +1,7 @@
 import 'server-only'
 import { and, eq, gte, inArray, lt, ne } from 'drizzle-orm'
 import { DateTime } from 'luxon'
+import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { sectionIdsForActor } from '@/auth/scope'
 import { lesson, classSection, course, enrollment, student } from '@/db/schema'
@@ -86,18 +87,25 @@ export async function listLessonsInRange(
 export async function hydrateLessonEvent(
   ctx: AuthContext,
   row: typeof lesson.$inferSelect,
+  // H7: optional transaction executor. When called from rescheduleLessonCore inside the approve
+  // transaction, this MUST reuse that `tx` connection — otherwise these 4 reads borrow extra pool
+  // connections while the txn holds one, risking pool-exhaustion deadlock under concurrent approvals.
+  // Defaults to the module db for every other caller (byte-identical).
+  exec: Pick<typeof db, 'select' | 'insert' | 'update' | 'delete'> = db,
 ): Promise<CalendarEvent> {
-  const section = await forTenant(ctx).findById(classSection, row.sectionId)
-  const parentCourse = section ? await forTenant(ctx).findById(course, section.courseId) : null
+  const section = await forTenant(ctx, exec).findById(classSection, row.sectionId)
+  const parentCourse = section
+    ? await forTenant(ctx, exec).findById(course, section.courseId)
+    : null
   const courseTitle = parentCourse?.title ?? null
 
-  const enrolls = await forTenant(ctx).select(
+  const enrolls = await forTenant(ctx, exec).select(
     enrollment,
     and(eq(enrollment.sectionId, row.sectionId), eq(enrollment.status, 'active')),
   )
   const studentIds = [...new Set(enrolls.map((e) => e.studentId))]
   const students = studentIds.length
-    ? await forTenant(ctx).select(student, inArray(student.id, studentIds))
+    ? await forTenant(ctx, exec).select(student, inArray(student.id, studentIds))
     : []
   const nameByStudent = new Map(students.map((s) => [s.id, s.name]))
   const studentNames = enrolls.map((e) => nameByStudent.get(e.studentId) ?? e.studentId)

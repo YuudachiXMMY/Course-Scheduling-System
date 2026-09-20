@@ -121,13 +121,19 @@ export async function rescheduleLessonCore(
   const section = await forTenant(ctx, exec).findById(classSection, existing.sectionId)
   const zone = section?.recurrenceTimezone ?? ZONE
 
-  const check = await checkTeacherConflict(ctx, {
-    teacherId: existing.teacherId,
-    startAt: data.startAt,
-    endAt: data.endAt,
-    excludeLessonId: data.id, // don't conflict with itself
-    zone,
-  })
+  // H7: thread `exec` into the conflict pre-check too, so inside the approve transaction it reads on the
+  // SAME tx connection (no second pool borrow → no pool-exhaustion deadlock; and a consistent snapshot).
+  const check = await checkTeacherConflict(
+    ctx,
+    {
+      teacherId: existing.teacherId,
+      startAt: data.startAt,
+      endAt: data.endAt,
+      excludeLessonId: data.id, // don't conflict with itself
+      zone,
+    },
+    exec,
+  )
   if (check.hasConflict) {
     return {
       ok: false,
@@ -143,7 +149,9 @@ export async function rescheduleLessonCore(
       endAt: data.endAt,
       isException: true, // moved off the pattern (P2-8)
     })
-    return { ok: true, event: await hydrateLessonEvent(ctx, row) }
+    // H7: hydrate on the same `exec` too — otherwise its 4 reads borrow extra pool connections inside
+    // the transaction.
+    return { ok: true, event: await hydrateLessonEvent(ctx, row, exec) }
   } catch (e) {
     if (isExclusionViolation(e)) throw new ConflictError()
     throw e

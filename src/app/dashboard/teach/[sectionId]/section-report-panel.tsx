@@ -89,7 +89,11 @@ export default function SectionReportPanel({
     }
     setErr(null)
     startTransition(async () => {
-      await submitDraft()
+      try {
+        await submitDraft()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
+      }
     })
   }
 
@@ -103,7 +107,11 @@ export default function SectionReportPanel({
         return
       }
       setNeedsAck(false)
-      await submitDraft()
+      try {
+        await submitDraft()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
+      }
     })
   }
 
