@@ -17,6 +17,16 @@ describe('parseCrossBorderAck', () => {
     expect(parseCrossBorderAck(JSON.stringify({ aiCrossBorderAckAt: 123 }))).toBeNull()
   })
 
+  // Regression: JSON.parse can yield non-object values (string/number/array/bool). The parser must
+  // runtime-narrow before indexing — a blind `as Record<...>` cast would lie about the shape.
+  it('returns null for valid JSON that is not an object', () => {
+    expect(parseCrossBorderAck('"just-a-string"')).toBeNull()
+    expect(parseCrossBorderAck('42')).toBeNull()
+    expect(parseCrossBorderAck('true')).toBeNull()
+    expect(parseCrossBorderAck('null')).toBeNull()
+    expect(parseCrossBorderAck(JSON.stringify(['2026-09-20T12:00:00.000Z']))).toBeNull()
+  })
+
   it('parses a stored ISO timestamp back into a Date', () => {
     const iso = '2026-09-20T12:00:00.000Z'
     const d = parseCrossBorderAck(JSON.stringify({ aiCrossBorderAckAt: iso }))

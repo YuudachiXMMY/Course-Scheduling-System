@@ -32,8 +32,11 @@ export class CrossBorderAiAckRequiredError extends Error {
 export function parseCrossBorderAck(metadata: string | null): Date | null {
   if (!metadata) return null
   try {
-    const obj = JSON.parse(metadata) as Record<string, unknown> | null
-    const v = obj?.[ACK_KEY]
+    // JSON.parse 可返回任意 JSON 值（字符串/数字/数组…），不能盲 cast 成对象。先运行时收窄，
+    // 与 withCrossBorderAck 的解析保持一致。
+    const parsed: unknown = JSON.parse(metadata)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const v = (parsed as Record<string, unknown>)[ACK_KEY]
     if (typeof v !== 'string') return null
     const d = new Date(v)
     return Number.isNaN(d.getTime()) ? null : d
@@ -82,8 +85,19 @@ export async function requireCrossBorderAiAck(ctx: AuthContext): Promise<void> {
 }
 
 export async function acknowledgeCrossBorderAiCore(ctx: AuthContext): Promise<void> {
-  const current = await readOrgMetadata(ctx)
-  if (parseCrossBorderAck(current)) return // idempotent: already acknowledged
-  const next = withCrossBorderAck(current, new Date(), ctx.userId)
-  await db.update(organization).set({ metadata: next }).where(eq(organization.id, ctx.tenantId))
+  // organization.metadata 是单一共享 JSON 列，withCrossBorderAck 会 merge 进读到的旧值。裸读-改-写
+  // 在并发写入下会丢更新（后提交者覆盖前者对 metadata 任意键的改动）。用事务 + SELECT ... FOR UPDATE
+  // 锁住该行：并发写者串行等待并在拿锁后重读到已 ack 的值 → 命中幂等短路，不会互相覆盖。
+  await db.transaction(async (tx) => {
+    const [org] = await tx
+      .select({ metadata: organization.metadata })
+      .from(organization)
+      .where(eq(organization.id, ctx.tenantId))
+      .limit(1)
+      .for('update')
+    const current = org?.metadata ?? null
+    if (parseCrossBorderAck(current)) return // idempotent: already acknowledged
+    const next = withCrossBorderAck(current, new Date(), ctx.userId)
+    await tx.update(organization).set({ metadata: next }).where(eq(organization.id, ctx.tenantId))
+  })
 }
