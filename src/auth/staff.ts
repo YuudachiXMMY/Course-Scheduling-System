@@ -190,7 +190,9 @@ export async function reactivateStaffCore(ctx: AuthContext, targetUserId: string
       .from(member)
       .where(eq(member.userId, targetUserId))
     if (memberships.length > 1) {
-      throw new Error('该用户属于多个机构，不能在此清除全局封禁（可能撤销其它机构的处置）；请联系平台管理员')
+      throw new Error(
+        '该用户属于多个机构，不能在此清除全局封禁（可能撤销其它机构的处置）；请联系平台管理员',
+      )
     }
     await tx
       .update(userTable)

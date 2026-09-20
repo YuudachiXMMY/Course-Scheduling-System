@@ -33,10 +33,7 @@ export type TenantExecutor = Pick<typeof db, 'select' | 'insert' | 'update' | 'd
 // but a caller inside db.transaction(tx => …) can pass `tx` so its scoped reads/writes join that ONE
 // transaction — letting reschedule's claim+move commit or roll back atomically. Only the query-builder
 // methods forTenant uses are required, and both `db` and a drizzle `tx` satisfy them.
-export function forTenant(
-  ctx: AuthContext,
-  exec: TenantExecutor = db,
-) {
+export function forTenant(ctx: AuthContext, exec: TenantExecutor = db) {
   const scope = (t: TenantTable) => eq(t.tenantId, ctx.tenantId)
   return {
     select<T extends TenantTable>(t: T, extra?: SQL): TenantSelect<T['$inferSelect']> {
