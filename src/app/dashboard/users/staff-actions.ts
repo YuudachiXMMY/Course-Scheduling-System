@@ -11,6 +11,13 @@ import {
   type CreateStaffInput,
 } from '@/auth/staff'
 import { resetUserPasswordCore } from '@/auth/password'
+import { consumeRateLimit } from '@/lib/rate-limit'
+
+// Throttle admin password resets per acting user. No secret is guessed here (the admin sets the new
+// password), so this is abuse/spam containment rather than anti-brute-force: a hijacked manager session
+// cannot script a mass reset of every account in the org. 20 / 15 min comfortably covers hands-on admin
+// use while bounding automated abuse.
+const RESET_PW_LIMIT = { limit: 20, windowMs: 15 * 60_000 }
 
 // Staff-management Server Actions (teachers/admins tabs). Five-step boundary: trusted principal →
 // COARSE gate (member:create — is this actor a manager at all; teacher/assistant fail here) → FINE
@@ -77,6 +84,10 @@ export async function resetUserPassword(
   const ctx = await requireAuthContext()
   try {
     requirePermission(ctx, { member: ['create'] })
+    const gate = consumeRateLimit(`reset-pw:${ctx.userId}`, RESET_PW_LIMIT)
+    if (!gate.allowed) {
+      return { ok: false, error: `操作过于频繁，请 ${Math.ceil(gate.retryAfterMs / 1000)} 秒后再试` }
+    }
     await resetUserPasswordCore(ctx, targetUserId, newPassword)
     revalidatePath('/dashboard/users')
     return { ok: true }

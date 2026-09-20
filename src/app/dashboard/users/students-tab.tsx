@@ -1,5 +1,6 @@
 import { requireAuthContext } from '@/auth/context'
 import { can, requirePermission } from '@/auth/authorize'
+import { hasRole } from '@/auth/roles'
 import { env } from '@/env'
 import { listStudents } from '../students/actions'
 import { getActiveShare } from '../students/share-data'
@@ -39,12 +40,7 @@ export default async function StudentsTab() {
   // Student-role portal logins get their OWN management list on this tab (the 家长 tab now shows parents
   // only). Derived from portalUsers (already fetched) — comma-multi aware, so a 'parent,student' account
   // still surfaces here as well as on 家长.
-  const studentAccounts = portalUsers.filter((u) =>
-    u.role
-      .split(',')
-      .map((r) => r.trim())
-      .includes('student'),
-  )
+  const studentAccounts = portalUsers.filter((u) => hasRole(u.role, 'student'))
 
   return (
     <section className="flex flex-col gap-6">

@@ -19,9 +19,13 @@ vi.mock('@/auth/context', () => ({
 }))
 
 import { changeOwnPassword } from '@/auth/account-actions'
+import { __clearAllRateLimits } from '@/lib/rate-limit'
 
 beforeEach(() => {
   changePasswordMock.mockReset()
+  // The action throttles per user in module-level memory; clear it so one test's attempts never bleed
+  // into another's.
+  __clearAllRateLimits()
 })
 
 describe('changeOwnPassword — self-service password change', () => {
@@ -71,5 +75,40 @@ describe('changeOwnPassword — self-service password change', () => {
     })
     expect(res.ok).toBe(false)
     if (!res.ok) expect(res.error).toBeTruthy()
+  })
+
+  it('throttles repeated wrong-password guesses (anti-brute-force) without touching auth once blocked', async () => {
+    // Every guess is wrong → INVALID_PASSWORD. The limit is 5 / 15min; the 6th rapid attempt must be
+    // turned away BEFORE auth is called, so a stolen session cannot script unlimited guesses.
+    changePasswordMock.mockRejectedValue({ body: { code: 'INVALID_PASSWORD' } })
+    for (let i = 0; i < 5; i++) {
+      const r = await changeOwnPassword({ currentPassword: `guess-${i}-xx`, newPassword: 'new-password-456' })
+      expect(r).toEqual({ ok: false, error: '当前密码不正确' })
+    }
+    expect(changePasswordMock).toHaveBeenCalledTimes(5)
+    const blocked = await changeOwnPassword({ currentPassword: 'guess-6-xx', newPassword: 'new-password-456' })
+    expect(blocked.ok).toBe(false)
+    if (!blocked.ok) expect(blocked.error).toContain('尝试过于频繁')
+    // auth was NOT consulted for the blocked attempt
+    expect(changePasswordMock).toHaveBeenCalledTimes(5)
+  })
+
+  it('a successful change clears the throttle counter', async () => {
+    changePasswordMock.mockRejectedValue({ body: { code: 'INVALID_PASSWORD' } })
+    // burn 4 failed attempts (under the limit of 5)
+    for (let i = 0; i < 4; i++) {
+      await changeOwnPassword({ currentPassword: `guess-${i}-xx`, newPassword: 'new-password-456' })
+    }
+    // now succeed → counter resets
+    changePasswordMock.mockReset()
+    changePasswordMock.mockResolvedValueOnce({ token: 'new' })
+    const ok = await changeOwnPassword({ currentPassword: 'right-one-123', newPassword: 'new-password-456' })
+    expect(ok).toEqual({ ok: true })
+    // 5 fresh attempts are allowed again (would have been blocked on the 1st if the counter hadn't reset)
+    changePasswordMock.mockReset()
+    changePasswordMock.mockRejectedValue({ body: { code: 'INVALID_PASSWORD' } })
+    const r = await changeOwnPassword({ currentPassword: 'guess-again-1', newPassword: 'new-password-456' })
+    expect(r).toEqual({ ok: false, error: '当前密码不正确' })
+    expect(changePasswordMock).toHaveBeenCalledTimes(1)
   })
 })

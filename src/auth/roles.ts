@@ -35,6 +35,16 @@ export function roleLabel(role: string): string {
     .join(' / ')
 }
 
+// True if a member's (comma-multi) role list contains `target`. The single home for the comma-split
+// membership test that the users tabs need — the 家长/学生 tab split in data.ts and the studentAccounts
+// derivation in students-tab.tsx both call it, so the parsing rule lives in exactly one place.
+export function hasRole(role: string, target: string): boolean {
+  return role
+    .split(',')
+    .map((r) => r.trim())
+    .includes(target)
+}
+
 // True if ANY of the member's (comma-multi) roles is owner/admin — i.e. an admin-tier account that only
 // a super admin may create/change/deactivate.
 export function isAdminRole(role: string): boolean {

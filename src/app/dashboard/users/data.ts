@@ -4,6 +4,7 @@ import { db } from '@/db'
 import { member, user, portalLink, student } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { isPortalRole } from '@/auth/portal'
+import { hasRole } from '@/auth/roles'
 import type { AuthContext } from '@/auth/context'
 
 export type PortalUserRow = {
@@ -46,10 +47,7 @@ export async function listPortalUsers(
   const portalUsers = rows.filter((r) => {
     if (!isPortalRole(r.role)) return false
     if (!opts?.kind) return true
-    return r.role
-      .split(',')
-      .map((x) => x.trim())
-      .includes(opts.kind)
+    return hasRole(r.role, opts.kind)
   })
   if (portalUsers.length === 0) return []
 
