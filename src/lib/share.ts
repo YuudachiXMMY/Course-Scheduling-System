@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import { db } from '@/db'
 import { shareLink, sectionShareLink, enrollment, lesson, classSection, course } from '@/db/schema'
 import { type FeedLesson, feedWindow, sectionDisplayName } from '@/lib/ical-feed'
@@ -86,7 +86,14 @@ export async function getShareByToken(token: string) {
   const [row] = await db
     .select()
     .from(shareLink)
-    .where(and(eq(shareLink.token, token), isNull(shareLink.revokedAt)))
+    .where(
+      and(
+        eq(shareLink.token, token),
+        isNull(shareLink.revokedAt),
+        // H6: expired tokens 404 like revoked ones. NULL expiry = never expires (grandfathered).
+        or(isNull(shareLink.expiresAt), gt(shareLink.expiresAt, new Date())),
+      ),
+    )
     .limit(1)
   return row ?? null
 }
@@ -144,7 +151,14 @@ export async function getSectionShareByToken(token: string) {
   const [row] = await db
     .select()
     .from(sectionShareLink)
-    .where(and(eq(sectionShareLink.token, token), isNull(sectionShareLink.revokedAt)))
+    .where(
+      and(
+        eq(sectionShareLink.token, token),
+        isNull(sectionShareLink.revokedAt),
+        // H6: expired tokens 404 like revoked ones. NULL expiry = never expires (grandfathered).
+        or(isNull(sectionShareLink.expiresAt), gt(sectionShareLink.expiresAt, new Date())),
+      ),
+    )
     .limit(1)
   return row ?? null
 }

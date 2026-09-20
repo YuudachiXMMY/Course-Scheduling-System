@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, or } from 'drizzle-orm'
 import { db } from '@/db'
 import { calendarFeed } from '@/db/schema'
 import { getFeedLessons, buildIcs } from '@/lib/ical-feed'
@@ -14,7 +14,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const [feed] = await db
     .select()
     .from(calendarFeed)
-    .where(and(eq(calendarFeed.token, token), isNull(calendarFeed.revokedAt)))
+    .where(
+      and(
+        eq(calendarFeed.token, token),
+        isNull(calendarFeed.revokedAt),
+        // H6: an expired feed 404s like a revoked one. NULL expiry = never expires (grandfathered).
+        or(isNull(calendarFeed.expiresAt), gt(calendarFeed.expiresAt, new Date())),
+      ),
+    )
     .limit(1)
   if (!feed) return new Response('Not found', { status: 404 })
 

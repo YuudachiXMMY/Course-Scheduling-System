@@ -8,6 +8,7 @@ import { requirePermission } from '@/auth/authorize'
 import { isWholeTenantActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { calendarFeed } from '@/db/schema'
+import { defaultShareExpiry, isTokenTimeActive } from '@/lib/share-ttl'
 
 type Feed = typeof calendarFeed.$inferSelect
 
@@ -44,12 +45,19 @@ export async function getOrCreateFeed(): Promise<{ token: string }> {
   requirePermission(ctx, { lesson: ['read'] })
 
   const existing = await findActiveFeed(ctx)
-  if (existing) return { token: existing.token }
+  if (existing) {
+    // H6: active-but-expired → renew in place (same token) so an existing subscription URL keeps working.
+    if (!isTokenTimeActive(existing.expiresAt)) {
+      await forTenant(ctx).update(calendarFeed, existing.id, { expiresAt: defaultShareExpiry() })
+    }
+    return { token: existing.token }
+  }
 
   const [created] = await forTenant(ctx).insert(calendarFeed, {
     token: nanoid(32),
     label: '我的教学日历',
     teacherId: feedOwnerId(ctx), // 按 owner 维度接线：section-scoped 教师→自己，whole-tenant→null
+    expiresAt: defaultShareExpiry(),
   })
   revalidatePath('/dashboard/calendar')
   return { token: created.token }
@@ -63,17 +71,22 @@ export async function rotateFeed(): Promise<{ token: string }> {
 
   const existing = await findActiveFeed(ctx)
   const token = nanoid(32)
+  // H6: a rotate mints a fresh token → give it a fresh TTL.
   if (!existing) {
     const [created] = await forTenant(ctx).insert(calendarFeed, {
       token,
       label: '我的教学日历',
       teacherId: feedOwnerId(ctx), // 无现存 feed 时新建，仍按 owner 维度接线
+      expiresAt: defaultShareExpiry(),
     })
     revalidatePath('/dashboard/calendar')
     return { token: created.token }
   }
 
-  const [updated] = await forTenant(ctx).update(calendarFeed, existing.id, { token })
+  const [updated] = await forTenant(ctx).update(calendarFeed, existing.id, {
+    token,
+    expiresAt: defaultShareExpiry(),
+  })
   revalidatePath('/dashboard/calendar')
   return { token: updated.token }
 }

@@ -11,6 +11,7 @@ import {
   getActiveSectionShare,
   ensureActiveSectionShare,
 } from '@/app/dashboard/teach/[sectionId]/section-share-data'
+import { defaultShareExpiry } from '@/lib/share-ttl'
 
 // One active (non-revoked) share per section. `sectionShareLink` is a NORMAL tenant table here —
 // only the PUBLIC page (src/app/sec/[token]/page.tsx via src/lib/share.ts) bypasses forTenant().
@@ -38,17 +39,22 @@ export async function rotateSectionShare(sectionId: string): Promise<{ token: st
 
   const existing = await getActiveSectionShare(ctx, sectionId)
   const token = nanoid(32)
+  // H6: a rotate mints a fresh token → give it a fresh TTL.
   if (!existing) {
     const [created] = await forTenant(ctx).insert(sectionShareLink, {
       sectionId,
       token,
       label: '班级课表分享',
+      expiresAt: defaultShareExpiry(),
     })
     revalidatePath('/dashboard/teach/' + sectionId)
     return { token: created.token }
   }
 
-  const [updated] = await forTenant(ctx).update(sectionShareLink, existing.id, { token })
+  const [updated] = await forTenant(ctx).update(sectionShareLink, existing.id, {
+    token,
+    expiresAt: defaultShareExpiry(),
+  })
   revalidatePath('/dashboard/teach/' + sectionId)
   return { token: updated.token }
 }
