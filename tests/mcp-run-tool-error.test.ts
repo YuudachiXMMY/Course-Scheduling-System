@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { runTool } from '@/mcp/register-tools'
 import { AuthError } from '@/auth/context'
+import { BusinessError } from '@/lib/errors'
 
 // CWE-209: the MCP tool error wrapper must not echo raw internal errors (a Drizzle/Postgres message
 // leaks table/column/constraint names) to the connected model. Known, safe errors keep their curated
@@ -38,10 +39,13 @@ describe('runTool error mapping', () => {
       {
         query: 'insert into "lesson" ("tenant_id","section_id","start_at") values ($1,$2,$3)',
         params: ['org_x', 'sec_y', '2026-01-01'],
-        cause: Object.assign(new Error('null value in column "start_at" violates not-null constraint'), {
-          code: '23502',
-          routine: 'ExecConstraints',
-        }),
+        cause: Object.assign(
+          new Error('null value in column "start_at" violates not-null constraint'),
+          {
+            code: '23502',
+            routine: 'ExecConstraints',
+          },
+        ),
       },
     )
     const res = await runTool(async () => {
@@ -55,12 +59,27 @@ describe('runTool error mapping', () => {
     spy.mockRestore()
   })
 
-  it('passes an intentional business error message through (e.g. 班级不存在)', async () => {
+  it('passes an intentional BusinessError message through (e.g. 班级不存在)', async () => {
     const res = await runTool(async () => {
-      throw new Error('班级不存在')
+      throw new BusinessError('班级不存在')
     })
     expect(isError(res)).toBe(true)
     expect(text(res)).toBe('班级不存在')
+  })
+
+  it('redacts a plain non-curated Error (a bug) — its raw message must NOT leak to the model', async () => {
+    // L-cwe209 narrowing: only a BusinessError is surfaced. A stray `new Error(...)` / TypeError from an
+    // unexpected code path is an INTERNAL fault whose message could reveal internals, so it collapses to
+    // the generic line and is logged server-side — closing the old `fail(e.message)` catch-all.
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const res = await runTool(async () => {
+      throw new TypeError("Cannot read properties of null (reading 'foo')")
+    })
+    expect(isError(res)).toBe(true)
+    expect(text(res)).toBe('操作失败，请稍后再试')
+    expect(text(res)).not.toContain('null')
+    expect(spy).toHaveBeenCalled()
+    spy.mockRestore()
   })
 
   it('keeps the curated message for a known AuthError', async () => {

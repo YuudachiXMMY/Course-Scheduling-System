@@ -47,6 +47,12 @@ jobs:
       - name: Install deps (host)
         run: npm ci --no-audit --no-fund
 
+      # H5: tenant-isolation guard — fail fast if raw `db.{select,insert,update,delete}(` appears outside
+      # the forTenant spine / audited allowlist (Postgres RLS is deferred per ADR 0001; this is the
+      # transitional mechanical backstop the vitest behavioural suite cannot provide for NEW bypass routes).
+      - name: Tenant-isolation guard
+        run: npx tsx scripts/check-tenant-db-access.ts
+
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 

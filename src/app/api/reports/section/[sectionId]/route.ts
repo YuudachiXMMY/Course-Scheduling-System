@@ -8,6 +8,7 @@ import { forTenant } from '@/db/tenant'
 import { classSection, enrollment, progressReport, student } from '@/db/schema'
 import { getReportViewModel } from '@/lib/report-core'
 import { renderReportPdf } from '@/lib/report-pdf'
+import { consumeRateLimit } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,6 +17,11 @@ export const dynamic = 'force-dynamic'
 // PDF renders, so an oversized section can't monopolize the single-VPS worker and pile up an unbounded
 // queue behind the mutex.
 const MAX_EXPORT_STUDENTS = 60
+
+// L-export-rl: MAX_EXPORT_STUDENTS caps a SINGLE request's size; this caps REQUEST FREQUENCY. Each request
+// renders up to 60 PDFs serialized through the worker, so a per-user rate cap stops a scripted flood from
+// monopolizing it. 10/min per user is generous for real batch-export use.
+const EXPORT_ZIP_LIMIT = { limit: 10, windowMs: 60_000 }
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
 
@@ -31,6 +37,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   try {
     const ctx = await requireAuthContext()
     requirePermission(ctx, { report: ['read'] })
+    // L-export-rl: throttle the heavy N-PDF batch render per authenticated user before any DB/render work.
+    const rl = consumeRateLimit(`export-report-zip:${ctx.userId}`, EXPORT_ZIP_LIMIT)
+    if (!rl.allowed) {
+      return new Response('导出请求过于频繁，请稍后再试。', {
+        status: 429,
+        headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) },
+      })
+    }
     const { sectionId } = await params
 
     const section = await forTenant(ctx).findById(classSection, sectionId)
