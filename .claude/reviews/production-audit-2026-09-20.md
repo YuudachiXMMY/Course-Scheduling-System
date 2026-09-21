@@ -3,6 +3,10 @@
 > **生产审计：74 / 100 — Launchable with Caveats（可带风险发布）** · *2026-09-20 修订：补充 IthacaServer 部署证据后由 67 上调*
 > 认证 / 多租户 / 公开 token / MCP / AI 五大安全面**零确认漏洞**。部署证据（IthacaServer）显示回滚/备份/恢复工具链、Traefik 边缘安全头与限流中间件均已就位——原「无回滚路径」硬顶解除、H2/网络暴露等发现被推翻或降级。剩余把关项：一条升级期迁移 crash-loop（B1，全新部署不触发）、安省未成年人 PII 跨境流向中国区 LLM（H3，安省 PIPEDA）、LLM 无超时（H4）、健康检查不探 DB（H1）。**支付维度不适用（无 Stripe）。**
 
+> **🔄 2026-09-21 复核修订（`/ecc:orch-pipeline` 对当前 `main` 逐条核对）**：本报告为 2026-09-20 快照。此后 **PR #65 / #66 / #67 / #61 均已合并到 main**,把审计点名的**全部优先项**修完。对 32 条可动发现逐条核对当前代码,**22 条已 FIXED**:B1(crash-loop,cleanup 已接进 entrypoint migrate 前+三重守卫)、H1(健康检查探 DB 返 503)、H3(跨境 ack 闸门+姓名脱敏)、H4(LLM 120s 超时)、H6(token 过期,迁移 0018)、H7(改期单事务)、H9(notFound 防死循环)、H10(portal/(auth) error.tsx),以及 A2/A4/T2/T3/C2/C3/D2/E3/F4/I2/I3/I4/J3/J4 全部低危项。
+>
+> **剩余可在本 repo 修**:**H8**(无租户 purge 例程 → 已实现,**draft PR #68**)、**H11**(登录仅按 IP 限流,无按账号锁定)、**H12/A3**(MCP 静态 bearer owner 级、scope 未 per-tool 强制)、**D4**(MCP/cron 鉴权端点无应用层限流)。**按设计暂缓/不在本 repo**:H5(RLS,ADR 0001 有意 defer,已有 CI grep 守卫兜底)、D3(confirm store 单实例 MVP 取舍)、H2(应用层已加 CSP 子集,完整反-XSS 需 nonce 管线)、H13(部署仓 IthacaServer)。下方 §2–§4 保留 2026-09-20 原始快照未改写;**当前真实状态以本复核块为准**。
+
 | 项 | 值 |
 |---|---|
 | 审计日期 | 2026-09-20（部署证据修订同日） |
