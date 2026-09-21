@@ -7,12 +7,19 @@ import { student } from '@/db/schema'
 import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
 import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
 import { renderCardPng } from '@/lib/browser'
+import { consumeRateLimit } from '@/lib/rate-limit'
 import { qrDataUrl } from '@/lib/qr'
 import { cardWindow } from '@/lib/ical-feed'
 import { env } from '@/env'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+// L-export-rl: each request drives a Chromium PNG render serialized through renderCardPng's process-global
+// mutex; without a per-user cap an authenticated caller can queue unbounded renders and stall every other
+// export on the single-VPS worker. 30/min per user is far above any legitimate teacher use yet blunts a
+// scripted flood. Keyed per user (bucket-prefixed so it never collides with other rate-limited actions).
+const EXPORT_PNG_LIMIT = { limit: 30, windowMs: 60_000 }
 
 // P4-8: AUTHENTICATED export. Reads via forTenant/getStudentLessonsForTenant (NOT the public
 // share.ts reader — M1 forbids raw db on the authenticated path). The QR encodes the PUBLIC
@@ -21,6 +28,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ student
   try {
     const ctx = await requireAuthContext()
     requirePermission(ctx, { student: ['read'], lesson: ['read'] })
+    // L-export-rl: throttle the heavy Chromium render per authenticated user before any DB/render work.
+    const rl = consumeRateLimit(`export-png:${ctx.userId}`, EXPORT_PNG_LIMIT)
+    if (!rl.allowed) {
+      return new Response('导出请求过于频繁，请稍后再试。', {
+        status: 429,
+        headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) },
+      })
+    }
     const { studentId } = await params
     const s = await forTenant(ctx).findById(student, studentId)
     if (!s) return new Response('Not found', { status: 404 })

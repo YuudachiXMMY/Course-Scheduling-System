@@ -9,6 +9,7 @@ import { classSection, enrollment, student } from '@/db/schema'
 import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/students/share-data'
 import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
 import { renderCardPng } from '@/lib/browser'
+import { consumeRateLimit } from '@/lib/rate-limit'
 import { qrDataUrl } from '@/lib/qr'
 import { buildIcs, cardWindow, feedWindow } from '@/lib/ical-feed'
 import { env } from '@/env'
@@ -20,6 +21,10 @@ export const dynamic = 'force-dynamic'
 // process-global mutex (single-VPS guard). An unbounded roster would monopolize the browser and stall
 // every other export for minutes. Cap the batch and reject oversized requests with 413.
 const MAX_EXPORT_STUDENTS = 60
+
+// L-export-rl: MAX_EXPORT_STUDENTS caps one request's size; this caps REQUEST FREQUENCY per authenticated
+// user so a scripted flood can't monopolize the single-VPS Chromium mutex. 10/min is generous for real use.
+const EXPORT_ZIP_LIMIT = { limit: 10, windowMs: 60_000 }
 
 // Sanitize a student name into a safe ZIP entry folder. Strip path/reserved chars so a name can
 // never escape its folder or break the archive; fall back to a stable id if nothing survives.
@@ -36,6 +41,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
   try {
     const ctx = await requireAuthContext()
     requirePermission(ctx, { student: ['read'], lesson: ['read'] })
+    // L-export-rl: throttle the heavy N-PNG batch render per authenticated user before any DB/render work.
+    const rl = consumeRateLimit(`export-section-zip:${ctx.userId}`, EXPORT_ZIP_LIMIT)
+    if (!rl.allowed) {
+      return new Response('导出请求过于频繁，请稍后再试。', {
+        status: 429,
+        headers: { 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) },
+      })
+    }
     const { sectionId } = await params
 
     const section = await forTenant(ctx).findById(classSection, sectionId)
