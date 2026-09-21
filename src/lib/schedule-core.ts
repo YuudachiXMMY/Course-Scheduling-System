@@ -7,7 +7,7 @@ import { db } from '@/db'
 import { forTenant, type TenantExecutor } from '@/db/tenant'
 import { lesson, classSection } from '@/db/schema'
 import { checkTeacherConflict } from '@/lib/conflict'
-import { ConflictError, isExclusionViolation } from '@/lib/errors'
+import { BusinessError, ConflictError, isExclusionViolation } from '@/lib/errors'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 import { hydrateLessonEvent } from '@/app/dashboard/schedule/data'
 import type { ScheduleResult } from '@/app/dashboard/schedule/types'
@@ -57,12 +57,16 @@ export async function scheduleLessonCore(
 
   // teacherId comes from the section (denormalized) so GiST/conflict never silently exempts the row.
   const section = await forTenant(ctx).findById(classSection, data.sectionId)
-  if (!section) throw new Error('班级不存在或不属于当前机构')
+  // L-cwe209: these are curated, safe, user-facing business messages — throw BusinessError (not a plain
+  // Error) so the MCP runTool wrapper (register-tools.ts) surfaces them to the caller instead of
+  // collapsing them to the generic "操作失败". A plain Error is reserved for genuinely unexpected faults,
+  // whose raw message must NOT leak. Reachable from the schedule/reschedule *_confirm MCP tools.
+  if (!section) throw new BusinessError('班级不存在或不属于当前机构')
   // 工作流 E: a section-scoped teacher may only schedule into a section they teach (shared by the
   // dashboard Server Action AND the MCP tool, so both paths are covered here).
-  if (!actorOwnsSection(ctx, section)) throw new Error('无权在该班级排课')
+  if (!actorOwnsSection(ctx, section)) throw new BusinessError('无权在该班级排课')
   const teacherId = section.teacherId
-  if (!teacherId) throw new Error('班级尚未指定教师，无法排课')
+  if (!teacherId) throw new BusinessError('班级尚未指定教师，无法排课')
 
   // CR10: suggestions enumerate the business-hours window in the SECTION's zone (recurrenceTimezone),
   // not a hardcoded APP_TIME_ZONE — thread it through so per-section timezones (if ever enabled) stay
@@ -110,11 +114,14 @@ export async function rescheduleLessonCore(
   const data = rescheduleSchema.parse(input)
 
   const existing = await forTenant(ctx, exec).findById(lesson, data.id)
-  if (!existing) throw new Error('课节不存在')
-  if (!existing.teacherId) throw new Error('课节缺少教师信息')
+  // L-cwe209: curated business messages → BusinessError so the MCP runTool surfaces them (see the note in
+  // scheduleLessonCore above); reachable from reschedule_lesson_confirm.
+  if (!existing) throw new BusinessError('课节不存在')
+  if (!existing.teacherId) throw new BusinessError('课节缺少教师信息')
   // 工作流 E: a section-scoped teacher may only move a lesson of a section they teach (lesson.teacherId
   // is denormalized from the section). Also gates approveRescheduleRequestCore, which moves via here.
-  if (!actorOwnsSection(ctx, { teacherId: existing.teacherId })) throw new Error('无权修改该课节')
+  if (!actorOwnsSection(ctx, { teacherId: existing.teacherId }))
+    throw new BusinessError('无权修改该课节')
 
   // CR10: the lesson row carries no zone; load its section for recurrenceTimezone so suggestions use the
   // section's business-hours window (defaults to APP_TIME_ZONE). Missing section → fall back.

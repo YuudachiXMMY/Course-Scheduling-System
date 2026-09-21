@@ -19,6 +19,7 @@ import { AuthError, type AuthContext } from '@/auth/context'
 import { mcpAuthContextFor, resolveMcpAuthContext } from '@/auth/mcp-context'
 import { registerCourseSchedulingTools } from '@/mcp/register-tools'
 import { scheduleLessonCore, rescheduleLessonCore } from '@/lib/schedule-core'
+import { BusinessError } from '@/lib/errors'
 import { issueConfirmation, consumeConfirmation, hashPayload } from '@/lib/mcp-confirm'
 import { composeParentMessage } from '@/mcp/message'
 import type { FeedLesson } from '@/lib/ical-feed'
@@ -259,6 +260,27 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
       endAt: at(11, 30),
     })
     expect(res.ok).toBe(true)
+  })
+
+  // L-cwe209 REGRESSION GUARD: the *_confirm MCP tools delegate to schedule-core, and runTool only
+  // surfaces BusinessError messages (everything else → generic '操作失败'). A curated core message like
+  // '课节不存在' MUST therefore be a BusinessError, not a plain Error — else a legit confirm-step failure
+  // (section/lesson deleted or ownership lost between preview and confirm) returns an unhelpful generic.
+  it('rescheduleLessonCore throws a surfaceable BusinessError for a missing lesson', async () => {
+    await expect(
+      rescheduleLessonCore(ctxFor(org, userId), {
+        id: 'nonexistent-lesson-id',
+        startAt: at(10, 0),
+        endAt: at(11, 0),
+      }),
+    ).rejects.toThrow(BusinessError)
+    await expect(
+      rescheduleLessonCore(ctxFor(org, userId), {
+        id: 'nonexistent-lesson-id',
+        startAt: at(10, 0),
+        endAt: at(11, 0),
+      }),
+    ).rejects.toThrow('课节不存在')
   })
 
   // M-1 REGRESSION GUARD: the read-only draft_parent_message must NOT create a shareLink.

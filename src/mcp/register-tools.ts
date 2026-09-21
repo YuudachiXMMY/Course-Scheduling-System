@@ -17,7 +17,7 @@ import {
 } from '@/auth/scope'
 import { assertLinkedToStudent, isPortalRole } from '@/auth/portal'
 import { AuthError } from '@/auth/context'
-import { ConflictError } from '@/lib/errors'
+import { BusinessError, ConflictError } from '@/lib/errors'
 import { resolveMcpAuthContext } from '@/auth/mcp-context'
 import {
   createFields,
@@ -65,15 +65,16 @@ export async function runTool(fn: () => Promise<ReturnType<typeof ok> | ReturnTy
     if (e instanceof ConflictError) return fail('时间冲突，无法保存')
     if (e instanceof z.ZodError)
       return fail(`参数校验失败：${e.issues.map((i) => i.message).join('；')}`)
-    // CWE-209: a raw database error message leaks table/column/constraint names (schema recon). The
-    // `postgres` driver's errors carry a SQLSTATE `code` + `routine`, unlike our intentional business
-    // Errors (e.g. `new Error('班级不存在')`) which are safe, curated, user-facing messages. Redact ONLY
-    // the former (logged server-side); pass the latter through so the model still gets actionable text.
-    if (isDatabaseError(e)) {
-      console.error('[mcp] database error', e)
-      return fail('操作失败，请稍后再试')
-    }
-    return fail(e instanceof Error ? e.message : '未知错误')
+    // CWE-209: only a BusinessError carries a message we KNOW is safe to surface to the (possibly
+    // external) MCP caller — every curated business throw below is a `new BusinessError(...)` with a
+    // vetted Chinese message (e.g. '班级不存在'). Everything else is either a schema-leaking database
+    // error (SQL/table/column recon) OR an UNEXPECTED internal fault (a bug, e.g. a TypeError) whose raw
+    // `.message` must never reach the model. Log those server-side and return a generic message. This
+    // closes the residual leak where the old `return fail(e.message)` fallback forwarded ANY Error's text.
+    if (e instanceof BusinessError) return fail(e.message)
+    if (isDatabaseError(e)) console.error('[mcp] database error', e)
+    else console.error('[mcp] unexpected error', e)
+    return fail('操作失败，请稍后再试')
   }
 }
 
@@ -82,8 +83,9 @@ export async function runTool(fn: () => Promise<ReturnType<typeof ok> | ReturnTy
 //      "Failed query: <full SQL with real table/column names>\nparams: <bound values>" — schema recon +
 //      possible PII — and carries `query`/`params`; the raw driver error is stashed on `.cause`.
 //   2. the underlying `postgres` driver error carries a SQLSTATE `code` + server `routine`.
-// Our own business errors (e.g. `new Error('班级不存在')`) have none of these, so their curated messages
-// still pass through. Redacting when a DB error appears anywhere in the cause chain is the safe default.
+// This now only picks the log label (curated messages are surfaced by the `e instanceof BusinessError`
+// branch above; a DB error is neither a BusinessError nor safe to surface). Detecting a DB error anywhere
+// in the cause chain is the safe default.
 function isDatabaseError(e: unknown): boolean {
   for (let cur: unknown = e, depth = 0; cur != null && depth < 5; depth++) {
     if (typeof cur !== 'object') break
@@ -217,11 +219,11 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const args = createSchema.parse(rawArgs)
         const section = (await forTenant(ctx).findById(classSection, args.sectionId)) as
           typeof classSection.$inferSelect | null
-        if (!section) throw new Error('班级不存在或不属于当前机构')
+        if (!section) throw new BusinessError('班级不存在或不属于当前机构')
         // 工作流 E（B54）：只有本班教师（或 whole-tenant staff）可预览排课；非本班视同不存在，
         // 避免泄露他人日历冲突课程标题/空闲时段并为其签发 confirmationToken。section 已加载 → 用同步版。
-        if (!actorOwnsSection(ctx, section)) throw new Error('班级不存在或不属于当前机构')
-        if (!section.teacherId) throw new Error('班级尚未指定教师，无法排课')
+        if (!actorOwnsSection(ctx, section)) throw new BusinessError('班级不存在或不属于当前机构')
+        if (!section.teacherId) throw new BusinessError('班级尚未指定教师，无法排课')
         const check = await checkTeacherConflict(ctx, {
           teacherId: section.teacherId,
           startAt: args.startAt,
@@ -255,7 +257,9 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         requirePermission(ctx, { lesson: ['create'] })
         const args = createSchema.parse(rawArgs)
         if (!consumeConfirmation(confirmationToken, args)) {
-          throw new Error('确认令牌无效、已过期或参数已变化，请重新调用 schedule_lesson_preview。')
+          throw new BusinessError(
+            '确认令牌无效、已过期或参数已变化，请重新调用 schedule_lesson_preview。',
+          )
         }
         const result = await scheduleLessonCore(ctx, args)
         return result.ok
@@ -280,11 +284,12 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const args = rescheduleSchema.parse(rawArgs)
         const existing = (await forTenant(ctx).findById(lesson, args.id)) as
           typeof lesson.$inferSelect | null
-        if (!existing) throw new Error('课节不存在')
+        if (!existing) throw new BusinessError('课节不存在')
         // 工作流 E（B54）：只有本班教师（或 whole-tenant staff）可预览改期；lesson.teacherId 由 section
         // 反规范化而来，用同步 actorOwnsSection 即可，非本班视同不存在，避免泄露他人冲突/空闲时段。
-        if (!actorOwnsSection(ctx, { teacherId: existing.teacherId })) throw new Error('课节不存在')
-        if (!existing.teacherId) throw new Error('课节缺少教师信息')
+        if (!actorOwnsSection(ctx, { teacherId: existing.teacherId }))
+          throw new BusinessError('课节不存在')
+        if (!existing.teacherId) throw new BusinessError('课节缺少教师信息')
         const check = await checkTeacherConflict(ctx, {
           teacherId: existing.teacherId,
           startAt: args.startAt,
@@ -319,7 +324,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         requirePermission(ctx, { lesson: ['update'] })
         const args = rescheduleSchema.parse(rawArgs)
         if (!consumeConfirmation(confirmationToken, args)) {
-          throw new Error(
+          throw new BusinessError(
             '确认令牌无效、已过期或参数已变化，请重新调用 reschedule_lesson_preview。',
           )
         }
@@ -350,7 +355,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         requirePermission(ctx, { student: ['read'], lesson: ['read'] })
         const s = (await forTenant(ctx).findById(student, studentId)) as
           typeof student.$inferSelect | null
-        if (!s) throw new Error('学生不存在')
+        if (!s) throw new BusinessError('学生不存在')
         // 工作流 E + 门户收敛（B52）：行级归属守卫必须在 getActiveShare 之前，
         // 否则会泄露他家孩子姓名/课表并可能返回其活跃公开分享 token。
         // 门户账号（家长/学生）收敛到其 portalLink 关联学生；其余（教师/staff）走 actorOwnsStudent
@@ -358,7 +363,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         if (isPortalRole(ctx.role)) {
           await assertLinkedToStudent(ctx, studentId)
         } else if (!(await actorOwnsStudent(ctx, studentId))) {
-          throw new Error('无权访问该学生')
+          throw new BusinessError('无权访问该学生')
         }
         // getActiveShare (read-only) — NOT ensureActiveShare. shareUrl is null when no active share.
         const share = await getActiveShare(ctx, studentId)
