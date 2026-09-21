@@ -1,0 +1,11 @@
+-- L-0017-fk — bring section_share_link.tenant_id in line with the 18 app tables from
+-- 0016_tenant_id_fk.sql by adding a DIRECT tenant_id -> organization(id) foreign key. Until now it was
+-- covered only TRANSITIVELY: its composite FK (tenant_id, section_id) -> class_section(tenant_id, id)
+-- (0017) means every row's tenant_id must match some class_section, and class_section.tenant_id already
+-- references organization (0016) — so an orphan tenant_id is ALREADY impossible and this ALTER cannot
+-- fail on existing data. It closes a schema-consistency gap, not an exploitable hole. Custom migration,
+-- like 0016 (tenant_id === Better Auth organizationId, kept as bare text in _helpers.tenantId(); the FK
+-- is declared here per table, not in the Drizzle schema, because auth owns the organization table).
+-- ON DELETE restrict matches 0016 (a tenant's data is removed by an explicit purge routine — H8 — never
+-- a cascade, which would bypass the retention FKs).
+ALTER TABLE "section_share_link" ADD CONSTRAINT "fk_section_share_link_tenant" FOREIGN KEY ("tenant_id") REFERENCES "public"."organization"("id") ON DELETE restrict;
