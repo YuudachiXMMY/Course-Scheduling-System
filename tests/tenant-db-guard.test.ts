@@ -65,6 +65,24 @@ describe('hasRawTenantDbAccess', () => {
     expect(hasRawTenantDbAccess('const s = "db.select("')).toBe(false)
     expect(hasRawTenantDbAccess('const s = `prefix db.delete( suffix`')).toBe(false)
   })
+
+  it('DESCENDS into template `${…}` interpolations — raw db there is code, not string (H5 review)', () => {
+    // A `${db.select(...)}` interpolation is real code; treating it as opaque string content would let a
+    // bypass route slip past the guard entirely.
+    expect(hasRawTenantDbAccess('const q = `rows=${db.select().from(student)}`')).toBe(true)
+    expect(hasRawTenantDbAccess('const q = `${db.query.student.findMany()}`')).toBe(true)
+    // Interpolation containing a nested object literal — braces inside it must not close the interp early.
+    expect(hasRawTenantDbAccess('const q = `${fn({ a: db.insert(lesson).values({}) })}`')).toBe(true)
+    // Nested template literal inside the interpolation.
+    expect(hasRawTenantDbAccess('const q = `${ `inner ${db.delete(note)}` }`')).toBe(true)
+  })
+
+  it('resumes template string mode after `${…}` closes — post-interp string text is not code', () => {
+    // After the interpolation closes, `db.select(` sits in plain template text again → NOT flagged.
+    expect(hasRawTenantDbAccess('const q = `${x} then db.select( literal`')).toBe(false)
+    // …but real code AFTER the whole template still is (scanner recovered to code mode).
+    expect(hasRawTenantDbAccess('const q = `${x}`\nawait db.select().from(student)')).toBe(true)
+  })
 })
 
 describe('stripCommentsAndStrings', () => {

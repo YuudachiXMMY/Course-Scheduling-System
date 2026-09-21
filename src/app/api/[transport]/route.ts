@@ -47,8 +47,14 @@ const AUDIENCE_WARNING =
 // fail-fast posture as env.ts's secret-strength floors, but scoped to THIS route (a broken /api/mcp is
 // far better than the whole app), and only in prod so local dev / tests keep the softer warning path.
 // The guard is skipped when no bearer is set (MCP off ⇒ AUDIENCE_DISABLED is false) and during
-// `next build` (secrets absent from the build context), so it can never break boot or CI.
-if (AUDIENCE_DISABLED && env.NODE_ENV === 'production') {
+// `next build` (this route module is imported for route collection), so it can never break boot or CI.
+// The build skip is EXPLICIT — this route runs `NODE_ENV=production` at build time too (see Dockerfile),
+// so it must NOT rely on secrets merely being absent from the build context: a local/CI `next build`
+// that happens to carry a full .env (bearer set, resource URL unset) would otherwise crash the build.
+// NEXT_PHASE === 'phase-production-build' is the exact signal env.ts uses to bypass validation at build
+// yet enforce it at runtime boot, so we gate on it identically here.
+const IS_PRODUCTION_BUILD = process.env.NEXT_PHASE === 'phase-production-build'
+if (AUDIENCE_DISABLED && env.NODE_ENV === 'production' && !IS_PRODUCTION_BUILD) {
   throw new Error(
     '[mcp] MCP_RESOURCE_URL is required in production when MCP_BEARER_TOKEN is set — set it to the public MCP URL (e.g. https://<host>/api/mcp) so audience (confused-deputy) validation is enforced, not skipped.',
   )

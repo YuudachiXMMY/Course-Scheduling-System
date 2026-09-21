@@ -75,6 +75,11 @@ const regexAllowed = (prev: string | undefined): boolean =>
 // push-core.ts). Modelling regex literals is REQUIRED for correctness: a `"`/`'` inside a char class
 // (e.g. `/[/\\:*?"<>|]/g`, used by the export routes) would otherwise flip a naive scanner into string
 // mode and silently swallow real code until the next quote — blinding the guard mid-file.
+// Template-literal `${…}` interpolations are DESCENDED INTO as code, not treated as opaque string content
+// — otherwise `` `${db.select().from(student)}` `` would slip past the guard entirely. The interp stack
+// tracks the brace depth of each active interpolation so nested object literals (`${ {a: db.select()} }`)
+// and nested template literals (`` `${ `x ${db.delete()}` }` ``) resume the enclosing template at the
+// correct `}` rather than the first one.
 // LIMITATION (documented, not silently assumed): this catches the literal identifier `db.` only. It does
 // NOT follow aliasing (`import { db as x }`, `const y = db`) — those remain possible bypasses. This guard
 // is a transitional mechanical backstop for the COMMON mistake (`db.select().from(tenantTable)`);
@@ -84,6 +89,9 @@ export function stripCommentsAndStrings(src: string): string {
   let mode: 'code' | 'line' | 'block' | 'sq' | 'dq' | 'tpl' | 'regex' = 'code'
   let prevSig: string | undefined // last significant (non-whitespace) char emitted in code mode
   let inClass = false // inside a regex [...] character class, where `/` does not terminate the literal
+  // Stack of `${…}` interpolations we are currently inside; each entry is the running brace depth of that
+  // interpolation's code (0 = at the interpolation's own level, so the next `}` closes it).
+  const interp: number[] = []
   for (let i = 0; i < src.length; ) {
     const c = src[i]
     const d = src[i + 1]
@@ -118,6 +126,22 @@ export function stripCommentsAndStrings(src: string): string {
         mode = 'tpl'
         i += 1
         continue
+      }
+      // Brace bookkeeping ONLY while inside a `${…}` interpolation, so the interpolation resumes its
+      // template at the matching `}` (skipping braces from object literals / blocks nested within it).
+      if (interp.length > 0) {
+        if (c === '{') {
+          interp[interp.length - 1]++
+        } else if (c === '}') {
+          if (interp[interp.length - 1] === 0) {
+            // closes the interpolation — hand control back to the enclosing template literal
+            interp.pop()
+            mode = 'tpl'
+            i += 1
+            continue
+          }
+          interp[interp.length - 1]--
+        }
       }
       out += c
       if (c.trim() !== '') prevSig = c
@@ -166,6 +190,15 @@ export function stripCommentsAndStrings(src: string): string {
     }
     // inside a string/template: honour escapes, then look for the matching terminator
     if (c === '\\') {
+      i += 2
+      continue
+    }
+    // A template literal's `${` opens a code interpolation (the escape above already excluded `\${`).
+    // Descend into code so raw db access inside the interpolation is scanned, not swallowed as string.
+    if (mode === 'tpl' && c === '$' && d === '{') {
+      interp.push(0)
+      mode = 'code'
+      prevSig = undefined // `${` is an opener → a following `/` is a regex literal, not division
       i += 2
       continue
     }
