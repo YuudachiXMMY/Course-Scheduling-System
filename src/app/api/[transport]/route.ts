@@ -41,7 +41,20 @@ const AUDIENCE_DISABLED = Boolean(env.MCP_BEARER_TOKEN) && !env.MCP_RESOURCE_URL
 const AUDIENCE_WARNING =
   '[mcp] MCP_RESOURCE_URL 未设置：audience（confused-deputy）校验被跳过；生产环境建议设为公开 MCP URL。'
 
-// Warn once at module load…
+// L-mcp-audience: in PRODUCTION, refuse to serve MCP with audience validation silently off. If the
+// connector is enabled (a bearer is configured) MCP_RESOURCE_URL MUST be set so withMcpAuth actually
+// enforces the audience check. Fail closed at module load with a clear, actionable error — the same
+// fail-fast posture as env.ts's secret-strength floors, but scoped to THIS route (a broken /api/mcp is
+// far better than the whole app), and only in prod so local dev / tests keep the softer warning path.
+// The guard is skipped when no bearer is set (MCP off ⇒ AUDIENCE_DISABLED is false) and during
+// `next build` (secrets absent from the build context), so it can never break boot or CI.
+if (AUDIENCE_DISABLED && env.NODE_ENV === 'production') {
+  throw new Error(
+    '[mcp] MCP_RESOURCE_URL is required in production when MCP_BEARER_TOKEN is set — set it to the public MCP URL (e.g. https://<host>/api/mcp) so audience (confused-deputy) validation is enforced, not skipped.',
+  )
+}
+
+// Non-prod (or prod with MCP off): warn once at module load…
 if (AUDIENCE_DISABLED) {
   console.warn(AUDIENCE_WARNING)
 }
