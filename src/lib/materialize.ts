@@ -5,7 +5,7 @@ import { db } from '@/db'
 import { lesson, classSection, sectionMeeting } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { expandRecurrence, type Occurrence } from './recurrence'
-import { buildWeeklyRrule, type Weekday } from './rrule-build'
+import { buildWeeklyRrule, WEEKDAYS, type Weekday } from './rrule-build'
 import { isExclusionViolation } from './errors'
 import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
@@ -62,6 +62,14 @@ export async function materializeSection(
     // RRULEs need no UNTIL. Different times on the same day get distinct originalStartAt keys.
     const dateAnchor = DateTime.fromJSDate(windowAnchor, { zone: 'utc' })
     occurrences = meetings.flatMap((m) => {
+      // F15: sectionMeeting.byDay is a free-text column; the zod write path validates it, but a row that
+      // reached the DB another way (import/backfill/manual edit) would flow straight into rrule.js as an
+      // invalid BYDAY and throw an UNCAUGHT exception here. Validate against the known weekdays and skip a
+      // bad row (materialization of the other meetings still succeeds) rather than crash the whole call.
+      if (!WEEKDAYS.includes(m.byDay as Weekday)) {
+        console.error('materializeSection: skipping meeting with invalid byDay', m.id, m.byDay)
+        return []
+      }
       const [hh, mm] = m.startTime.split(':').map(Number)
       return expandRecurrence({
         rruleText: buildWeeklyRrule({ byDays: [m.byDay as Weekday] }),
@@ -111,10 +119,18 @@ export async function materializeSection(
     eq(lesson.sectionId, section.id),
   )
   const isoWeek = (d: Date) => DateTime.fromJSDate(d).setZone(zone).toFormat("kkkk'W'WW")
+  // F6: only a GENUINE rescheduled exception may suppress a week's fresh pattern occurrence. Such a
+  // lesson keeps its ORIGINAL RECURRENCE-ID in originalStartAt (the logical slot it stands in for), so
+  // keying exceptionWeeks by that original slot correctly dedupes the re-materialized pattern row.
+  // An ad-hoc temp lesson (scheduleLessonCore, schedule-core.ts) is inserted with isException=true but
+  // originalStartAt=NULL — it stands in for NO pattern slot. The old `?? l.startAt` fallback let such a
+  // temp lesson claim its OWN calendar week, so a later updateSection (which clears future pattern rows,
+  // keeps exceptions, then re-materializes) saw that week as "occupied" and skipped it → the recurring
+  // lesson was permanently deleted with no error. Excluding null-originalStartAt rows fixes that.
   const exceptionWeeks = new Set(
     existingLessons
-      .filter((l) => l.isException)
-      .map((l) => isoWeek(l.originalStartAt ?? l.startAt)),
+      .filter((l) => l.isException && l.originalStartAt != null)
+      .map((l) => isoWeek(l.originalStartAt!)),
   )
   const freshOccurrences = occurrences.filter((o) => !exceptionWeeks.has(isoWeek(o.originalStartAt)))
   if (!freshOccurrences.length) return { inserted: 0, conflicts: 0 }
