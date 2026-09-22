@@ -50,6 +50,7 @@ import {
   upsertStudentNote,
 } from '@/app/dashboard/schedule/attendance-actions'
 import { upsertLessonStudentGrade } from '@/app/dashboard/teach/[sectionId]/grade-actions'
+import { enrollStudent, unenrollStudent } from '@/app/dashboard/schedule/enrollment-actions'
 import { updateSection, materializeSectionAction } from '@/app/dashboard/courses/actions'
 import {
   createReportDraftCore,
@@ -281,6 +282,18 @@ describe('考勤/笔记/成绩写路径归属守卫（MEDIUM 1）— attendance 
       upsertLessonStudentGrade({ lessonId: lessonA1, studentId: stuA, score: 90 }),
     ).rejects.toThrow('无权录入该课节成绩')
   })
+
+  it('F2: owning the lesson is not enough — a non-enrolled studentId is refused (attendance/note)', async () => {
+    asActor(teacherACtx)
+    // teacherA OWNS lessonA1 (section sA1), but stuB is only enrolled in sB1 → not in this section's roster.
+    // Without the studentId object-level guard this would write a ghost attendance/note row for stuB.
+    await expect(
+      upsertAttendance({ lessonId: lessonA1, studentId: stuB, status: 'present' }),
+    ).rejects.toThrow('该学生不在该课节班级')
+    await expect(
+      upsertStudentNote({ lessonId: lessonA1, studentId: stuB, body: 'x' }),
+    ).rejects.toThrow('该学生不在该课节班级')
+  })
 })
 
 describe('班级配置写路径归属守卫（MEDIUM 1）— courses/actions', () => {
@@ -313,6 +326,32 @@ describe('报告写路径归属守卫（MEDIUM 1）— report-core', () => {
       '无权修改该报告',
     )
     await expect(approveReportCore(teacherBCtx, reportA)).rejects.toThrow('无权定稿该报告')
+  })
+})
+
+// ── F1 — roster write path studentId ownership ───────────────────────────────────────────────────────
+describe('花名册写路径 studentId 归属守卫（F1）— enrollment-actions', () => {
+  it('a teacher cannot enroll/unenroll ANOTHER teacher’s private student into their OWN section', async () => {
+    asActor(teacherACtx)
+    // stuB is only ever created/enrolled under teacherB → outside teacherA's student scope. Owning the
+    // TARGET section (sA1) must not let teacherA pull a foreign student in and thereby self-grant PII +
+    // share-link visibility. Prior tests only covered "can't enroll into another teacher's section".
+    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('无权添加该学生')
+    await expect(unenrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('无权移除该学生')
+  })
+
+  it('the section owner may (idempotently) enroll a student already within their scope', async () => {
+    asActor(teacherACtx)
+    // stuA is active in sA1 (teacherA's section) → in scope; a re-click returns the existing active row.
+    const row = await enrollStudent({ studentId: stuA, sectionId: sA1 })
+    expect(row).toBeTruthy()
+  })
+
+  it('whole-tenant staff may enroll any same-tenant student', async () => {
+    asActor(ownerCtx)
+    const row = await enrollStudent({ studentId: stuB, sectionId: sA1 })
+    expect(row).toBeTruthy()
+    await unenrollStudent({ studentId: stuB, sectionId: sA1 }) // restore roster for later assertions
   })
 })
 

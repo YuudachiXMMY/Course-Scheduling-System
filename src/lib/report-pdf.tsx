@@ -130,8 +130,8 @@ function ReportDocument({ model: m }: { model: ReportPdfModel }) {
           {m.gradeAverage != null ? (
             <View style={styles.row}>
               <Text style={styles.cell}>
-                <Text style={styles.label}>平均分: </Text>
-                {m.gradeAverage}
+                <Text style={styles.label}>平均分(百分制): </Text>
+                {m.gradeAverage}%
               </Text>
             </View>
           ) : null}

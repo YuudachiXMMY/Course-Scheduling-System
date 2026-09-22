@@ -6,6 +6,7 @@ import { forTenant } from '@/db/tenant'
 import { notification, enrollment, portalLink, lesson } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 import { sendPushToUserCore } from '@/lib/push-core'
+import { isUniqueViolation } from '@/lib/errors'
 
 // P7b: notification store core. Headless (ctx-in, no requireAuthContext/revalidatePath) so the cron
 // scan and the reschedule cores can call it directly and it stays DB-integration-testable. Web Push
@@ -23,17 +24,6 @@ export interface CreateNotificationInput {
   lessonId?: string | null
   studentId?: string | null
   dedupeKey?: string | null
-}
-
-// Postgres unique_violation. Drizzle 0.45 wraps the pg error, so the SQLSTATE lives on the .cause
-// chain — walk it (bounded) like errors.ts#isExclusionViolation does for 23P01.
-function isUniqueViolation(e: unknown): boolean {
-  let cur: unknown = e
-  for (let i = 0; i < 5 && cur; i++) {
-    if ((cur as { code?: string }).code === '23505') return true
-    cur = (cur as { cause?: unknown }).cause
-  }
-  return false
 }
 
 // Insert one notification. When `dedupeKey` is set, at most one row per (tenant, dedupeKey) is

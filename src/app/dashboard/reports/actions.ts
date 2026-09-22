@@ -15,6 +15,7 @@ import {
   type Report,
 } from '@/lib/report-core'
 import { CrossBorderAiAckRequiredError } from '@/lib/report-consent'
+import { consumeRateLimit } from '@/lib/rate-limit'
 
 // Thin web wrappers over report-core (mirrors schedule/actions.ts → schedule-core). Every action:
 // requireAuthContext → requirePermission → zod parse → core → revalidatePath.
@@ -50,6 +51,14 @@ export async function createReportDraft(input: CreateReportInput): Promise<Repor
   const parsed = createSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  }
+  // F11: report drafting is the ONLY heavy paid-LLM action left un-throttled (draftNarrative → external
+  // provider). Without a limit a script holding a teacher session could loop it to run up the API bill.
+  // Cap per-user drafts (in-process sliding window, same limiter as the sensitive auth actions). Cheap
+  // validation runs first so a malformed retry doesn't consume the budget.
+  const rl = consumeRateLimit(`report-draft:${ctx.userId}`, { limit: 10, windowMs: 60_000 })
+  if (!rl.allowed) {
+    return { ok: false, error: `起草过于频繁，请 ${Math.ceil(rl.retryAfterMs / 1000)} 秒后再试` }
   }
   const data = parsed.data
   try {

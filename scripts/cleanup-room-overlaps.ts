@@ -23,6 +23,21 @@ const LOCK_KEY = 728934123 // shared with scripts/migrate.ts
 async function main() {
   await sql`SELECT pg_advisory_lock(${LOCK_KEY})`
   try {
+    // F4 fast-path (idempotent, mirrors cleanup-orphan-tenants): if the 0015 EXCLUDE constraint already
+    // exists, the DB is at/past that migration and CANNOT hold room overlaps → nothing to scan or fix.
+    // Also covers a brand-new/empty DB where the `lesson` table doesn't exist yet (to_regclass → NULL).
+    const [{ done }] = await sql<{ done: boolean }[]>`
+      SELECT (
+        to_regclass('public.lesson') IS NULL
+        OR EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'lesson_no_room_overlap'
+        )
+      ) AS done
+    `
+    if (done) {
+      console.log('[cleanup-room-overlaps] constraint present or no schema yet — nothing to do')
+      return
+    }
     // Self-join: two DISTINCT non-canceled lessons in the same tenant + non-null location whose
     // [start,end) ranges overlap. `a.id < b.id` de-dupes the symmetric pair.
     const pairs = await sql<

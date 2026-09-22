@@ -16,6 +16,7 @@ import {
   rescheduleRequest,
 } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
+import { isUniqueViolation } from '@/lib/errors'
 import { actorOwnsSection } from '@/auth/scope'
 import type { AttendanceStatus } from '@/lib/report-stats'
 import type { AuthContext } from '@/auth/context'
@@ -302,11 +303,30 @@ export async function upsertLessonStudentGradeCore(
     const [row] = await forTenant(ctx).update(grade, existing[0].id, values)
     return row
   }
-  const [row] = await forTenant(ctx).insert(grade, {
-    studentId: data.studentId,
-    lessonId: data.lessonId,
-    title: QUICK_GRADE_TITLE,
-    ...values,
-  })
-  return row
+  try {
+    const [row] = await forTenant(ctx).insert(grade, {
+      studentId: data.studentId,
+      lessonId: data.lessonId,
+      title: QUICK_GRADE_TITLE,
+      ...values,
+    })
+    return row
+  } catch (e) {
+    // F5: a concurrent writer won the (lesson, student, title) slot between our SELECT and INSERT. The
+    // uq_grade_lesson_student_title backstop turns that into 23505 instead of a silent duplicate — recover
+    // by re-reading the now-committed row and applying our values (last-writer-wins, same as the update
+    // branch above). Any other error propagates unchanged.
+    if (!isUniqueViolation(e)) throw e
+    const [again] = await forTenant(ctx).select(
+      grade,
+      and(
+        eq(grade.lessonId, data.lessonId),
+        eq(grade.studentId, data.studentId),
+        eq(grade.title, QUICK_GRADE_TITLE),
+      ),
+    )
+    if (!again) throw e
+    const [row] = await forTenant(ctx).update(grade, again.id, values)
+    return row
+  }
 }

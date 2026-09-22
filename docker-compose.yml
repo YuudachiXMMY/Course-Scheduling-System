@@ -70,8 +70,16 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+      # F12: forward the ADR-0002 sandbox escape valve. The standalone runtime does NOT read .env, so
+      # without this line CHROMIUM_NO_SANDBOX is unreachable on the `docker compose up` path and a
+      # hardened host that cannot grant unprivileged user namespaces can't fall back — PNG/PDF export
+      # fails to launch chromium. Empty default keeps the secure sandboxed default (see src/lib/browser.ts).
+      CHROMIUM_NO_SANDBOX: ${CHROMIUM_NO_SANDBOX:-}
     ports:
-      - '3000:3000'
+      # F17: bind to loopback only (mirrors postgres above) — the app is meant to sit behind the Traefik
+      # TLS edge, which reaches it over the compose network, not the host port. A bare 0.0.0.0:3000 on a
+      # public host would expose the app in cleartext, bypassing TLS. Override APP_HOST_PORT if needed.
+      - '127.0.0.1:${APP_HOST_PORT:-3000}:3000'
   test:
     profiles: ['test']
     build:
