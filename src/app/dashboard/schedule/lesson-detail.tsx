@@ -96,15 +96,23 @@ export default function LessonDetail({
       getLessonRoster(lessonId),
       getLessonNotes(lessonId),
       getLessonMeta(lessonId),
-    ]).then(([r, notes, meta]) => {
-      if (!active) return
-      setRoster(r)
-      setSharedNote(notes.shared)
-      setComments(notes.perStudent)
-      setLocation(meta?.location ?? '')
-      setMeetingUrl(meta?.meetingUrl ?? '')
-      setLoading(false)
-    })
+    ])
+      .then(([r, notes, meta]) => {
+        if (!active) return
+        setRoster(r)
+        setSharedNote(notes.shared)
+        setComments(notes.perStudent)
+        setLocation(meta?.location ?? '')
+        setMeetingUrl(meta?.meetingUrl ?? '')
+        setLoading(false)
+      })
+      .catch((e) => {
+        // F10: without this catch a rejected loader (e.g. an expired session throwing in the Server
+        // Action) left the drawer spinning forever. Clear the spinner and surface the error instead.
+        if (!active) return
+        setLoading(false)
+        setErrorMsg(e instanceof Error ? e.message : '加载失败')
+      })
     return () => {
       active = false
     }
