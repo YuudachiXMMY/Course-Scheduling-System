@@ -10,6 +10,7 @@ import { ensureActiveShare, getStudentLessonsForTenant } from '@/app/dashboard/s
 import { renderScheduleCardHtml } from '@/lib/schedule-card-render'
 import { renderCardPng } from '@/lib/browser'
 import { consumeRateLimit } from '@/lib/rate-limit'
+import { safeZipEntryName } from '@/lib/zip-entry-name'
 import { qrDataUrl } from '@/lib/qr'
 import { buildIcs, cardWindow, feedWindow } from '@/lib/ical-feed'
 import { env } from '@/env'
@@ -26,12 +27,9 @@ const MAX_EXPORT_STUDENTS = 60
 // user so a scripted flood can't monopolize the single-VPS Chromium mutex. 10/min is generous for real use.
 const EXPORT_ZIP_LIMIT = { limit: 10, windowMs: 60_000 }
 
-// Sanitize a student name into a safe ZIP entry folder. Strip path/reserved chars so a name can
-// never escape its folder or break the archive; fall back to a stable id if nothing survives.
-function safe(name: string): string {
-  const cleaned = name.replace(/[/\\:*?"<>|]/g, '_').trim()
-  return cleaned.length > 0 ? cleaned : 'student'
-}
+// F3: student-name → safe ZIP entry folder. Extracted to @/lib/zip-entry-name (pure + unit-tested) and
+// hardened to also collapse `..` runs (defense-in-depth; archiver@8 already strips a leading `../`).
+const safe = (name: string) => safeZipEntryName(name)
 
 // P4-8: AUTHENTICATED batch export. Verifies the section belongs to ctx.tenant, loads its ACTIVE
 // enrollments → students, and streams a ZIP where each student's folder holds ONLY that child's
