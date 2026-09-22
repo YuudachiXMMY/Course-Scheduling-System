@@ -220,6 +220,34 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
     await expect(mcpAuthContextFor('ghost_user', org)).rejects.toBeInstanceOf(AuthError)
   })
 
+  // B1 (orch-review HIGH regression guard): the MCP static-bearer channel has NO Better Auth session to
+  // revoke, so mcpAuthContextFor MUST itself refuse a banned (deactivated) principal. Reverting the
+  // user.banned check in mcp-context.ts makes this fail — a terminated MCP_USER_ID would keep full access
+  // (student PII, scheduling, notes, share links) until env is manually edited + the container restarted.
+  it('mcpAuthContextFor refuses a banned/deactivated user (no session to revoke → must check user.banned)', async () => {
+    // Active permanent ban (banExpires null, exactly what deactivateStaffCore writes) → refused.
+    await db.update(user).set({ banned: true, banExpires: null }).where(eq(user.id, userId))
+    await expect(mcpAuthContextFor(userId, org)).rejects.toBeInstanceOf(AuthError)
+    // A LAPSED ban (banExpires in the past) is not active → access restored (mirrors Better Auth login).
+    await db
+      .update(user)
+      .set({ banned: true, banExpires: new Date(Date.now() - 60_000) })
+      .where(eq(user.id, userId))
+    const restored = await mcpAuthContextFor(userId, org)
+    expect(restored).toEqual({ userId, tenantId: org, role: 'owner', isPlatformAdmin: false })
+    // A future-dated ban IS active → refused again.
+    await db
+      .update(user)
+      .set({ banned: true, banExpires: new Date(Date.now() + 60_000) })
+      .where(eq(user.id, userId))
+    await expect(mcpAuthContextFor(userId, org)).rejects.toBeInstanceOf(AuthError)
+    // Restore so the remaining sequential tests in this file see an unbanned owner.
+    await db
+      .update(user)
+      .set({ banned: false, banReason: null, banExpires: null })
+      .where(eq(user.id, userId))
+  })
+
   it('scheduleLessonCore schedules a free slot (ok:true)', async () => {
     const res = await scheduleLessonCore(ctxFor(org, userId), {
       sectionId,
