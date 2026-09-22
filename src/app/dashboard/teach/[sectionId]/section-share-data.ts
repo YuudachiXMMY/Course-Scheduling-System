@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { forTenant } from '@/db/tenant'
 import { actorOwnsSectionById } from '@/auth/scope'
 import { sectionShareLink } from '@/db/schema'
+import { defaultShareExpiry, isTokenTimeActive } from '@/lib/share-ttl'
 import type { AuthContext } from '@/auth/context'
 
 type SectionShare = typeof sectionShareLink.$inferSelect
@@ -44,11 +45,19 @@ export async function ensureActiveSectionShare(
   // real owner always passes; this throws (not null) because minting on an unowned section is a hard error.
   if (!(await actorOwnsSectionById(ctx, sectionId))) throw new Error('无权分享该班级课表')
   const existing = await getActiveSectionShare(ctx, sectionId)
-  if (existing) return existing
+  if (existing) {
+    if (isTokenTimeActive(existing.expiresAt)) return existing
+    // H6: active-but-expired → renew in place (same token) so the shared /sec/<token> URL keeps working.
+    const [renewed] = await forTenant(ctx).update(sectionShareLink, existing.id, {
+      expiresAt: defaultShareExpiry(),
+    })
+    return renewed
+  }
   const [created] = await forTenant(ctx).insert(sectionShareLink, {
     sectionId,
     token: nanoid(32),
     label: '班级课表分享',
+    expiresAt: defaultShareExpiry(),
   })
   return created
 }

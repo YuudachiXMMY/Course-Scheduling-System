@@ -5,6 +5,7 @@ import {
   jsonb,
   timestamp,
   index,
+  uniqueIndex,
   foreignKey,
   check,
 } from 'drizzle-orm/pg-core'
@@ -53,6 +54,15 @@ export const grade = pgTable(
     index('idx_grade_tenant_student').on(t.tenantId, t.studentId),
     index('idx_grade_tenant_lesson').on(t.tenantId, t.lessonId),
     index('idx_grade_tenant_section').on(t.tenantId, t.sectionId), // M7: covers fk_grade_section
+    // F5: the quick-grade upsert (data.ts) is a select-then-write keyed on (lesson, student, title) with
+    // no lock/tx — two concurrent writes both see no row and both INSERT → duplicate rows that
+    // report-stats double-counts into the parent PDF average. This partial unique index is the backstop
+    // (mirrors uq_attendance_lesson_student): a race now hits 23505 instead of silently duplicating, and
+    // the upsert converts that to an UPDATE. Partial so it only governs lesson+title grades (the only
+    // insert path); section-scoped or untitled grades are unaffected.
+    uniqueIndex('uq_grade_lesson_student_title')
+      .on(t.tenantId, t.lessonId, t.studentId, t.title)
+      .where(sql`${t.lessonId} is not null and ${t.title} is not null`),
     check('ck_grade_target', sql`${t.lessonId} is not null or ${t.sectionId} is not null`),
   ],
 )

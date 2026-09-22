@@ -5,6 +5,7 @@ import { forTenant } from '@/db/tenant'
 import { progressReport } from '@/db/schema'
 import { getReportData } from '@/lib/report-data'
 import { draftNarrative } from '@/lib/report-draft'
+import { requireCrossBorderAiAck } from '@/lib/report-consent'
 import { sanitizeNarrative } from '@/lib/report-sanitize'
 import type { ReportPdfModel } from '@/lib/report-pdf'
 
@@ -32,6 +33,10 @@ export async function createReportDraftCore(
     from: input.periodStart,
     to: input.periodEnd,
   })
+  // H3: gate the cross-border LLM call on a one-time org acknowledgment (PIPEDA). Lives in the core so
+  // it holds for every caller. Throws CrossBorderAiAckRequiredError → the action returns it as data so
+  // the panel can surface a one-time acknowledgment prompt.
+  await requireCrossBorderAiAck(ctx)
   const draft = await draftNarrative(data)
   const [row] = await forTenant(ctx).insert(progressReport, {
     studentId: input.studentId,

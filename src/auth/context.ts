@@ -1,6 +1,6 @@
 import 'server-only'
 import { headers } from 'next/headers'
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import { auth } from '@/auth/auth'
 import { db } from '@/db'
 import { member } from '@/db/schema'
@@ -46,10 +46,14 @@ export async function getAuthContext(): Promise<AuthContext | null> {
         .from(member)
         .where(and(eq(member.organizationId, activeOrgId), eq(member.userId, userId)))
         .limit(1)
-    : await db
+    : // L-auth: deterministic fallback for a multi-org user whose session carries no active org (the
+      // sign-up self-heal path). Without ORDER BY, Postgres could return ANY membership row — landing the
+      // user in an unintended tenant/role. Order by createdAt so it is always the earliest (default) org.
+      await db
         .select({ tenantId: member.organizationId, role: member.role })
         .from(member)
         .where(eq(member.userId, userId))
+        .orderBy(asc(member.createdAt))
         .limit(1)
   if (!m) return null
   return {

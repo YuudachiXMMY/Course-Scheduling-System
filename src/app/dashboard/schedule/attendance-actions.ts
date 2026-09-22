@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, inArray } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
-import { actorOwnsLesson } from '@/auth/scope'
+import { actorOwnsLesson, studentActiveInLessonSection } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { attendance, note, enrollment, student, lesson } from '@/db/schema'
 import { sharedNoteSchema, studentNoteSchema } from '@/lib/note-schema'
@@ -69,6 +69,11 @@ export async function upsertAttendance(input: z.input<typeof attendanceSchema>) 
   const data = attendanceSchema.parse(input)
   // 工作流 E: a section-scoped teacher may only record attendance for a lesson they teach.
   if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权记录该课节考勤')
+  // F2/B31: object-level authz on studentId — owning the lesson is not enough (attendance's FK is
+  // (tenant, student)). Without this a teacher could write a ghost attendance row for any same-tenant
+  // student. The student must be actively enrolled in THIS lesson's section (mirrors grade-actions).
+  if (!(await studentActiveInLessonSection(ctx, data.lessonId, data.studentId)))
+    throw new Error('该学生不在该课节班级')
 
   const existing = await forTenant(ctx).select(
     attendance,
@@ -154,6 +159,11 @@ export async function upsertStudentNote(input: z.input<typeof studentNoteSchema>
   const data = studentNoteSchema.parse(input)
   // 工作流 E: a section-scoped teacher may only write a comment on a lesson they teach.
   if (!(await actorOwnsLesson(ctx, data.lessonId))) throw new Error('无权编辑该课节点评')
+  // F2/B31: object-level authz on studentId — the per-student note's FK is (tenant, student). Without
+  // this a teacher could write a ghost per-student comment for any same-tenant student. The student must
+  // be actively enrolled in THIS lesson's section (mirrors grade-actions / upsertAttendance).
+  if (!(await studentActiveInLessonSection(ctx, data.lessonId, data.studentId)))
+    throw new Error('该学生不在该课节班级')
 
   const existing = await forTenant(ctx).select(
     note,

@@ -15,6 +15,9 @@ export const sectionShareLink = pgTable(
     token: text('token').notNull(), // 32-char nanoid capability; unguessable; rotatable
     label: text('label'),
     revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    // H6: capability expiry. NULLABLE — existing rows (NULL) mean "never expires" (backward-compatible);
+    // only newly issued/rotated tokens carry a TTL. NULL treated as infinite by the resolver.
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

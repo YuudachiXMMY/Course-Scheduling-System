@@ -43,11 +43,19 @@ export default function SectionRoster({
     // SC-seeded (embedded) rosters skip the client fetch entirely.
     if (!open || initialEnrolledIds) return
     let active = true
-    listSectionEnrollments(sectionId).then((rows) => {
-      if (!active) return
-      setEnrolledIds(rows.map((r) => r.studentId))
-      setLoaded(true)
-    })
+    listSectionEnrollments(sectionId)
+      .then((rows) => {
+        if (!active) return
+        setEnrolledIds(rows.map((r) => r.studentId))
+        setLoaded(true)
+      })
+      .catch((e) => {
+        // F10: a rejected loader (expired session, transient failure) must not leave the roster panel
+        // stuck in its unloaded state with no feedback — surface the error.
+        if (!active) return
+        setLoaded(true)
+        setError(e instanceof Error ? e.message : '加载失败')
+      })
     return () => {
       active = false
     }

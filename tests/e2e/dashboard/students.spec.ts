@@ -111,7 +111,7 @@ test.describe('学生管理', () => {
     // 学生行的开通入口固定创建 student 账号（无账号类型下拉）；显示名默认学生名、登录邮箱自动生成，
     // 只需填密码（≥ 8）。
     await row.getByRole('button', { name: '开通学生门户账号' }).click()
-    await row.getByPlaceholder('密码（至少 8 位）').fill('E2ePortalPw1')
+    await row.getByPlaceholder('密码（至少 12 位）').fill('E2ePortalPw1')
     await row.getByRole('button', { name: '开通', exact: true }).click()
 
     // 核心新行为：开通成功后 router.refresh，学生行从「未开通+开通表单」切换到「已开通」分支——登录邮箱

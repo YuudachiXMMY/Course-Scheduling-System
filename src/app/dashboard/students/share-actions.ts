@@ -8,6 +8,7 @@ import { actorOwnsStudent } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { shareLink } from '@/db/schema'
 import { getActiveShare, ensureActiveShare } from '@/app/dashboard/students/share-data'
+import { defaultShareExpiry } from '@/lib/share-ttl'
 
 // One active (non-revoked) share per student. `shareLink` is a NORMAL tenant table here —
 // only the PUBLIC page (src/app/s/[token]/page.tsx via src/lib/share.ts) bypasses forTenant()
@@ -35,17 +36,22 @@ export async function rotateShare(studentId: string): Promise<{ token: string }>
 
   const existing = await getActiveShare(ctx, studentId)
   const token = nanoid(32)
+  // H6: a rotate mints a fresh token → give it a fresh TTL.
   if (!existing) {
     const [created] = await forTenant(ctx).insert(shareLink, {
       studentId,
       token,
       label: '家长课表分享',
+      expiresAt: defaultShareExpiry(),
     })
     revalidatePath('/dashboard/users')
     return { token: created.token }
   }
 
-  const [updated] = await forTenant(ctx).update(shareLink, existing.id, { token })
+  const [updated] = await forTenant(ctx).update(shareLink, existing.id, {
+    token,
+    expiresAt: defaultShareExpiry(),
+  })
   revalidatePath('/dashboard/users')
   return { token: updated.token }
 }

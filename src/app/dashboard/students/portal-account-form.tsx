@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { provisionPortalAccount } from './portal-actions'
+import { MIN_PASSWORD_LENGTH } from '@/auth/password-policy'
 
 // Owner/admin affordance on the students list: mint a parent/student login for this student. On
 // success, the synthesized login email is shown so the tutor can hand it (+ the password they set)
@@ -110,7 +111,7 @@ export default function PortalAccountForm({
         <input
           type="password"
           className="rounded border border-neutral-300 px-2 py-1 text-sm"
-          placeholder="密码（至少 8 位）"
+          placeholder={`密码（至少 ${MIN_PASSWORD_LENGTH} 位）`}
           aria-label="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

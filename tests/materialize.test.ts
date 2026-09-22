@@ -174,3 +174,91 @@ describe('materializeSection term window (local-day bounds)', () => {
     expect(days).toContain('2026-03-30')
   })
 })
+
+// F6 regression: an ad-hoc temp lesson (isException=true, originalStartAt=NULL) must NOT suppress the
+// pattern occurrence in its own calendar week. Before the fix, exceptionWeeks used `originalStartAt ??
+// startAt`, so a temp lesson claimed its week; the following updateSection (clear future pattern rows →
+// re-materialize) then skipped that week and the recurring lesson was permanently deleted.
+describe('materializeSection — F6: temp lesson must not suppress its week pattern occurrence', () => {
+  const org3 = 'org_mat_f6'
+  const uid3 = 'user_mat_f6'
+  let sid3: string
+
+  const cleanup3 = async () => {
+    await db.delete(lesson).where(eq(lesson.tenantId, org3))
+    await db.delete(classSection).where(eq(classSection.tenantId, org3))
+    await db.delete(course).where(eq(course.tenantId, org3))
+    await db.delete(organization).where(inArray(organization.id, [org3]))
+    await db.delete(user).where(inArray(user.id, [uid3]))
+  }
+
+  beforeAll(async () => {
+    await cleanup3()
+    const now = new Date()
+    await db.insert(organization).values([{ id: org3, name: 'F6', slug: 'f6', createdAt: now }])
+    await db.insert(user).values([{ id: uid3, name: 'F6', email: 'f6@m.com', emailVerified: true }])
+    await db
+      .insert(member)
+      .values([{ id: 'm_f6', organizationId: org3, userId: uid3, role: 'owner', createdAt: now }])
+    const ctx = ctxFor(org3, uid3)
+    const [c] = (await forTenant(ctx).insert(course, { title: '数学' })) as { id: string }[]
+    const dtstart = DateTime.fromObject(
+      { year: 2026, month: 3, day: 2, hour: 16, minute: 0 },
+      { zone: 'Asia/Shanghai' },
+    )
+      .toUTC()
+      .toJSDate()
+    const [s] = (await forTenant(ctx).insert(classSection, {
+      courseId: c.id,
+      teacherId: uid3,
+      capacity: 1,
+      rrule: 'FREQ=WEEKLY;BYDAY=MO;COUNT=4',
+      recurrenceDtstart: dtstart,
+      recurrenceTimezone: 'Asia/Shanghai',
+      defaultDurationMinutes: 60,
+    })) as { id: string }[]
+    sid3 = s.id
+  })
+  afterAll(cleanup3)
+
+  it('re-materialize rebuilds a pattern week that only holds a temp (originalStartAt=NULL) lesson', async () => {
+    const ctx = ctxFor(org3, uid3)
+    const first = await materializeSection(ctx, sid3)
+    expect(first.inserted).toBe(4)
+
+    const rows = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.sectionId, sid3),
+    )) as (typeof lesson.$inferSelect)[]
+    const sorted = [...rows].sort((a, b) => a.startAt.getTime() - b.startAt.getTime())
+    const week1Monday = sorted[0]
+
+    // Add an ad-hoc补课 in the SAME ISO week as the first Monday (Wed 19:00, no time overlap → no GiST).
+    const tempStart = new Date(week1Monday.startAt.getTime() + 2 * 24 * 60 * 60 * 1000 + 3 * 3600 * 1000)
+    const tempEnd = new Date(tempStart.getTime() + 60 * 60 * 1000)
+    await forTenant(ctx).insert(lesson, {
+      sectionId: sid3,
+      teacherId: uid3,
+      startAt: tempStart,
+      endAt: tempEnd,
+      isException: true, // ad-hoc: stands in for no pattern slot
+      originalStartAt: null,
+    })
+
+    // Simulate updateSection → clearFutureScheduledLessons: delete the pattern row, keep the temp lesson.
+    await db.delete(lesson).where(and(eq(lesson.id, week1Monday.id), eq(lesson.tenantId, org3)))
+
+    // Re-materialize: the first Monday must be rebuilt (with the bug it was suppressed → inserted 0).
+    const res = await materializeSection(ctx, sid3)
+    expect(res.inserted).toBe(1)
+
+    const finalRows = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.sectionId, sid3),
+    )) as (typeof lesson.$inferSelect)[]
+    const mondayBack = finalRows.some(
+      (r) => !r.isException && r.startAt.getTime() === week1Monday.startAt.getTime(),
+    )
+    expect(mondayBack).toBe(true)
+  })
+})

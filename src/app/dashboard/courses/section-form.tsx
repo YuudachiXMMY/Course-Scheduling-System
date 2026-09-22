@@ -94,19 +94,26 @@ export default function SectionForm({
   useEffect(() => {
     if (!open || !isEdit || !sectionId) return
     let active = true
-    listSectionMeetings(sectionId).then((rows) => {
-      if (!active) return
-      if (rows.length > 0) {
-        setMeetings(
-          rows.map((r) => ({
-            key: nextMeetingKey(),
-            byDay: r.byDay as Weekday,
-            startTime: r.startTime,
-            durationMinutes: String(r.durationMinutes),
-          })),
-        )
-      }
-    })
+    listSectionMeetings(sectionId)
+      .then((rows) => {
+        if (!active) return
+        if (rows.length > 0) {
+          setMeetings(
+            rows.map((r) => ({
+              key: nextMeetingKey(),
+              byDay: r.byDay as Weekday,
+              startTime: r.startTime,
+              durationMinutes: String(r.durationMinutes),
+            })),
+          )
+        }
+      })
+      .catch((e) => {
+        // F10: surface a rejected meetings load (expired session / transient failure) instead of
+        // silently swallowing it and leaving the form seeded with stale/empty meetings.
+        if (!active) return
+        setError(e instanceof Error ? e.message : '加载上课时段失败')
+      })
     return () => {
       active = false
     }

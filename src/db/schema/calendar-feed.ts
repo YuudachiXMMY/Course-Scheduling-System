@@ -13,6 +13,9 @@ export const calendarFeed = pgTable(
     teacherId: text('teacher_id'), // forward-compat scope (MVP: null → whole-tenant feed, P3-7)
     label: text('label'), // e.g. "我的教学日历"
     revokedAt: timestamp('revoked_at', { withTimezone: true, mode: 'date' }),
+    // H6: capability expiry. NULLABLE — existing rows (NULL) mean "never expires" (backward-compatible);
+    // only newly issued/rotated tokens carry a TTL. NULL treated as infinite by the public route.
+    expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

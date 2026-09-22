@@ -19,6 +19,7 @@ import { AuthError, type AuthContext } from '@/auth/context'
 import { mcpAuthContextFor, resolveMcpAuthContext } from '@/auth/mcp-context'
 import { registerCourseSchedulingTools } from '@/mcp/register-tools'
 import { scheduleLessonCore, rescheduleLessonCore } from '@/lib/schedule-core'
+import { BusinessError } from '@/lib/errors'
 import { issueConfirmation, consumeConfirmation, hashPayload } from '@/lib/mcp-confirm'
 import { composeParentMessage } from '@/mcp/message'
 import type { FeedLesson } from '@/lib/ical-feed'
@@ -219,6 +220,34 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
     await expect(mcpAuthContextFor('ghost_user', org)).rejects.toBeInstanceOf(AuthError)
   })
 
+  // B1 (orch-review HIGH regression guard): the MCP static-bearer channel has NO Better Auth session to
+  // revoke, so mcpAuthContextFor MUST itself refuse a banned (deactivated) principal. Reverting the
+  // user.banned check in mcp-context.ts makes this fail — a terminated MCP_USER_ID would keep full access
+  // (student PII, scheduling, notes, share links) until env is manually edited + the container restarted.
+  it('mcpAuthContextFor refuses a banned/deactivated user (no session to revoke → must check user.banned)', async () => {
+    // Active permanent ban (banExpires null, exactly what deactivateStaffCore writes) → refused.
+    await db.update(user).set({ banned: true, banExpires: null }).where(eq(user.id, userId))
+    await expect(mcpAuthContextFor(userId, org)).rejects.toBeInstanceOf(AuthError)
+    // A LAPSED ban (banExpires in the past) is not active → access restored (mirrors Better Auth login).
+    await db
+      .update(user)
+      .set({ banned: true, banExpires: new Date(Date.now() - 60_000) })
+      .where(eq(user.id, userId))
+    const restored = await mcpAuthContextFor(userId, org)
+    expect(restored).toEqual({ userId, tenantId: org, role: 'owner', isPlatformAdmin: false })
+    // A future-dated ban IS active → refused again.
+    await db
+      .update(user)
+      .set({ banned: true, banExpires: new Date(Date.now() + 60_000) })
+      .where(eq(user.id, userId))
+    await expect(mcpAuthContextFor(userId, org)).rejects.toBeInstanceOf(AuthError)
+    // Restore so the remaining sequential tests in this file see an unbanned owner.
+    await db
+      .update(user)
+      .set({ banned: false, banReason: null, banExpires: null })
+      .where(eq(user.id, userId))
+  })
+
   it('scheduleLessonCore schedules a free slot (ok:true)', async () => {
     const res = await scheduleLessonCore(ctxFor(org, userId), {
       sectionId,
@@ -259,6 +288,27 @@ describe('MCP DB integration (schedule-core + mcpAuthContextFor)', () => {
       endAt: at(11, 30),
     })
     expect(res.ok).toBe(true)
+  })
+
+  // L-cwe209 REGRESSION GUARD: the *_confirm MCP tools delegate to schedule-core, and runTool only
+  // surfaces BusinessError messages (everything else → generic '操作失败'). A curated core message like
+  // '课节不存在' MUST therefore be a BusinessError, not a plain Error — else a legit confirm-step failure
+  // (section/lesson deleted or ownership lost between preview and confirm) returns an unhelpful generic.
+  it('rescheduleLessonCore throws a surfaceable BusinessError for a missing lesson', async () => {
+    await expect(
+      rescheduleLessonCore(ctxFor(org, userId), {
+        id: 'nonexistent-lesson-id',
+        startAt: at(10, 0),
+        endAt: at(11, 0),
+      }),
+    ).rejects.toThrow(BusinessError)
+    await expect(
+      rescheduleLessonCore(ctxFor(org, userId), {
+        id: 'nonexistent-lesson-id',
+        startAt: at(10, 0),
+        endAt: at(11, 0),
+      }),
+    ).rejects.toThrow('课节不存在')
   })
 
   // M-1 REGRESSION GUARD: the read-only draft_parent_message must NOT create a shareLink.

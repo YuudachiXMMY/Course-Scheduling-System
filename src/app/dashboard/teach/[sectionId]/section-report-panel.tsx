@@ -3,6 +3,8 @@
 import { useRef, useState, useTransition, type FormEvent, type KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { createReportDraft, type ReportResult } from '@/app/dashboard/reports/actions'
+import { acknowledgeCrossBorderAi } from '@/app/dashboard/reports/consent-actions'
+import { CrossBorderAckNotice } from '@/app/dashboard/reports/cross-border-ack'
 import { ReportItem } from '@/app/dashboard/reports/report-item'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
 import type { ReportRow } from '@/app/dashboard/reports/data'
@@ -38,6 +40,8 @@ export default function SectionReportPanel({
   const [from, setFrom] = useState(initialFrom ?? defaultFrom)
   const [to, setTo] = useState(initialTo ?? defaultTo)
   const [err, setErr] = useState<string | null>(null)
+  // H3: one-time cross-border AI acknowledgment prompt state (see reports/cross-border-ack.tsx).
+  const [needsAck, setNeedsAck] = useState(false)
   const [pending, startTransition] = useTransition()
   const { flash, show } = useFlash()
   const router = useRouter()
@@ -57,6 +61,24 @@ export default function SectionReportPanel({
     })
   }
 
+  // createReportDraft returns problems as data (missing ANTHROPIC_API_KEY etc.) so a failure shows
+  // inline instead of the redacted React #441. sectionId is provenance only — aggregation follows the
+  // student's enrollments in the window. On the first draft in an un-acknowledged org it returns
+  // needsCrossBorderAck → show the one-time notice (H3).
+  async function submitDraft() {
+    const periodStart = period === 'month' ? defaultFrom : from
+    const periodEnd = period === 'month' ? defaultTo : to
+    const res = await createReportDraft({ studentId, sectionId, periodStart, periodEnd })
+    if (!res.ok) {
+      if (res.needsCrossBorderAck) setNeedsAck(true)
+      setErr(res.error)
+      return
+    }
+    setNeedsAck(false)
+    show('已生成草稿')
+    router.refresh()
+  }
+
   function generate(e: FormEvent) {
     e.preventDefault()
     const periodStart = period === 'month' ? defaultFrom : from
@@ -67,16 +89,32 @@ export default function SectionReportPanel({
     }
     setErr(null)
     startTransition(async () => {
-      // createReportDraft returns problems as data (missing ANTHROPIC_API_KEY etc.) so a failure shows
-      // inline instead of the redacted React #441. sectionId is provenance only — aggregation follows
-      // the student's enrollments in the window.
-      const res = await createReportDraft({ studentId, sectionId, periodStart, periodEnd })
-      if (!res.ok) {
-        setErr(res.error)
-        return
+      try {
+        await submitDraft()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
       }
-      show('已生成草稿')
-      router.refresh()
+    })
+  }
+
+  // H3: record the org's one-time cross-border acknowledgment, then retry the draft immediately.
+  function confirmAckAndGenerate() {
+    setErr(null)
+    startTransition(async () => {
+      // acknowledgeCrossBorderAi() 的 requireAuthContext/requirePermission 守卫在其内部 try 之前，
+      // 会话过期/权限丢失时会 throw 而非返回 {ok:false}；连同 submitDraft 一起包进 try，避免未处理
+      // rejection 让按钮静默复位、用户零反馈。
+      try {
+        const ack = await acknowledgeCrossBorderAi()
+        if (!ack.ok) {
+          setErr(ack.error ?? '确认失败')
+          return
+        }
+        setNeedsAck(false)
+        await submitDraft()
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : '操作失败')
+      }
     })
   }
 
@@ -183,6 +221,7 @@ export default function SectionReportPanel({
             </button>
           </div>
           {err && <p className="text-xs text-red-600">{err}</p>}
+          {needsAck && <CrossBorderAckNotice onConfirm={confirmAckAndGenerate} pending={pending} />}
           {flash && (
             <span aria-live="polite" className="text-xs text-green-700">
               {flash}

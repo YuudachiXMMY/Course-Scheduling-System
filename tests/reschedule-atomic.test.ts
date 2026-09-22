@@ -39,16 +39,14 @@ async function seed() {
   await cleanup()
   await seedOrg(org)
   await db.insert(course).values({ id: 'c_ra', tenantId: org, title: '原子改期课程' })
-  await db
-    .insert(classSection)
-    .values({
-      id: sec,
-      tenantId: org,
-      courseId: 'c_ra',
-      name: 'RA',
-      teacherId: teacher,
-      capacity: 5,
-    })
+  await db.insert(classSection).values({
+    id: sec,
+    tenantId: org,
+    courseId: 'c_ra',
+    name: 'RA',
+    teacherId: teacher,
+    capacity: 5,
+  })
   await db.insert(student).values({ id: stu, tenantId: org, name: '学生RA' })
   await db
     .insert(enrollment)
@@ -131,5 +129,48 @@ describe('改期审批并发原子性 (B19/B20)', () => {
   it('顺序：申请已处理后再次 reject 抛"申请已处理"', async () => {
     await approveRescheduleRequestCore(ctx, reqId)
     await expect(rejectRescheduleRequestCore(ctx, reqId)).rejects.toThrow('申请已处理')
+  })
+})
+
+// H7: claim + move are now ONE transaction — if the move fails, the claim rolls back so the request is
+// never stuck 'approved' with its lesson unmoved (the previous compensating-releaseClaim path could be
+// skipped by a crash between the two independent commits). The "crash between claim and move" window is
+// structurally closed by the transaction (nothing commits until both succeed); here we prove the
+// move-fails-→-claim-rolls-back branch deterministically via a soft conflict.
+describe('改期审批事务原子性 (H7)', () => {
+  it('软冲突（目标时段该教师已有另一节课）→ 事务回滚，申请仍 pending 且原课未移动', async () => {
+    // 在申请的目标时段插入同一教师的另一节课，使 approve 内的 rescheduleLessonCore 命中软冲突。
+    await db.insert(lesson).values({
+      id: 'l_ra_conflict',
+      tenantId: org,
+      sectionId: sec,
+      teacherId: teacher,
+      startAt: reqStart,
+      endAt: reqEnd,
+      status: 'scheduled',
+    })
+
+    const res = await approveRescheduleRequestCore(ctx, reqId)
+    expect(res.ok).toBe(false)
+    if (!res.ok) {
+      expect(res.error).toBe('CONFLICT')
+      // 冲突课节应作为 conflicts 回传，供复核者改选时间。
+      expect(res.conflicts.some((c) => c.id === 'l_ra_conflict')).toBe(true)
+    }
+
+    // 认领已随事务回滚：申请仍 pending（可再复核），绝不卡在 approved。
+    const [reqRow] = (await forTenant(ctx).select(
+      rescheduleRequest,
+      eq(rescheduleRequest.id, reqId),
+    )) as (typeof rescheduleRequest.$inferSelect)[]
+    expect(reqRow.status).toBe('pending')
+    expect(reqRow.reviewedById).toBeNull()
+
+    // 原课节未移动，仍在原时间。
+    const [lesRow] = (await forTenant(ctx).select(
+      lesson,
+      eq(lesson.id, les),
+    )) as (typeof lesson.$inferSelect)[]
+    expect(lesRow.startAt.getTime()).toBe(origStart.getTime())
   })
 })

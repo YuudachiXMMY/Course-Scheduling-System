@@ -7,6 +7,7 @@ import type { AuthContext } from '@/auth/context'
 import type { FeedLesson } from '@/lib/ical-feed'
 import { sliceLessonsForSections, withSectionTitles } from '@/lib/share'
 import { sectionDisplayName } from '@/lib/ical-feed'
+import { defaultShareExpiry, isTokenTimeActive } from '@/lib/share-ttl'
 
 type Share = typeof shareLink.$inferSelect
 
@@ -25,11 +26,21 @@ export async function getActiveShare(ctx: AuthContext, studentId: string): Promi
 // one-active-per-student and guards the getOrCreate race (P4-1).
 export async function ensureActiveShare(ctx: AuthContext, studentId: string): Promise<Share> {
   const existing = await getActiveShare(ctx, studentId)
-  if (existing) return existing
+  if (existing) {
+    if (isTokenTimeActive(existing.expiresAt)) return existing
+    // H6: active (not revoked) but time-expired → renew in place, SAME token, so the already-shared
+    // /s/<token> URL keeps working. Avoids "panel shows a token but the public page 404s" (getActiveShare
+    // filters only by revokedAt, but getShareByToken also filters expiry).
+    const [renewed] = await forTenant(ctx).update(shareLink, existing.id, {
+      expiresAt: defaultShareExpiry(),
+    })
+    return renewed
+  }
   const [created] = await forTenant(ctx).insert(shareLink, {
     studentId,
     token: nanoid(32),
     label: '家长课表分享',
+    expiresAt: defaultShareExpiry(),
   })
   return created
 }

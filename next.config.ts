@@ -1,6 +1,7 @@
 import path from 'node:path'
 import type { NextConfig } from 'next'
 import './src/env' // validate env at build/boot; throws early if any var is missing
+import { securityHeaders } from './src/lib/security-headers'
 
 const nextConfig: NextConfig = {
   output: 'standalone', // -> .next/standalone/server.js (Docker). Does NOT copy public/ or .next/static.
@@ -20,13 +21,26 @@ const nextConfig: NextConfig = {
   // so a leaked/forwarded /s/<token> link is never indexed.
   async headers() {
     return [
+      // H2: baseline security headers on every route (merged with the per-route rules below).
+      {
+        source: '/:path*',
+        headers: securityHeaders,
+      },
       {
         source: '/s/:token*',
-        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+          // Token-gated per-student data: never let a shared/browser cache store the rendered page, so
+          // a forwarded/leaked link can't be replayed from cache after the token is revoked.
+          { key: 'Cache-Control', value: 'private, no-store' },
+        ],
       },
       {
         source: '/sec/:token*',
-        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+        headers: [
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+          { key: 'Cache-Control', value: 'private, no-store' },
+        ],
       },
     ]
   },

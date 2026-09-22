@@ -10,7 +10,7 @@ export interface AttendanceSummary {
   absent: number
   late: number
   excused: number
-  rate: number // present / total, 0..1 (0 when total=0), 2-decimal
+  rate: number // F14: (present + late) / total, 0..1 (0 when total=0), 2-decimal
 }
 
 export interface GradeItem {
@@ -27,7 +27,7 @@ export interface ReportData {
   periodEnd: string | null
   attendance: AttendanceSummary
   grades: GradeItem[]
-  gradeAverage: number | null // avg of present scores, 1-decimal; null when none
+  gradeAverage: number | null // F13: avg of graded items as a PERCENTAGE (score/maxScore), 1-decimal; null when none
   notes: string[] // note bodies for the AI to summarize (NOT numbers)
 }
 
@@ -41,7 +41,9 @@ export function summarizeAttendance(statuses: AttendanceStatus[]): AttendanceSum
     rate: 0,
   }
   for (const st of statuses) s[st] += 1
-  s.rate = s.total === 0 ? 0 : Math.round((s.present / s.total) * 100) / 100
+  // F14: attendance rate counts anyone who SHOWED UP — present OR late. Excluding late made a student who
+  // attended every lesson but was late each time read as 0% attendance. (Excused/absent still don't count.)
+  s.rate = s.total === 0 ? 0 : Math.round(((s.present + s.late) / s.total) * 100) / 100
   return s
 }
 
@@ -52,8 +54,41 @@ export function parseScore(raw: string | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-export function averageScore(scores: (number | null)[]): number | null {
-  const present = scores.filter((n): n is number => n != null)
-  if (present.length === 0) return null
-  return Math.round((present.reduce((a, b) => a + b, 0) / present.length) * 10) / 10
+// F13: averaging RAW scores across grades with different max scores is meaningless (9/10 and 90/100 →
+// 49.5). Normalize each graded item to a percentage (score / maxScore * 100) before averaging so the
+// result is comparable across assignments. Items without a positive maxScore can't be normalized and are
+// excluded. Returns a 0..100 percentage (1-decimal) or null when no gradable item remains.
+export function averagePercentage(
+  items: { score: number | null; maxScore: number | null }[],
+): number | null {
+  const pct = items
+    .filter(
+      (g): g is { score: number; maxScore: number } =>
+        g.score != null && g.maxScore != null && g.maxScore > 0,
+    )
+    .map((g) => (g.score / g.maxScore) * 100)
+  if (pct.length === 0) return null
+  return Math.round((pct.reduce((a, b) => a + b, 0) / pct.length) * 10) / 10
+}
+
+// Bound the note text that flows into the LLM prompt. Shared notes can be arbitrarily long Markdown/
+// LaTeX, so even a capped COUNT of notes can balloon a single draft to hundreds of KB — inflating token
+// cost and latency, and (with H4's timeout) risking a slow/failed draft. Cap each note and the running
+// total, preserving order (callers pass most-recent-first). Pure + client-safe so it stays unit-testable.
+export function capNotesForPrompt(
+  bodies: string[],
+  opts: { maxTotalChars?: number; maxPerNote?: number } = {},
+): string[] {
+  const maxTotal = opts.maxTotalChars ?? 20_000
+  const maxPer = opts.maxPerNote ?? 4_000
+  const out: string[] = []
+  let used = 0
+  for (const raw of bodies) {
+    if (used >= maxTotal) break
+    const perCap = Math.min(maxPer, maxTotal - used)
+    const body = raw.length > perCap ? raw.slice(0, perCap) : raw
+    out.push(body)
+    used += body.length
+  }
+  return out
 }

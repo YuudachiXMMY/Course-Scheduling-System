@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, or } from 'drizzle-orm'
 import { db } from '@/db'
 import { calendarFeed } from '@/db/schema'
 import { getFeedLessons, buildIcs } from '@/lib/ical-feed'
@@ -14,7 +14,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const [feed] = await db
     .select()
     .from(calendarFeed)
-    .where(and(eq(calendarFeed.token, token), isNull(calendarFeed.revokedAt)))
+    .where(
+      and(
+        eq(calendarFeed.token, token),
+        isNull(calendarFeed.revokedAt),
+        // H6: an expired feed 404s like a revoked one. NULL expiry = never expires (grandfathered).
+        or(isNull(calendarFeed.expiresAt), gt(calendarFeed.expiresAt, new Date())),
+      ),
+    )
     .limit(1)
   if (!feed) return new Response('Not found', { status: 404 })
 
@@ -31,9 +38,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       'Content-Type': 'text/calendar; charset=utf-8',
       'Content-Disposition': 'inline; filename="schedule.ics"',
       // private: this is per-tenant data behind a capability token — shared/intermediary caches
-      // (CDN, proxy) must NOT store it. must-revalidate: once stale, a cache must recheck the
-      // origin, so a rotated/revoked feed 404s promptly instead of serving a stale .ics (M2).
-      'Cache-Control': 'private, max-age=3600, must-revalidate',
+      // (CDN, proxy) must NOT store it. no-cache (was max-age=3600): the client may store the .ics but
+      // MUST revalidate with the origin before every reuse, so a rotated/revoked feed 404s IMMEDIATELY
+      // instead of coasting on a private cache for up to an hour (M2 / audit token-revocation latency).
+      'Cache-Control': 'private, no-cache',
     },
   })
 }

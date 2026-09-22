@@ -4,7 +4,8 @@ import { forTenant } from '@/db/tenant'
 import { attendance, enrollment, grade, lesson, note, student } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import {
-  averageScore,
+  averagePercentage,
+  capNotesForPrompt,
   parseScore,
   summarizeAttendance,
   type AttendanceStatus,
@@ -71,7 +72,8 @@ export async function getReportData(
   const allGrades = await forTenant(ctx).select(grade, eq(grade.studentId, studentId))
   const relevantGrades = allGrades.filter((g) => {
     if (g.lessonId != null && lessonIds.has(g.lessonId)) return true
-    if (g.sectionId != null && sectionIdSet.has(g.sectionId)) return inWindow(g.gradedAt ?? g.createdAt)
+    if (g.sectionId != null && sectionIdSet.has(g.sectionId))
+      return inWindow(g.gradedAt ?? g.createdAt)
     return false
   })
 
@@ -83,10 +85,12 @@ export async function getReportData(
     note,
     and(eq(note.studentId, studentId), eq(note.visibility, 'shared')),
   )
-  const notes = noteRows
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .slice(0, 20)
-    .map((n) => n.body)
+  const notes = capNotesForPrompt(
+    noteRows
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 20)
+      .map((n) => n.body),
+  )
 
   const grades: GradeItem[] = relevantGrades.map((g) => ({
     title: g.title,
@@ -102,7 +106,7 @@ export async function getReportData(
     periodEnd: isoDay(window.to),
     attendance: summarizeAttendance(attendanceRows.map((a) => a.status as AttendanceStatus)),
     grades,
-    gradeAverage: averageScore(grades.map((g) => g.score)),
+    gradeAverage: averagePercentage(grades), // F13: normalize per-item to a percentage before averaging
     notes,
   }
 }

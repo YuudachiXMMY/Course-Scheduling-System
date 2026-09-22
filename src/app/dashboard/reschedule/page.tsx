@@ -1,5 +1,5 @@
 import { requireAuthContext } from '@/auth/context'
-import { requirePermission, can } from '@/auth/authorize'
+import { requirePagePermission, can } from '@/auth/authorize'
 import { listRescheduleRequests } from './data'
 import ReviewPanel from './review-panel'
 
@@ -8,7 +8,7 @@ import ReviewPanel from './review-panel'
 // Assistants can list but not approve/reject → the buttons are hidden (actions also re-check).
 export default async function ReschedulePage() {
   const ctx = await requireAuthContext()
-  requirePermission(ctx, { rescheduleRequest: ['list'] })
+  requirePagePermission(ctx, { rescheduleRequest: ['list'] })
   const requests = await listRescheduleRequests(ctx, 'pending')
   const canReview = can(ctx.role, { rescheduleRequest: ['approve'] })
 

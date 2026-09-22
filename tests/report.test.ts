@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { summarizeAttendance, parseScore, averageScore, type ReportData } from '@/lib/report-stats'
+import { summarizeAttendance, parseScore, type ReportData } from '@/lib/report-stats'
 import { buildReportPrompt, RUBRIC, RUBRIC_VERSION } from '@/lib/report-prompt'
 import { can } from '@/auth/authorize'
 import { renderReportPdf } from '@/lib/report-pdf'
@@ -68,12 +68,6 @@ describe('report-stats aggregators', () => {
     expect(parseScore(null)).toBeNull()
     expect(parseScore('not-a-number')).toBeNull()
   })
-  it('averageScore averages present scores, ignoring nulls', () => {
-    expect(averageScore([85, 90])).toBe(87.5)
-    expect(averageScore([85, null, 90])).toBe(87.5)
-    expect(averageScore([null, null])).toBeNull()
-    expect(averageScore([])).toBeNull()
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -108,9 +102,12 @@ describe('buildReportPrompt', () => {
     expect(userJson).toContain('</STUDENT_DATA>')
     expect(userJson).toContain('不可信资料')
   })
-  it('userJson carries the structured data (numbers) for the model to summarize', () => {
+  it('userJson carries the structured data (numbers) but REDACTS the real name (H3)', () => {
     const { userJson } = buildReportPrompt({ rubricVersion: RUBRIC_VERSION, data: sampleData })
-    expect(userJson).toContain('小明')
+    // H3: the student's real name never crosses the border — replaced by the placeholder at the prompt
+    // boundary; the numbers the model summarizes are still present.
+    expect(userJson).not.toContain('小明')
+    expect(userJson).toContain('该学生')
     expect(userJson).toContain('"rate": 0.8')
     expect(userJson).toContain('月考')
   })
@@ -263,7 +260,10 @@ describe('draftNarrative', () => {
     expect(arg.model).toBe('MiniMax-M3')
     expect(arg.messages[0].role).toBe('system')
     expect(arg.messages[1].role).toBe('user')
-    expect(arg.messages[1].content).toContain('小明')
+    // H3: the prompt carries the redacted placeholder, never the real name (the mocked narrative may of
+    // course contain a name — the model wrote it; redaction only applies to the INPUT).
+    expect(arg.messages[1].content).toContain('该学生')
+    expect(arg.messages[1].content).not.toContain('小明')
   })
 
   it('minimax: 未配 MINIMAX_API_KEY 时抛错且不调用 API', async () => {

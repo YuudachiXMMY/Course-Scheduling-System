@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { auth } from '@/auth/auth'
 import { requireAuthContext } from '@/auth/context'
 import { consumeRateLimit, resetRateLimit } from '@/lib/rate-limit'
+import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
 
 // Throttle self-service password changes per user. The current-password check exists to stop a
 // hijacked/short-lived session from being turned into permanent takeover; without a limit an attacker
@@ -22,7 +23,7 @@ export type ChangePasswordResult = { ok: true } | { ok: false; error: string }
 
 const changeSchema = z.object({
   currentPassword: z.string().min(1, '请输入当前密码'),
-  newPassword: z.string().min(8, '密码至少 8 位'),
+  newPassword: z.string().min(MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE),
 })
 export type ChangeOwnPasswordInput = z.input<typeof changeSchema>
 

@@ -42,6 +42,28 @@ RUN node_modules/.bin/esbuild scripts/migrate.ts \
       --bundle --platform=node --format=esm --target=node24 \
       --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
       --external:cloudflare:sockets --outfile=dist/migrate.mjs
+# B1: self-contained orphan-tenant cleanup, run by the entrypoint BEFORE migrate so an upgrade of a DB
+# holding orphan tenant_id rows no longer crash-loops at 0016. Same shape as migrate (postgres + dotenv
+# only, no @/ imports), so the same bundle flags apply.
+RUN node_modules/.bin/esbuild scripts/cleanup-orphan-tenants.ts \
+      --bundle --platform=node --format=esm --target=node24 \
+      --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
+      --external:cloudflare:sockets --outfile=dist/cleanup-orphan-tenants.mjs
+# F4: self-contained room-overlap cleanup, run by the entrypoint BEFORE migrate so an upgrade of a DB
+# holding pre-0015 same-room time-overlapping lessons no longer crash-loops when 0015 adds the EXCLUDE
+# constraint. Idempotent (pg_constraint fast-path) + advisory-locked + fresh-DB-safe. Same postgres +
+# dotenv shape as cleanup-orphan-tenants, so the same bundle flags apply.
+RUN node_modules/.bin/esbuild scripts/cleanup-room-overlaps.ts \
+      --bundle --platform=node --format=esm --target=node24 \
+      --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
+      --external:cloudflare:sockets --outfile=dist/cleanup-room-overlaps.mjs
+# H8: explicit tenant purge routine — a manual OPS tool (NOT wired into the entrypoint; it is
+# irreversible and dry-run by default). Bundled so an operator can offboard a tenant from inside the
+# prod container: `node dist/purge-tenant.mjs <orgId> --commit`. Same postgres + dotenv shape as cleanup.
+RUN node_modules/.bin/esbuild scripts/purge-tenant.ts \
+      --bundle --platform=node --format=esm --target=node24 \
+      --banner:js="import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" \
+      --external:cloudflare:sockets --outfile=dist/purge-tenant.mjs
 # Self-contained admin seed: bundle better-auth + drizzle + postgres into one .mjs. Unlike migrate,
 # seed-admin reuses @/db & @/auth/auth, which transitively `import 'server-only'` — the extra
 # --conditions=react-server resolves that to an empty module (same trick as db:seed:e2e) so the bundle
@@ -82,6 +104,9 @@ COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright ./node_modu
 COPY --from=build --chown=nextjs:nodejs /app/node_modules/playwright-core ./node_modules/playwright-core
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/dist/migrate.mjs ./dist/migrate.mjs
+COPY --from=build --chown=nextjs:nodejs /app/dist/cleanup-orphan-tenants.mjs ./dist/cleanup-orphan-tenants.mjs
+COPY --from=build --chown=nextjs:nodejs /app/dist/cleanup-room-overlaps.mjs ./dist/cleanup-room-overlaps.mjs
+COPY --from=build --chown=nextjs:nodejs /app/dist/purge-tenant.mjs ./dist/purge-tenant.mjs
 COPY --from=build --chown=nextjs:nodejs /app/dist/seed-admin.mjs ./dist/seed-admin.mjs
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=build --chown=nextjs:nodejs /app/docker/entrypoint.sh ./entrypoint.sh

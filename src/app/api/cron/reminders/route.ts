@@ -28,6 +28,7 @@ export async function POST(req: Request) {
   const orgs = await db.select({ id: organization.id }).from(organization)
   let created = 0
   let pruned = 0
+  let failed = 0
   for (const o of orgs) {
     const ctx: AuthContext = {
       userId: 'system',
@@ -42,7 +43,16 @@ export async function POST(req: Request) {
     } catch (e) {
       // Per-tenant isolation: one bad tenant must not abort the whole batch.
       console.error('reminder scan failed', o.id, e)
+      failed += 1
     }
   }
-  return Response.json({ ok: true, created, pruned })
+  // F9: a SYSTEMATIC failure (every tenant threw — DB down, migration mismatch) previously still
+  // returned 200 {ok:true}, so a status-only monitor never saw the outage. Report `failed` always, and
+  // fail the whole run (500) when EVERY tenant errored. A partial failure stays 200 so one flaky tenant
+  // doesn't page, but `failed > 0` in the body lets richer monitoring alert on degradation.
+  const systemic = orgs.length > 0 && failed === orgs.length
+  return Response.json(
+    { ok: !systemic, created, pruned, failed, total: orgs.length },
+    { status: systemic ? 500 : 200 },
+  )
 }
