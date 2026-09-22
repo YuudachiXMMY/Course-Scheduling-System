@@ -56,3 +56,15 @@ export function isExclusionViolation(e: unknown): boolean {
   }
   return false
 }
+
+// Same cause-chain walk for the UNIQUE violation SQLSTATE 23505 — used to convert a lost
+// select-then-write race (e.g. the quick-grade upsert backstopped by uq_grade_lesson_student_title)
+// into an idempotent retry instead of surfacing a raw DB error. (F5)
+export function isUniqueViolation(e: unknown): boolean {
+  let cur = e
+  for (let depth = 0; depth < 5 && typeof cur === 'object' && cur !== null; depth++) {
+    if ((cur as { code?: string }).code === '23505') return true
+    cur = (cur as { cause?: unknown }).cause
+  }
+  return false
+}
