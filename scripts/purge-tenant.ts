@@ -18,7 +18,15 @@
 //   node dist/purge-tenant.mjs <organizationId>            # in the prod container
 // Add --commit (or --yes) to actually execute the irreversible purge:
 //   npx tsx scripts/purge-tenant.ts <organizationId> --commit
+// COMMIT is gated by a re-confirmation of the organizationId (guards against a mistyped/pasted id):
+// re-type it at the interactive prompt, or pass it non-interactively for scripted runs:
+//   npx tsx scripts/purge-tenant.ts <organizationId> --commit --confirm <organizationId>
+// Every run emits a JSON audit line (actor, timestamp, tenantId, row counts) to stderr; set
+// PURGE_AUDIT_LOG=/path/to/file (or pass --actor <name> / PURGE_ACTOR) for a durable trail.
 import 'dotenv/config'
+import { appendFileSync } from 'node:fs'
+import os from 'node:os'
+import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 import postgres from 'postgres'
 import {
@@ -165,13 +173,103 @@ function printSummary(summary: PurgeSummary): void {
   )
 }
 
+// Read a `--name value` or `--name=value` flag out of argv. Returns undefined when the flag is absent,
+// '' when it is present with an empty value — so callers can distinguish "not passed" from "passed empty".
+export function parseFlagValue(flags: readonly string[], name: string): string | undefined {
+  for (let i = 0; i < flags.length; i++) {
+    const f = flags[i]
+    if (f === name) return flags[i + 1] ?? ''
+    if (f.startsWith(`${name}=`)) return f.slice(name.length + 1)
+  }
+  return undefined
+}
+
+// Resolve the operator responsible for this run, for the audit trail only (never an authz gate):
+// explicit --actor wins, then PURGE_ACTOR, then the OS user, else 'unknown'.
+export function resolveActor(actorFlag: string | undefined): string {
+  const fromFlag = actorFlag?.trim()
+  if (fromFlag) return fromFlag
+  const fromEnv = process.env.PURGE_ACTOR?.trim()
+  if (fromEnv) return fromEnv
+  try {
+    const name = os.userInfo().username
+    if (name) return name
+  } catch {
+    // os.userInfo() can throw when the container has no passwd entry for the uid — fall through.
+  }
+  return 'unknown'
+}
+
+// Emit a durable audit record for the run. Written as one JSON line to stderr (visible even when stdout
+// is parsed) AND, when PURGE_AUDIT_LOG is set, appended to that file so the trail outlives the
+// container's stdout/shell history. The file write is best-effort — an audit-log failure must never
+// abort or mask the purge itself.
+function writeAuditRecord(record: Record<string, unknown>): void {
+  const line = `[purge-tenant][audit] ${JSON.stringify(record)}`
+  console.error(line)
+  const path = process.env.PURGE_AUDIT_LOG?.trim()
+  if (path) {
+    try {
+      appendFileSync(path, `${line}\n`)
+    } catch (err) {
+      console.error(`[purge-tenant] WARNING: could not append audit record to ${path}:`, err)
+    }
+  }
+}
+
+function promptLine(question: string): Promise<string> {
+  // Prompt on stderr so an interactive confirmation never contaminates parsed stdout.
+  const rl = createInterface({ input: process.stdin, output: process.stderr })
+  return new Promise<string>((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close()
+      resolve(answer)
+    })
+  })
+}
+
+// COMMIT is irreversible — require the operator to prove intent by re-supplying the EXACT organizationId
+// before a single row is touched, guarding against a mistyped or pasted tenantId. A non-interactive run
+// (scripted / no TTY) must pass `--confirm <organizationId>`; an interactive run is prompted to re-type
+// it. Any mismatch — or a non-TTY run without --confirm — aborts the process without deleting anything.
+async function assertCommitConfirmed(
+  tenantId: string,
+  confirmFlag: string | undefined,
+): Promise<void> {
+  if (confirmFlag !== undefined) {
+    if (confirmFlag === tenantId) return
+    console.error('[purge-tenant] --confirm value does not match the organizationId — aborting.')
+    process.exit(1)
+  }
+  if (!process.stdin.isTTY) {
+    console.error(
+      '[purge-tenant] refusing to COMMIT non-interactively without --confirm <organizationId>.',
+    )
+    process.exit(1)
+  }
+  const typed = (
+    await promptLine(
+      `[purge-tenant] This IRREVERSIBLY deletes ALL data for tenant ${tenantId}.\n` +
+        '[purge-tenant] Re-type the organizationId to confirm: ',
+    )
+  ).trim()
+  if (typed !== tenantId) {
+    console.error('[purge-tenant] confirmation did not match — aborting. Nothing was deleted.')
+    process.exit(1)
+  }
+}
+
 async function main() {
   const tenantId = process.argv[2]
   const flags = process.argv.slice(3)
   const commit = flags.includes('--commit') || flags.includes('--yes')
+  const confirmFlag = parseFlagValue(flags, '--confirm')
+  const actor = resolveActor(parseFlagValue(flags, '--actor'))
 
   if (!tenantId || tenantId.startsWith('-')) {
-    console.error('[purge-tenant] usage: purge-tenant <organizationId> [--commit]')
+    console.error(
+      '[purge-tenant] usage: purge-tenant <organizationId> [--commit] [--confirm <organizationId>] [--actor <name>]',
+    )
     console.error(
       '[purge-tenant] runs a DRY-RUN by default; pass --commit to execute the irreversible purge.',
     )
@@ -183,13 +281,29 @@ async function main() {
     process.exit(1)
   }
 
+  // Gate the irreversible path behind a re-confirmation of the organizationId before opening a
+  // connection or touching a row.
+  if (commit) await assertCommitConfirmed(tenantId, confirmFlag)
+
   const sql = postgres(url, { max: 1, onnotice: () => {} })
   try {
     console.log(
-      `[purge-tenant] ${commit ? 'COMMIT' : 'DRY-RUN'} — tenant ${tenantId} (global user/account rows are NOT touched)`,
+      `[purge-tenant] ${commit ? 'COMMIT' : 'DRY-RUN'} — tenant ${tenantId} (actor: ${actor}; global user/account rows are NOT touched)`,
     )
     const summary = await purgeTenant(sql, tenantId, { dryRun: !commit })
     printSummary(summary)
+    // Record who did what, when, and how many rows — a durable trail for an irreversible operation.
+    writeAuditRecord({
+      actor,
+      timestamp: new Date().toISOString(),
+      tenantId,
+      dryRun: summary.dryRun,
+      organizationExists: summary.organizationExists,
+      organizationDeleted: summary.organizationDeleted,
+      sessionsCleared: summary.sessionsCleared,
+      totalRows: summary.totalRows,
+      perTable: summary.perTable,
+    })
     if (!commit) {
       console.log('[purge-tenant] DRY-RUN — nothing was deleted. Re-run with --commit to execute.')
     } else if (!summary.organizationExists) {
