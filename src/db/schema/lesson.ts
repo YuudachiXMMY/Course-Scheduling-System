@@ -52,7 +52,11 @@ export const lesson = pgTable(
     // builder, so it is NOT modeled here (same pattern as lesson_no_teacher_overlap / 0001). This btree
     // index still backs range lookups by room+time.
     index('idx_lesson_room_time').on(t.tenantId, t.location, t.startAt),
-    index('idx_lesson_tenant_section').on(t.tenantId, t.sectionId),
+    // PERF: (tenant_id, section_id, start_at) backs "one section's lessons within a time window" —
+    // teacher-scoped calendar (schedule/data.ts), getSectionLessons, and the per-child portal slice
+    // (share-data.ts). Its (tenant_id, section_id) prefix fully covers the plain section lookups the
+    // former idx_lesson_tenant_section served, so that 2-col index is dropped as redundant.
+    index('idx_lesson_tenant_section_start').on(t.tenantId, t.sectionId, t.startAt),
     index('idx_lesson_tenant_status').on(t.tenantId, t.status),
     check('ck_lesson_time_order', sql`${t.endAt} > ${t.startAt}`),
   ],
