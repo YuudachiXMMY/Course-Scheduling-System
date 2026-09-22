@@ -53,7 +53,7 @@ describe('findRoomOverlapPairs (the overlap self-join predicate)', () => {
           -- different tenant, same room/time → never cross-tenant
           ('l7', 't2', 'roomA', ${iso(10)},    ${iso(11)},    'scheduled')`
 
-      const pairs = await findRoomOverlapPairs(tx as unknown as typeof sql, '_probe_lessons')
+      const pairs = await findRoomOverlapPairs(tx, '_probe_lessons')
       expect(pairs).toHaveLength(1)
       expect(pairs[0]!.a_id).toBe('l1')
       expect(pairs[0]!.b_id).toBe('l2')
@@ -73,7 +73,7 @@ describe('findRoomOverlapPairs (the overlap self-join predicate)', () => {
         INSERT INTO _probe_lessons (id, tenant_id, location, start_at, end_at, status) VALUES
           ('a', 't1', 'roomA', ${iso(9)},  ${iso(10)}, 'scheduled'),
           ('b', 't1', 'roomA', ${iso(10)}, ${iso(11)}, 'scheduled')`
-      const pairs = await findRoomOverlapPairs(tx as unknown as typeof sql, '_probe_lessons')
+      const pairs = await findRoomOverlapPairs(tx, '_probe_lessons')
       expect(pairs).toHaveLength(0)
     })
   })
