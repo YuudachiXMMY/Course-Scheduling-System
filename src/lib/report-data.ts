@@ -4,7 +4,7 @@ import { forTenant } from '@/db/tenant'
 import { attendance, enrollment, grade, lesson, note, student } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import {
-  averageScore,
+  averagePercentage,
   capNotesForPrompt,
   parseScore,
   summarizeAttendance,
@@ -106,7 +106,7 @@ export async function getReportData(
     periodEnd: isoDay(window.to),
     attendance: summarizeAttendance(attendanceRows.map((a) => a.status as AttendanceStatus)),
     grades,
-    gradeAverage: averageScore(grades.map((g) => g.score)),
+    gradeAverage: averagePercentage(grades), // F13: normalize per-item to a percentage before averaging
     notes,
   }
 }
