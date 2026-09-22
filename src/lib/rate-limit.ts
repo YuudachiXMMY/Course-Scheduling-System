@@ -15,7 +15,12 @@
 
 type HitLog = number[]
 
-// Keyed by `${bucket}:${id}`. Entries self-prune on access; a periodic sweep also caps unbounded growth.
+// Keyed by `${bucket}:${id}`. Each entry's in-window timestamps are pruned on access (consumeRateLimit
+// filters by cutoff every call). F16: there is NO periodic sweep — a key that is written once and never
+// touched again retains its (short) HitLog array indefinitely. Growth is therefore bounded by
+// distinct (bucket, active-user) pairs, which is small and slow for this app; a key is only fully
+// dropped by resetRateLimit() (on success) or __clearAllRateLimits() (tests). If this ever needs a hard
+// cap, add a size-triggered sweep here — do NOT rely on a claimed background timer that doesn't exist.
 const hits = new Map<string, HitLog>()
 
 export type RateLimitResult = { allowed: boolean; retryAfterMs: number }
