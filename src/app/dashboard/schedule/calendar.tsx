@@ -65,6 +65,19 @@ export default function ScheduleCalendar({
   sections: SectionOption[]
 }) {
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
+  // STALE: useState only captures initialEvents on first mount. After a mutation elsewhere (a section
+  // edit that clears future lessons, materialize on another tab) revalidatePath re-renders SchedulePage
+  // with fresh initialEvents, but the calendar kept showing the stale first-mount snapshot on client
+  // navigation back to /dashboard/schedule. Re-seed when the server sends a new array — React's "adjust
+  // state during render" pattern (not an effect, so no cascading-render lint violation). It does NOT
+  // clobber optimistic edits: create/reschedule/cancel below mutate local state WITHOUT router.refresh,
+  // so the prop reference stays stable across those re-renders; initialEvents only changes identity on a
+  // real server round-trip, where the server is the source of truth.
+  const [seededEvents, setSeededEvents] = useState(initialEvents)
+  if (seededEvents !== initialEvents) {
+    setSeededEvents(initialEvents)
+    setEvents(initialEvents)
+  }
   const [sectionId, setSectionId] = useState<string>(sections[0]?.id ?? '')
   const [visibleSectionIds, setVisibleSectionIds] = useState<Set<string>>(
     () => new Set(sections.map((s) => s.id)),
