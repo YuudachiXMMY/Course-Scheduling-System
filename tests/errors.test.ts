@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { ConflictError, isExclusionViolation, toPortalActionError } from '@/lib/errors'
+import {
+  ConflictError,
+  isExclusionViolation,
+  isUniqueViolation,
+  toPortalActionError,
+} from '@/lib/errors'
 
 // errors.ts is a pure leaf module. portal-action-error.test.ts already covers the common
 // toPortalActionError paths (BusinessError / ConflictError-default / FORBIDDEN / UNAUTHENTICATED /
@@ -41,6 +46,40 @@ describe('isExclusionViolation — cause-chain walk (SQLSTATE 23P01)', () => {
     expect(isExclusionViolation(undefined)).toBe(false)
     expect(isExclusionViolation('23P01')).toBe(false)
     expect(isExclusionViolation(42)).toBe(false)
+  })
+})
+
+// B3 (orch-review HIGH — test gap): SQLSTATE 23505 is the UNIQUE violation. F5's quick-grade upsert relies
+// on isUniqueViolation to turn a lost select-then-insert race (backstopped by uq_grade_lesson_student_title)
+// into an idempotent recover instead of a raw DB error — same depth-5 cause-chain walk as the exclusion one.
+describe('isUniqueViolation — cause-chain walk (SQLSTATE 23505)', () => {
+  it('matches a top-level code', () => {
+    expect(isUniqueViolation({ code: '23505' })).toBe(true)
+  })
+
+  it('matches a code nested one .cause hop down (the Drizzle wrapping case)', () => {
+    expect(isUniqueViolation({ cause: { code: '23505' } })).toBe(true)
+  })
+
+  it('matches a code up to four .cause hops down (within the depth-5 budget)', () => {
+    const nested = { cause: { cause: { cause: { cause: { code: '23505' } } } } }
+    expect(isUniqueViolation(nested)).toBe(true)
+  })
+
+  it('does NOT match a code buried beyond the depth-5 cutoff', () => {
+    const tooDeep = { cause: { cause: { cause: { cause: { cause: { code: '23505' } } } } } }
+    expect(isUniqueViolation(tooDeep)).toBe(false)
+  })
+
+  it('returns false for a different SQLSTATE (e.g. the 23P01 exclusion violation)', () => {
+    expect(isUniqueViolation({ code: '23P01', cause: { code: '23503' } })).toBe(false)
+  })
+
+  it('returns false for null, undefined, and non-object inputs', () => {
+    expect(isUniqueViolation(null)).toBe(false)
+    expect(isUniqueViolation(undefined)).toBe(false)
+    expect(isUniqueViolation('23505')).toBe(false)
+    expect(isUniqueViolation(42)).toBe(false)
   })
 })
 
