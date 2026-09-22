@@ -30,12 +30,13 @@ async function probeDatabase(): Promise<boolean> {
     connection: { statement_timeout: DB_PROBE_TIMEOUT_MS },
     onnotice: () => {},
   })
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
     await Promise.race([
       probe`select 1`,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('db probe timed out')), DB_PROBE_TIMEOUT_MS),
-      ),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('db probe timed out')), DB_PROBE_TIMEOUT_MS)
+      }),
     ])
     return true
   } catch (e) {
@@ -43,6 +44,10 @@ async function probeDatabase(): Promise<boolean> {
     console.error('[health] database probe failed', e)
     return false
   } finally {
+    // A6 (orch-review LOW): clear the race-loser timer when the probe wins, so a fast health check doesn't
+    // leave a dangling 3s timer pending (the platform re-probes ~every 30s). Not a correctness bug — the
+    // race still settles either way — just avoids needless pending timers.
+    if (timer) clearTimeout(timer)
     // Force the socket shut even mid-query so a hung probe releases its connection immediately — the
     // race above abandons the query but never closes it. `end({ timeout: 0 })` rejects any pending query
     // and tears the connection down at once. On its own isolated client this can never touch the pool.

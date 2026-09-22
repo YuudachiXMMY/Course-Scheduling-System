@@ -54,12 +54,6 @@ export function parseScore(raw: string | null): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-export function averageScore(scores: (number | null)[]): number | null {
-  const present = scores.filter((n): n is number => n != null)
-  if (present.length === 0) return null
-  return Math.round((present.reduce((a, b) => a + b, 0) / present.length) * 10) / 10
-}
-
 // F13: averaging RAW scores across grades with different max scores is meaningless (9/10 and 90/100 →
 // 49.5). Normalize each graded item to a percentage (score / maxScore * 100) before averaging so the
 // result is comparable across assignments. Items without a positive maxScore can't be normalized and are

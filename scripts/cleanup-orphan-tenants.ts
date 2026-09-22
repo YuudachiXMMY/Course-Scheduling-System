@@ -15,7 +15,12 @@ import 'dotenv/config'
 import { pathToFileURL } from 'node:url'
 import postgres from 'postgres'
 
-type Sql = ReturnType<typeof postgres>
+// A query executor accepted by the tenant helpers below: either the top-level postgres client OR a
+// transaction handle from sql.begin(). Both extend postgres.ISql (the tagged-template surface these
+// functions use), so typing over the union lets a `tx` pass WITHOUT the `as unknown as` cast that would
+// otherwise mask a real Sql-vs-TransactionSql mismatch — purge-tenant.ts runs these on a tx. (A4)
+export type SqlExecutor = postgres.Sql | postgres.TransactionSql
+type Sql = SqlExecutor
 
 export const CLEANUP_LOCK_KEY = 728934123 // shared with scripts/migrate.ts — serialise schema/data mutation
 

@@ -9,6 +9,7 @@ import { classSection, enrollment, progressReport, student } from '@/db/schema'
 import { getReportViewModel } from '@/lib/report-core'
 import { renderReportPdf } from '@/lib/report-pdf'
 import { consumeRateLimit } from '@/lib/rate-limit'
+import { safeZipEntryName } from '@/lib/zip-entry-name'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,11 +26,10 @@ const EXPORT_ZIP_LIMIT = { limit: 10, windowMs: 60_000 }
 
 const stamp = () => new Date().toISOString().slice(0, 16).replace('T', ' ')
 
-// Sanitize a student name into a safe ZIP entry folder (mirror export/section/route.ts).
-function safe(name: string): string {
-  const cleaned = name.replace(/[/\\:*?"<>|]/g, '_').trim()
-  return cleaned.length > 0 ? cleaned : 'student'
-}
+// A3 (orch-review MEDIUM): use the shared, unit-tested, F3-hardened sanitizer (which also collapses `..`
+// runs as Zip-Slip defense-in-depth) instead of a private copy that silently diverged — matches
+// export/section/route.ts so both ZIP-producing routes stay in lockstep.
+const safe = (name: string) => safeZipEntryName(name)
 
 // P5: AUTHENTICATED batch export — one APPROVED report PDF per active-enrolled student in the
 // section. Students without an approved report are skipped. Sequential loop (small-class scale).
