@@ -85,3 +85,26 @@ export async function actorOwnsLesson(ctx: AuthContext, lessonId: string): Promi
   const row = await forTenant(ctx).findById(lesson, lessonId)
   return !!row && actorOwnsSection(ctx, { teacherId: row.teacherId })
 }
+
+// F2 / B31: object-level authz for the lesson-scoped student WRITE paths (grade / attendance / per-student
+// note). Owning the LESSON (actorOwnsLesson) is not enough — each of those rows' FK is (tenant, student),
+// which only guarantees same-tenant, NOT same-roster. Without this a teacher could write a grade / ghost
+// attendance / comment for ANY same-tenant student, permanently polluting a foreign student's record.
+// True iff `studentId` is ACTIVELY enrolled in the section that owns `lessonId`. A missing lesson → false.
+export async function studentActiveInLessonSection(
+  ctx: AuthContext,
+  lessonId: string,
+  studentId: string,
+): Promise<boolean> {
+  const lrow = await forTenant(ctx).findById(lesson, lessonId)
+  if (!lrow) return false
+  const enrolled = await forTenant(ctx).select(
+    enrollment,
+    and(
+      eq(enrollment.sectionId, lrow.sectionId),
+      eq(enrollment.studentId, studentId),
+      eq(enrollment.status, 'active'),
+    ),
+  )
+  return enrolled.length > 0
+}

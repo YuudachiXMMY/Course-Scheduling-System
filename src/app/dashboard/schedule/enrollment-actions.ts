@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
-import { actorOwnsSection } from '@/auth/scope'
+import { actorOwnsSection, actorOwnsStudent } from '@/auth/scope'
 import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { enrollment, classSection } from '@/db/schema'
@@ -26,6 +26,14 @@ export async function enrollStudent(input: z.input<typeof enrollSchema>) {
   // 工作流 E: a teacher may only manage the roster of sections they teach (defence-in-depth — the UI
   // never offers a foreign section, but a direct action call must not enroll into another teacher's class).
   if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
+  // F1: object-level authz on studentId — owning the SECTION is not enough. The only DB constraint is the
+  // (tenantId, studentId) composite FK, which guarantees same-tenant but NOT same-roster. Without this a
+  // section teacher could enroll ANY same-tenant student (e.g. another teacher's private student), and the
+  // enrollment then permanently grants that teacher visibility to the student's parent PII, reports,
+  // exports, and the ability to mint a persistent /s/{token} share link. Require the student to already be
+  // within the actor's scope (created by them, or actively enrolled in a section they teach). Mirrors the
+  // B31 fix on the grade write path, which is exactly the ownership relation this "minting" gate depends on.
+  if (!(await actorOwnsStudent(ctx, data.studentId))) throw new Error('无权添加该学生')
 
   // Cheap fast-return outside the transaction: a re-click on an already-active enrollment does nothing.
   const existing = await forTenant(ctx).select(
@@ -121,6 +129,9 @@ export async function unenrollStudent(input: z.input<typeof enrollSchema>) {
   const section = await forTenant(ctx).findById(classSection, data.sectionId)
   if (!section) throw new Error('班级不存在')
   if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
+  // F1: same object-level authz as enrollStudent — a teacher may only drop a student already within their
+  // scope, never a foreign-teacher student they merely guessed the id of.
+  if (!(await actorOwnsStudent(ctx, data.studentId))) throw new Error('无权移除该学生')
 
   const rows = await forTenant(ctx).select(
     enrollment,
