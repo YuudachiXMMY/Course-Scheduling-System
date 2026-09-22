@@ -10,9 +10,12 @@ export function CrossBorderAckNotice({
   onConfirm: () => void
   pending: boolean
 }) {
+  // A2 (orch-review MEDIUM): this is an inline, non-modal notice rendered inside the draft form — it has
+  // no focus trap and no dialog semantics, so role="alertdialog" over-promised modal behavior to assistive
+  // tech. role="alert" matches what it actually is: a live status region announced on mount.
   return (
     <div
-      role="alertdialog"
+      role="alert"
       aria-label="跨境 AI 处理告知"
       className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm"
     >

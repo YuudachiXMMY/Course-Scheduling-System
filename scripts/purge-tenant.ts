@@ -34,9 +34,14 @@ import {
   CLEANUP_TABLES,
   organizationTableExists,
   tableHasTenantId,
+  type SqlExecutor,
 } from './cleanup-orphan-tenants'
 
-type Sql = ReturnType<typeof postgres>
+// A4 (orch-review MEDIUM): the helpers below run on EITHER the top-level client or a tx (purgeTenant wraps
+// them in sql.begin), so they take the shared SqlExecutor union. purgeTenant itself keeps postgres.Sql —
+// it calls .begin(), which lives only on the top-level client — and passes the tx straight through, so no
+// `as unknown as` bypass is needed (that cast previously masked the real Sql-vs-TransactionSql mismatch).
+type Sql = SqlExecutor
 
 // Serialise schema/data mutation against scripts/migrate.ts and scripts/cleanup-orphan-tenants.ts —
 // they contend on the same advisory-lock key, so a purge and a migration can never run concurrently.
@@ -139,13 +144,13 @@ export async function purgeTenantWithin(
 // (atomic — a partial purge can never leave a half-deleted tenant). The xact-scoped lock auto-releases
 // on commit/rollback. On a fresh DB with no organization table yet, it is a clean no-op.
 export async function purgeTenant(
-  sql: Sql,
+  sql: postgres.Sql,
   tenantId: string,
   { dryRun = false }: { dryRun?: boolean } = {},
 ): Promise<PurgeSummary> {
   return (await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(${PURGE_LOCK_KEY})`
-    if (!(await organizationTableExists(tx as unknown as Sql))) {
+    if (!(await organizationTableExists(tx))) {
       return {
         tenantId,
         organizationExists: false,
@@ -156,7 +161,7 @@ export async function purgeTenant(
         dryRun,
       } satisfies PurgeSummary
     }
-    return await purgeTenantWithin(tx as unknown as Sql, tenantId, { dryRun })
+    return await purgeTenantWithin(tx, tenantId, { dryRun })
   })) as PurgeSummary
 }
 

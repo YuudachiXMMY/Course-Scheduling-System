@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { summarizeAttendance, parseScore, averageScore, type ReportData } from '@/lib/report-stats'
+import { summarizeAttendance, parseScore, type ReportData } from '@/lib/report-stats'
 import { buildReportPrompt, RUBRIC, RUBRIC_VERSION } from '@/lib/report-prompt'
 import { can } from '@/auth/authorize'
 import { renderReportPdf } from '@/lib/report-pdf'
@@ -67,12 +67,6 @@ describe('report-stats aggregators', () => {
     expect(parseScore('85.00')).toBe(85)
     expect(parseScore(null)).toBeNull()
     expect(parseScore('not-a-number')).toBeNull()
-  })
-  it('averageScore averages present scores, ignoring nulls', () => {
-    expect(averageScore([85, 90])).toBe(87.5)
-    expect(averageScore([85, null, 90])).toBe(87.5)
-    expect(averageScore([null, null])).toBeNull()
-    expect(averageScore([])).toBeNull()
   })
 })
 

@@ -127,7 +127,16 @@ describe('progress reports — DB integration (report-core + report-data)', () =
     l2 = le2.id
     await forTenant(ctx).insert(attendance, { lessonId: l1, studentId, status: 'present' })
     await forTenant(ctx).insert(attendance, { lessonId: l2, studentId, status: 'absent' })
-    await forTenant(ctx).insert(grade, { studentId, lessonId: l1, title: '月考', score: '85.00' })
+    // maxScore is required for F13's percentage-based gradeAverage (averagePercentage skips items with no
+    // positive maxScore). This seed predates F13 and lacked it, so gradeAverage came back null instead of
+    // the asserted 85 — a stale fixture, unrelated to this PR's review findings. 85/100 → 85%.
+    await forTenant(ctx).insert(grade, {
+      studentId,
+      lessonId: l1,
+      title: '月考',
+      score: '85.00',
+      maxScore: '100.00',
+    })
   })
   afterAll(cleanup)
 
