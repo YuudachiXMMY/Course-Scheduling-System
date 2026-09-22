@@ -65,14 +65,17 @@ export default function ScheduleCalendar({
   sections: SectionOption[]
 }) {
   const [events, setEvents] = useState<CalendarEvent[]>(initialEvents)
-  // STALE: useState only captures initialEvents on first mount. After a mutation elsewhere (a section
-  // edit that clears future lessons, materialize on another tab) revalidatePath re-renders SchedulePage
-  // with fresh initialEvents, but the calendar kept showing the stale first-mount snapshot on client
-  // navigation back to /dashboard/schedule. Re-seed when the server sends a new array — React's "adjust
-  // state during render" pattern (not an effect, so no cascading-render lint violation). It does NOT
-  // clobber optimistic edits: create/reschedule/cancel below mutate local state WITHOUT router.refresh,
-  // so the prop reference stays stable across those re-renders; initialEvents only changes identity on a
-  // real server round-trip, where the server is the source of truth.
+  // STALE: useState only captures initialEvents on first mount. Any server round-trip that revalidates
+  // /dashboard/schedule re-renders SchedulePage with a fresh initialEvents array (new identity) — this
+  // page's own create/reschedule/cancel actions each call revalidatePath('/dashboard/schedule'), and so
+  // do external mutations (a section edit that clears future lessons, materialize on another tab). Yet
+  // the calendar kept showing the stale first-mount snapshot on client navigation back here. Re-seed
+  // when the server sends a new array — React's "adjust state during render" pattern (not an effect, so
+  // no cascading-render lint violation). Re-seeding is safe for the optimistic paths: because those
+  // actions revalidate, the fresh initialEvents ALREADY reflects the just-committed change, so replacing
+  // the local optimistic list with server truth is convergent, not a clobber. (Caveat for future edits:
+  // a purely client-only optimistic field — none today — WOULD be reset by this re-seed and would need
+  // to be reconciled against the incoming server data rather than assumed stable.)
   const [seededEvents, setSeededEvents] = useState(initialEvents)
   if (seededEvents !== initialEvents) {
     setSeededEvents(initialEvents)
