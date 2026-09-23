@@ -67,7 +67,11 @@ export async function getStudentLessonsForTenant(
   // (src/lib/share.ts), which still re-applies the window, so results are byte-identical — just cheaper.
   const rows = await forTenant(ctx).select(
     lesson,
-    and(inArray(lesson.sectionId, ids), gte(lesson.startAt, window.from), lt(lesson.startAt, window.to)),
+    and(
+      inArray(lesson.sectionId, ids),
+      gte(lesson.startAt, window.from),
+      lt(lesson.startAt, window.to),
+    ),
   )
 
   // Resolve "课程名 · 班级名" for each section (two forTenant reads — the spine forbids raw joins) so
