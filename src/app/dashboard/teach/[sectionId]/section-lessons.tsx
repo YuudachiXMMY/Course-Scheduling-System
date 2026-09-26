@@ -4,12 +4,17 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { DateTime } from 'luxon'
 import LessonDetail from '@/app/dashboard/schedule/lesson-detail'
-import { rescheduleLessonAction } from '@/app/dashboard/schedule/actions'
-import { materializeSectionAction } from '@/app/dashboard/courses/actions'
+import {
+  rescheduleLessonAction,
+  addSessionsAction,
+  cancelLessonsAction,
+} from '@/app/dashboard/schedule/actions'
+import InlineConfirm from '@/app/dashboard/_components/inline-confirm'
 import { useFlash } from '@/app/dashboard/_components/use-flash'
 import LessonNotesInline from './lesson-notes-inline'
 import type { SectionLesson, SectionStudent, LessonNoteRow } from './data'
 import { APP_TIME_ZONE } from '@/lib/timezone'
+import { WEEKDAYS, type Weekday } from '@/lib/rrule-build'
 
 const ZONE = APP_TIME_ZONE
 const fmtTime = (iso: string) =>
@@ -26,11 +31,31 @@ interface ConflictInfo {
   suggestions: string[]
 }
 
+const FREQ_OPTIONS: { value: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; label: string }[] = [
+  { value: 'DAILY', label: '每天' },
+  { value: 'WEEKLY', label: '每周' },
+  { value: 'BIWEEKLY', label: '每两周' },
+  { value: 'MONTHLY', label: '每月' },
+]
+const WEEKDAY_LABELS: Record<Weekday, string> = {
+  MO: '周一',
+  TU: '周二',
+  WE: '周三',
+  TH: '周四',
+  FR: '周五',
+  SA: '周六',
+  SU: '周日',
+}
+
 // 排课 tab body: date-grouped lesson list. A row opens the reused LessonDetail drawer (attendance /
 // notes / cancel) verbatim; the 改期 control reschedules IN CONTEXT via rescheduleLessonAction — the
 // same conflict pre-check + GiST backstop the calendar uses (staff hold lesson:update, so this is the
 // direct primitive, not the portal request workflow). A soft CONFLICT returns as data → inline amber
 // suggestions; a GiST-race throws (redacted in prod) → caught to a generic retry message.
+//
+// 上课时段 is INITIALIZATION-only (seeds the grid once at section creation). After that, sessions are
+// managed HERE: 添加课节 expands a recurrence over a date range (addSessionsAction), and 选择删除 bulk-
+// cancels the checked future lessons (cancelLessonsAction, soft-delete tombstone).
 export default function SectionLessons({
   sectionId,
   lessons,
@@ -51,10 +76,24 @@ export default function SectionLessons({
   const [end, setEnd] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [conflicts, setConflicts] = useState<Record<string, ConflictInfo>>({})
-  const [genError, setGenError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const { flash, show } = useFlash()
   const router = useRouter()
+
+  // 添加课节 form state.
+  const [showAdd, setShowAdd] = useState(false)
+  const [freq, setFreq] = useState<'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('WEEKLY')
+  const [byDays, setByDays] = useState<Set<Weekday>>(new Set(['MO']))
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [addTime, setAddTime] = useState('16:00')
+  const [addDuration, setAddDuration] = useState('60')
+  const [addError, setAddError] = useState<string | null>(null)
+
+  // 多选删除 state.
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   function clearRow(id: string) {
     setErrors((e) => ({ ...e, [id]: '' }))
@@ -99,16 +138,84 @@ export default function SectionLessons({
     })
   }
 
-  function generate() {
-    setGenError(null)
+  function toggleByDay(d: Weekday) {
+    setByDays((prev) => {
+      const n = new Set(prev)
+      if (n.has(d)) n.delete(d)
+      else n.add(d)
+      return n
+    })
+  }
+
+  function addSessions() {
+    setAddError(null)
+    if (!fromDate || !toDate) {
+      setAddError('请选择起止日期')
+      return
+    }
+    if (toDate < fromDate) {
+      setAddError('结束日期不能早于开始日期')
+      return
+    }
+    const needsDays = freq === 'WEEKLY' || freq === 'BIWEEKLY'
+    if (needsDays && byDays.size === 0) {
+      setAddError('请至少选择一个星期几')
+      return
+    }
     startTransition(async () => {
       try {
-        const res = await materializeSectionAction(sectionId)
-        show(`已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`)
+        const res = await addSessionsAction({
+          sectionId,
+          freq,
+          byDays: needsDays ? [...byDays] : undefined,
+          startDate: fromDate,
+          endDate: toDate,
+          startTime: addTime,
+          durationMinutes: Number(addDuration),
+        })
+        if (!res.ok) {
+          setAddError(res.error)
+          return
+        }
+        show(`已添加 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`)
+        setShowAdd(false)
         router.refresh()
       } catch {
-        // materializeSection re-throws genuine DB errors (non-exclusion) — surface, don't swallow.
-        setGenError('生成课节失败，请重试')
+        setAddError('添加课节失败，请重试')
+      }
+    })
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false)
+    setSelected(new Set())
+    setDeleteError(null)
+  }
+
+  function deleteSelected() {
+    if (selected.size === 0) return
+    setDeleteError(null)
+    startTransition(async () => {
+      try {
+        const res = await cancelLessonsAction([...selected])
+        if (!res.ok) {
+          setDeleteError(res.error)
+          return
+        }
+        show(`已删除 ${res.canceled} 节课`)
+        exitSelectMode()
+        router.refresh()
+      } catch {
+        setDeleteError('删除失败，请重试')
       }
     })
   }
@@ -121,28 +228,60 @@ export default function SectionLessons({
     else groups.push({ day, items: [l] })
   }
 
+  const needsDays = freq === 'WEEKLY' || freq === 'BIWEEKLY'
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canManage && (
-            <button
-              type="button"
-              disabled={pending}
-              onClick={generate}
-              className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-            >
-              生成课节
-            </button>
+            <>
+              <button
+                type="button"
+                aria-expanded={showAdd}
+                disabled={pending}
+                onClick={() => setShowAdd((v) => !v)}
+                className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+              >
+                添加课节
+              </button>
+              {!selectMode ? (
+                <button
+                  type="button"
+                  disabled={pending || lessons.length === 0}
+                  onClick={() => setSelectMode(true)}
+                  className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  选择删除
+                </button>
+              ) : (
+                <>
+                  <InlineConfirm
+                    danger
+                    label={`删除所选（${selected.size}）`}
+                    confirmLabel="确认删除"
+                    disabled={pending || selected.size === 0}
+                    onConfirm={deleteSelected}
+                  />
+                  <button
+                    type="button"
+                    onClick={exitSelectMode}
+                    className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
+                  >
+                    取消选择
+                  </button>
+                </>
+              )}
+            </>
           )}
           {flash && (
             <span aria-live="polite" className="text-xs text-green-700">
               {flash}
             </span>
           )}
-          {genError && (
+          {deleteError && (
             <span aria-live="polite" className="text-xs text-red-600">
-              {genError}
+              {deleteError}
             </span>
           )}
         </div>
@@ -151,9 +290,122 @@ export default function SectionLessons({
         </a>
       </div>
 
+      {canManage && showAdd && (
+        <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1">
+              <span className="text-xs text-neutral-500">重复</span>
+              <select
+                aria-label="重复方式"
+                className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                value={freq}
+                onChange={(e) => setFreq(e.target.value as typeof freq)}
+              >
+                {FREQ_OPTIONS.map((f) => (
+                  <option key={f.value} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="text-xs text-neutral-500">开始时间</span>
+              <input
+                type="time"
+                aria-label="开始时间"
+                className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                value={addTime}
+                onChange={(e) => setAddTime(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="text-xs text-neutral-500">时长</span>
+              <input
+                type="number"
+                aria-label="时长（分钟）"
+                className="w-20 rounded border border-neutral-300 px-2 py-1 text-sm"
+                value={addDuration}
+                onChange={(e) => setAddDuration(e.target.value)}
+              />
+              <span className="text-xs text-neutral-400">分钟</span>
+            </label>
+          </div>
+
+          {needsDays && (
+            <fieldset className="flex flex-wrap items-center gap-2">
+              <legend className="sr-only">选择星期几</legend>
+              <span className="text-xs text-neutral-500">星期</span>
+              {WEEKDAYS.map((d) => {
+                const on = byDays.has(d)
+                return (
+                  <label
+                    key={d}
+                    className={`cursor-pointer rounded border px-2 py-1 text-xs ${
+                      on
+                        ? 'border-neutral-900 bg-neutral-900 text-white'
+                        : 'border-neutral-300 text-neutral-700 hover:bg-neutral-100'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="sr-only"
+                      checked={on}
+                      onChange={() => toggleByDay(d)}
+                    />
+                    {WEEKDAY_LABELS[d]}
+                  </label>
+                )
+              })}
+            </fieldset>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1">
+              <span className="text-xs text-neutral-500">从</span>
+              <input
+                type="date"
+                aria-label="开始日期"
+                className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-1">
+              <span className="text-xs text-neutral-500">至</span>
+              <input
+                type="date"
+                aria-label="结束日期"
+                className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={addSessions}
+              className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+            >
+              确认添加
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowAdd(false)
+                setAddError(null)
+              }}
+              className="rounded border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-50"
+            >
+              取消
+            </button>
+          </div>
+          {addError && <p className="text-xs text-red-600">{addError}</p>}
+        </div>
+      )}
+
       {lessons.length === 0 && (
         <p className="rounded-lg border border-neutral-200 px-4 py-8 text-center text-sm text-neutral-500">
-          本班级暂无课节。点击「生成课节」按上课时间批量生成。
+          本班级暂无课节。点击「添加课节」按重复规则批量添加。
         </p>
       )}
 
@@ -167,9 +419,21 @@ export default function SectionLessons({
               {g.items.map((l) => {
                 const past = l.isPast
                 const conflict = conflicts[l.id]
+                // Only future lessons are selectable for bulk delete — past/attended lessons keep
+                // their history and are never bulk-canceled by accident.
+                const selectable = selectMode && !past
                 return (
                   <li key={l.id} className="flex flex-col gap-2 px-4 py-3 text-sm tabular-nums">
                     <div className="flex items-center justify-between gap-3">
+                      {selectable && (
+                        <input
+                          type="checkbox"
+                          className="mr-1 shrink-0"
+                          aria-label={`选择 ${fmtTime(l.start)} ${l.title}`}
+                          checked={selected.has(l.id)}
+                          onChange={() => toggleSelect(l.id)}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => setOpenId(l.id)}

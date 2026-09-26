@@ -5,6 +5,7 @@ import Link from 'next/link'
 import CourseForm from '../courses/course-form'
 import SectionForm from '../courses/section-form'
 import CourseRestore from '../courses/course-restore'
+import SectionRestore from '../courses/section-restore'
 import type { Course, ClassSection } from '../courses/actions'
 
 // Left rail: Course → Section navigation. Modelled as <nav> + nested lists with aria-current (NOT
@@ -14,11 +15,13 @@ import type { Course, ClassSection } from '../courses/actions'
 export default function CourseTree({
   courses,
   sections,
+  archivedSections = [],
   perms,
   defaultTeacherId,
 }: {
   courses: Course[]
   sections: ClassSection[]
+  archivedSections?: ClassSection[]
   perms: { canCreate: boolean; canManage: boolean }
   defaultTeacherId: string
 }) {
@@ -34,6 +37,12 @@ export default function CourseTree({
     arr.push(s)
     sectionsByCourse.set(s.courseId, arr)
   }
+  // Archived sections whose parent course is still active — surfaced in a restore list at the bottom of
+  // the rail. A section whose parent course is ALSO archived is intentionally omitted here: restore the
+  // course first (it reappears in the active tree), then its archived sections show up in this list.
+  const activeCourseIds = new Set(activeCourses.map((c) => c.id))
+  const courseTitle = new Map(courses.map((c) => [c.id, c.title]))
+  const restorableSections = archivedSections.filter((s) => activeCourseIds.has(s.courseId))
 
   return (
     <nav aria-label="课程与班级" className="flex flex-col gap-3 md:sticky md:top-4">
@@ -94,6 +103,27 @@ export default function CourseTree({
           )
         })}
       </ul>
+
+      {perms.canManage && restorableSections.length > 0 && (
+        <details className="rounded-lg border border-neutral-200">
+          <summary className="cursor-pointer px-3 py-2 text-xs text-neutral-500 hover:bg-neutral-50">
+            已归档班级（{restorableSections.length}）
+          </summary>
+          <ul className="divide-y divide-neutral-200 border-t border-neutral-200">
+            {restorableSections.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-neutral-500"
+              >
+                <span className="truncate">
+                  {courseTitle.get(s.courseId) ?? '课程'} · {s.name ?? '（未命名班级）'}
+                </span>
+                <SectionRestore sectionId={s.id} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {perms.canManage && archivedCourses.length > 0 && (
         <details className="rounded-lg border border-neutral-200">
