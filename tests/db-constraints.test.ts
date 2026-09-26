@@ -24,7 +24,11 @@ beforeAll(async () => {
   await cleanup()
   await seedOrg(org)
   await db.insert(course).values({ id: 'c_dbc', tenantId: org, title: '约束课程' })
-  await db.insert(classSection).values({ id: 'sec_dbc', tenantId: org, courseId: 'c_dbc' })
+  await db.insert(classSection).values([
+    { id: 'sec_dbc', tenantId: org, courseId: 'c_dbc' },
+    // A SECOND section — proves the room/teacher EXCLUDE constraints are now scoped per section.
+    { id: 'sec_dbc2', tenantId: org, courseId: 'c_dbc' },
+  ])
 })
 afterAll(cleanup)
 
@@ -44,7 +48,7 @@ describe('DB1 — tenant_id FK to organization', () => {
 })
 
 describe('DB2 — lesson_no_room_overlap EXCLUDE', () => {
-  it('rejects a second lesson overlapping the same room+time', async () => {
+  it('rejects a second lesson overlapping the same room+time in the SAME section', async () => {
     await db.insert(lesson).values({
       id: 'les_a',
       tenantId: org,
@@ -95,6 +99,23 @@ describe('DB2 — lesson_no_room_overlap EXCLUDE', () => {
     })
     const rows = await db.select().from(lesson).where(eq(lesson.tenantId, org))
     expect(rows.length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('ALLOWS the same room+time overlap across DIFFERENT sections (cross-class conflict permitted)', async () => {
+    // les_a already occupies Room 101 at 10:00–11:00 in sec_dbc. A DIFFERENT section may reuse the
+    // same room+time — the exclusion is now scoped by section_id.
+    const [row] = await db
+      .insert(lesson)
+      .values({
+        id: 'les_xsec',
+        tenantId: org,
+        sectionId: 'sec_dbc2',
+        startAt: D('2031-01-01T10:30:00Z'),
+        endAt: D('2031-01-01T11:30:00Z'),
+        location: 'Room 101',
+      })
+      .returning()
+    expect(row).toBeTruthy()
   })
 })
 

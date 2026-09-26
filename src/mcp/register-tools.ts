@@ -226,6 +226,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         if (!section.teacherId) throw new BusinessError('班级尚未指定教师，无法排课')
         const check = await checkTeacherConflict(ctx, {
           teacherId: section.teacherId,
+          sectionId: section.id, // conflicts scoped to this class only (cross-class overlaps allowed)
           startAt: args.startAt,
           endAt: args.endAt,
         })
@@ -292,6 +293,7 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         if (!existing.teacherId) throw new BusinessError('课节缺少教师信息')
         const check = await checkTeacherConflict(ctx, {
           teacherId: existing.teacherId,
+          sectionId: existing.sectionId, // conflicts scoped to this class only (cross-class overlaps allowed)
           startAt: args.startAt,
           endAt: args.endAt,
           excludeLessonId: args.id,

@@ -73,6 +73,7 @@ export async function scheduleLessonCore(
   // consistent. Defaults to APP_TIME_ZONE today (classSection.recurrenceTimezone default).
   const check = await checkTeacherConflict(ctx, {
     teacherId,
+    sectionId: section.id, // conflicts scoped to this class only (cross-class overlaps allowed)
     startAt: data.startAt,
     endAt: data.endAt,
     zone: section.recurrenceTimezone,
@@ -134,6 +135,7 @@ export async function rescheduleLessonCore(
     ctx,
     {
       teacherId: existing.teacherId,
+      sectionId: existing.sectionId, // conflicts scoped to this class only (cross-class overlaps allowed)
       startAt: data.startAt,
       endAt: data.endAt,
       excludeLessonId: data.id, // don't conflict with itself

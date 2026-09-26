@@ -47,10 +47,13 @@ export const lesson = pgTable(
     index('idx_lesson_teacher_time').on(t.tenantId, t.teacherId, t.startAt),
     index('idx_lesson_time_range').on(t.tenantId, t.startAt, t.endAt),
     // DB2: room double-booking is blocked by a GiST EXCLUDE constraint `lesson_no_room_overlap`
-    // (tenant_id =, location =, tstzrange && WHERE status<>'canceled' AND location IS NOT NULL) that
-    // lives in the custom migration drizzle/0015_lesson_room_exclusion.sql — Drizzle has no EXCLUDE
-    // builder, so it is NOT modeled here (same pattern as lesson_no_teacher_overlap / 0001). This btree
-    // index still backs range lookups by room+time.
+    // (tenant_id =, section_id =, location =, tstzrange && WHERE status<>'canceled' AND location IS NOT
+    // NULL) that lives in the custom migrations drizzle/0015_lesson_room_exclusion.sql (+ the section_id
+    // key added in 0022_lesson_conflict_per_section.sql) — Drizzle has no EXCLUDE builder, so it is NOT
+    // modeled here (same pattern as lesson_no_teacher_overlap / 0001 + 0022). The section_id dimension
+    // scopes both exclusions to a SINGLE class: the same room / teacher may overlap across DIFFERENT
+    // sections, only within one section do overlaps collide. This btree index still backs range lookups
+    // by room+time.
     index('idx_lesson_room_time').on(t.tenantId, t.location, t.startAt),
     // PERF: (tenant_id, section_id, start_at) backs "one section's lessons within a time window" —
     // teacher-scoped calendar (schedule/data.ts), getSectionLessons, and the per-child portal slice
