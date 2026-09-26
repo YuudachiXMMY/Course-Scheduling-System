@@ -51,6 +51,7 @@ export const ALLOWLIST: readonly string[] = [
   // db writes that FORCE an explicit tenantId in every row + the conflict target, so the write can never
   // touch another tenant's row (see the comment at each call site).
   'src/lib/materialize.ts', // bulk lesson insert, onConflictDoNothing, tenantId: ctx.tenantId per row
+  'src/lib/add-sessions.ts', // bulk lesson insert (mirrors materialize), onConflictDoNothing, tenantId: ctx.tenantId per row
   'src/lib/push-core.ts', // push_subscription upsert, tenantId: ctx.tenantId in values + conflict target
 ]
 
@@ -92,7 +93,7 @@ export function stripCommentsAndStrings(src: string): string {
   // Stack of `${…}` interpolations we are currently inside; each entry is the running brace depth of that
   // interpolation's code (0 = at the interpolation's own level, so the next `}` closes it).
   const interp: number[] = []
-  for (let i = 0; i < src.length; ) {
+  for (let i = 0; i < src.length;) {
     const c = src[i]
     const d = src[i + 1]
     if (mode === 'code') {

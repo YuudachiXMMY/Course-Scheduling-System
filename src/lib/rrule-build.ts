@@ -29,3 +29,47 @@ export function buildWeeklyRrule(params: {
   }
   return parts.join(';')
 }
+
+// The four recurrences the ad-hoc「添加课节」flow offers. Biweekly is not an RFC5545 FREQ — it's a
+// weekly rule with INTERVAL=2. Monthly repeats on a fixed day-of-month (BYMONTHDAY).
+export type RecurrenceFreq = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'
+
+/**
+ * Build a bare RRULE (NO DTSTART / UNTIL / COUNT) for the「添加课节」flow. The caller bounds the range
+ * with expandRecurrence's between(windowStart, windowEnd) — mirroring the per-meeting RRULE path in
+ * materialize.ts — so the date period the user picks is the only bound, not the rule.
+ *  - DAILY    → `FREQ=DAILY`
+ *  - WEEKLY   → `FREQ=WEEKLY;BYDAY=MO,WE` (byDays required, multi-select supported)
+ *  - BIWEEKLY → `FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE`
+ *  - MONTHLY  → `FREQ=MONTHLY;BYMONTHDAY=15` (byMonthDay required, 1..31)
+ */
+export function buildRecurrenceRule(params: {
+  freq: RecurrenceFreq
+  byDays?: Weekday[]
+  byMonthDay?: number
+}): string {
+  const { freq, byDays, byMonthDay } = params
+  switch (freq) {
+    case 'DAILY':
+      return 'FREQ=DAILY'
+    case 'WEEKLY':
+    case 'BIWEEKLY': {
+      if (!byDays || !byDays.length)
+        throw new Error('buildRecurrenceRule: at least one weekday is required for weekly/biweekly')
+      const parts = ['FREQ=WEEKLY']
+      if (freq === 'BIWEEKLY') parts.push('INTERVAL=2')
+      parts.push(`BYDAY=${byDays.join(',')}`)
+      return parts.join(';')
+    }
+    case 'MONTHLY': {
+      if (
+        byMonthDay === undefined ||
+        !Number.isInteger(byMonthDay) ||
+        byMonthDay < 1 ||
+        byMonthDay > 31
+      )
+        throw new Error('buildRecurrenceRule: monthly requires a day of month between 1 and 31')
+      return `FREQ=MONTHLY;BYMONTHDAY=${byMonthDay}`
+    }
+  }
+}
