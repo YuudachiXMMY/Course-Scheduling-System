@@ -32,7 +32,10 @@ export function buildWeeklyRrule(params: {
 
 // The four recurrences the ad-hoc「添加课节」flow offers. Biweekly is not an RFC5545 FREQ — it's a
 // weekly rule with INTERVAL=2. Monthly repeats on a fixed day-of-month (BYMONTHDAY).
-export type RecurrenceFreq = 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'
+// Single source of truth: the const tuple backs both the type and the zod enum in the add-sessions
+// Server Action, and the <select> options in the 排课 UI — add a fifth frequency in ONE place.
+export const RECURRENCE_FREQS = ['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY'] as const
+export type RecurrenceFreq = (typeof RECURRENCE_FREQS)[number]
 
 /**
  * Build a bare RRULE (NO DTSTART / UNTIL / COUNT) for the「添加课节」flow. The caller bounds the range

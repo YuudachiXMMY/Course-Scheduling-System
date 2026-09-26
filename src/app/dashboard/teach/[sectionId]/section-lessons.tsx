@@ -14,7 +14,7 @@ import { useFlash } from '@/app/dashboard/_components/use-flash'
 import LessonNotesInline from './lesson-notes-inline'
 import type { SectionLesson, SectionStudent, LessonNoteRow } from './data'
 import { APP_TIME_ZONE } from '@/lib/timezone'
-import { WEEKDAYS, type Weekday } from '@/lib/rrule-build'
+import { WEEKDAYS, type Weekday, type RecurrenceFreq } from '@/lib/rrule-build'
 
 const ZONE = APP_TIME_ZONE
 const fmtTime = (iso: string) =>
@@ -31,7 +31,7 @@ interface ConflictInfo {
   suggestions: string[]
 }
 
-const FREQ_OPTIONS: { value: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'; label: string }[] = [
+const FREQ_OPTIONS: { value: RecurrenceFreq; label: string }[] = [
   { value: 'DAILY', label: '每天' },
   { value: 'WEEKLY', label: '每周' },
   { value: 'BIWEEKLY', label: '每两周' },
@@ -82,7 +82,7 @@ export default function SectionLessons({
 
   // 添加课节 form state.
   const [showAdd, setShowAdd] = useState(false)
-  const [freq, setFreq] = useState<'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY'>('WEEKLY')
+  const [freq, setFreq] = useState<RecurrenceFreq>('WEEKLY')
   const [byDays, setByDays] = useState<Set<Weekday>>(new Set(['MO']))
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
@@ -180,7 +180,10 @@ export default function SectionLessons({
         show(`已添加 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`)
         setShowAdd(false)
         router.refresh()
-      } catch {
+      } catch (e) {
+        // Log the underlying failure (expired session / transient network) so it's diagnosable; the user
+        // still only sees the generic retry message.
+        console.error('addSessionsAction failed', e)
         setAddError('添加课节失败，请重试')
       }
     })
@@ -214,7 +217,9 @@ export default function SectionLessons({
         show(`已删除 ${res.canceled} 节课`)
         exitSelectMode()
         router.refresh()
-      } catch {
+      } catch (e) {
+        // Log the underlying failure so it's diagnosable; the user still only sees the generic message.
+        console.error('cancelLessonsAction failed', e)
         setDeleteError('删除失败，请重试')
       }
     })

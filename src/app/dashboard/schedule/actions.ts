@@ -15,7 +15,7 @@ import {
   rescheduleLessonCore,
 } from '@/lib/schedule-core'
 import { addSessionsCore } from '@/lib/add-sessions'
-import { WEEKDAYS, type Weekday } from '@/lib/rrule-build'
+import { WEEKDAYS, RECURRENCE_FREQS, type Weekday } from '@/lib/rrule-build'
 import { toPortalActionError } from '@/lib/errors'
 import type { ScheduleResult } from './types'
 
@@ -79,7 +79,12 @@ export async function cancelLessonsAction(ids: string[]): Promise<CancelLessonsR
       ne(lesson.status, 'canceled'),
       isWholeTenantActor(ctx) ? undefined : eq(lesson.teacherId, ctx.userId),
     )
-    const rows = await forTenant(ctx).updateWhereMany(lesson, scope!, { status: 'canceled' })
+    // and() is typed `SQL | undefined` (in the general case every operand could be undefined). The first
+    // two operands here are always defined, so it can never actually be undefined — enforce that invariant
+    // at runtime with a guard instead of a `!` that only silences the type. A missing scope would be an
+    // unfiltered UPDATE, so fail closed rather than let updateWhereMany run without a WHERE.
+    if (!scope) throw new Error('cancelLessonsAction: empty scope')
+    const rows = await forTenant(ctx).updateWhereMany(lesson, scope, { status: 'canceled' })
     revalidatePath('/dashboard/schedule')
     return { ok: true, canceled: rows.length }
   } catch (e) {
@@ -92,7 +97,7 @@ export async function cancelLessonsAction(ids: string[]): Promise<CancelLessonsR
 const addSessionsSchema = z
   .object({
     sectionId: z.string().trim().min(1),
-    freq: z.enum(['DAILY', 'WEEKLY', 'BIWEEKLY', 'MONTHLY']),
+    freq: z.enum(RECURRENCE_FREQS),
     byDays: z.array(z.enum(WEEKDAYS as [Weekday, ...Weekday[]])).optional(),
     startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),
     endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),

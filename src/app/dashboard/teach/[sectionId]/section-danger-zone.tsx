@@ -70,14 +70,21 @@ export default function SectionDangerZone({ sectionId }: { sectionId: string }) 
                 // success the section leaves the rail (listSections filters archived); the [sectionId]
                 // route itself still renders (getSectionHeader uses findById, which keeps archived rows),
                 // but navigate to the workspace root anyway so the user lands somewhere still in the rail.
+                // requireAuthContext() runs BEFORE archiveSection's own try/catch, so an expired-session
+                // throw is caught here (matching the cancelSeries handler above) rather than bubbling to
+                // error.tsx and discarding unsaved edits on the same panel.
                 setErr(null)
-                const res = await archiveSection(sectionId)
-                if (!res.ok) {
-                  setErr(res.error)
-                  return
+                try {
+                  const res = await archiveSection(sectionId)
+                  if (!res.ok) {
+                    setErr(res.error)
+                    return
+                  }
+                  router.push('/dashboard/teach')
+                  router.refresh()
+                } catch (e) {
+                  setErr(e instanceof Error ? e.message : '归档失败')
                 }
-                router.push('/dashboard/teach')
-                router.refresh()
               })
             }
           />
