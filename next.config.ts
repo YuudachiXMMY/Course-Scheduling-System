@@ -42,6 +42,23 @@ const nextConfig: NextConfig = {
           { key: 'Cache-Control', value: 'private, no-store' },
         ],
       },
+      // SEC-CACHE: authenticated app surfaces (staff dashboard + parent/student portal) render per-user
+      // data (rosters, parent contacts, Zoom links, schedules). They must NEVER be stored by ANY cache —
+      // browser OR shared/CDN. Without this the origin emitted `private, max-age=60`, which a Cloudflare
+      // "Cache Everything" rule treated as cacheable and served cross-user (an anonymous GET of
+      // /dashboard/schedule returned another session's cached RSC payload — a live PII leak — and
+      // revalidatePath() could not evict the edge copy, so cancellations "wouldn't show after refresh").
+      // `no-store` makes Cloudflare BYPASS the edge cache (already the observed behavior for /portal's
+      // no-store default) and stops the browser from holding a 60s stale copy. Mirrors the /s and /sec
+      // token pages above. Static assets live under /_next/* (unaffected) and keep their immutable cache.
+      {
+        source: '/dashboard/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
+      {
+        source: '/portal/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
     ]
   },
   experimental: {

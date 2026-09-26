@@ -331,6 +331,11 @@ export async function updateSection(id: string, input: SectionInput): Promise<Cr
   // re-materializes, so the calendar reflects the new times instead of accumulating duplicates.
   await clearFutureScheduledLessons(ctx, id)
   revalidatePath('/dashboard/courses')
+  // STALE: clearFutureScheduledLessons DELETED future lesson rows, so the calendar's data is now stale.
+  // Without revalidating the schedule path too, /dashboard/schedule kept serving the pre-edit lessons
+  // until an unrelated schedule mutation happened to evict it. (createSection has no lessons yet; the
+  // caller re-materializes via materializeSectionAction, which already revalidates /dashboard/schedule.)
+  revalidatePath('/dashboard/schedule')
   return { ok: true, section: row }
 }
 

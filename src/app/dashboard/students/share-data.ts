@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, eq, isNull, inArray } from 'drizzle-orm'
+import { and, eq, gte, isNull, inArray, lt } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import { forTenant } from '@/db/tenant'
 import { shareLink, enrollment, lesson, classSection, course } from '@/db/schema'
@@ -61,7 +61,14 @@ export async function getStudentLessonsForTenant(
   // Empty active-enrollment set → `inArray([])` is invalid SQL; early-return.
   if (ids.length === 0) return []
 
-  const rows = await forTenant(ctx).select(lesson, inArray(lesson.sectionId, ids))
+  // PERF: push the window into SQL instead of loading a section's ENTIRE lesson history into memory and
+  // slicing it there — this is called per-child (portal/data.ts fans out over every enrolled child), so
+  // the unbounded load compounds. Bounds match sliceLessonsForSections's own `startAt >= from && < to`
+  // (src/lib/share.ts), which still re-applies the window, so results are byte-identical — just cheaper.
+  const rows = await forTenant(ctx).select(
+    lesson,
+    and(inArray(lesson.sectionId, ids), gte(lesson.startAt, window.from), lt(lesson.startAt, window.to)),
+  )
 
   // Resolve "课程名 · 班级名" for each section (two forTenant reads — the spine forbids raw joins) so
   // the authenticated preview/PNG card matches the public page instead of showing the generic "课节".

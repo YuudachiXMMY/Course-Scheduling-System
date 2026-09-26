@@ -146,11 +146,13 @@ export async function getSectionPendingRescheduleCount(
   // Push the lesson-membership filter into SQL (inArray) rather than scanning the tenant's entire
   // pending set in memory — this runs per section-layout render. lessonIds is non-empty (guarded above).
   const lessonIds = lessons.map((l) => l.id)
-  const pending = await forTenant(ctx).select(
+  // PERF: this runs on every section-layout render and only needs a number — COUNT(*) in SQL instead of
+  // loading every matching pending row into memory just to read `.length` (mirrors forTenant.count usage
+  // elsewhere, e.g. the unread badge).
+  return await forTenant(ctx).count(
     rescheduleRequest,
     and(eq(rescheduleRequest.status, 'pending'), inArray(rescheduleRequest.lessonId, lessonIds)),
   )
-  return pending.length
 }
 
 // Reports are student+period scoped (a student may sit in several sections); we surface the reports of
