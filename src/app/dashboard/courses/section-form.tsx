@@ -1,12 +1,11 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   createSection,
   updateSection,
   materializeSectionAction,
-  listSectionMeetings,
   type ClassSection,
 } from './actions'
 import { APP_TIME_ZONE } from '@/lib/timezone'
@@ -82,48 +81,13 @@ export default function SectionForm({
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
-  // Edit mode: load the section's existing meeting slots to prefill the rows.
-  // Depend on section?.id (a stable primitive), NOT the section object: listSectionMeetings is a
-  // Server Action, and every Server Action invocation triggers a router refresh that re-renders the
-  // server parent (SettingsPanel → getSectionHeader), handing this client component a BRAND-NEW
-  // `section` object each time. With `section` in the deps that fresh reference re-fires the effect →
-  // another action → another refresh → an unbounded loop that floods history.replaceState (WebKit
-  // caps it at 100/10s → "This page couldn't load"). The id is unchanged across refreshes, so the
-  // effect runs once per section as intended.
-  const sectionId = section?.id
-  useEffect(() => {
-    if (!open || !isEdit || !sectionId) return
-    let active = true
-    listSectionMeetings(sectionId)
-      .then((rows) => {
-        if (!active) return
-        if (rows.length > 0) {
-          setMeetings(
-            rows.map((r) => ({
-              key: nextMeetingKey(),
-              byDay: r.byDay as Weekday,
-              startTime: r.startTime,
-              durationMinutes: String(r.durationMinutes),
-            })),
-          )
-        }
-      })
-      .catch((e) => {
-        // F10: surface a rejected meetings load (expired session / transient failure) instead of
-        // silently swallowing it and leaving the form seeded with stale/empty meetings.
-        if (!active) return
-        setError(e instanceof Error ? e.message : '加载上课时段失败')
-      })
-    return () => {
-      active = false
-    }
-  }, [open, isEdit, sectionId])
+  // 上课时段 is INITIALIZATION-only: the editor renders on CREATE only, so edit mode no longer loads
+  // the existing meeting slots. After creation, sessions are managed under 排课 (添加课节 / 多选删除).
 
   // B12: 标量字段仅在挂载时取种子。父级以稳定 key（section.id）复用本组件跨 router.refresh()，同一
   // 班级的服务端数据变化（并发编辑 / 本次保存后回填）不会重挂载 → 陈旧本地态静默覆盖新值。以 id +
   // updatedAt 版本键在渲染期重置标量字段（React 官方「随 prop 变化重置 state」写法，避免 effect 内同步
-  // setState）。meetings 不在此重置 —— 它由上方的 listSectionMeetings 效应负责，且绝不能把 updatedAt
-  // 加入那个效应的依赖（见其注释），否则会触发无界刷新回环。
+  // setState）。meetings 不在此重置 —— 它只用于 CREATE，编辑态不再渲染时段编辑器。
   const sectionVersion = `${section?.id ?? ''}:${section?.updatedAt?.getTime() ?? 0}`
   const [prevSectionVersion, setPrevSectionVersion] = useState(sectionVersion)
   if (sectionVersion !== prevSectionVersion) {
@@ -154,7 +118,8 @@ export default function SectionForm({
     setStatus(null)
     // Client-side validation: in production, server-side ZodError messages are redacted by Next.js
     // and surface as the cryptic "Minified React error #441". Fail fast here with clear feedback.
-    if (meetings.length === 0) {
+    // 上课时段 is required only on CREATE — the edit form doesn't render it.
+    if (!isEdit && meetings.length === 0) {
       setError('请至少添加一个上课时段')
       return
     }
@@ -166,6 +131,37 @@ export default function SectionForm({
       setError('学期结束日期不能早于开始日期')
       return
     }
+
+    // EDIT: 上课时段 is initialization-only, so editing never rewrites the recurrence grid nor re-
+    // materializes lessons. Update only the scalar fields; sessions are added/removed under 排课.
+    if (isEdit && section) {
+      const editPayload = {
+        name: name || undefined,
+        capacity: Number(capacity),
+        termStartDate: termStart,
+        termEndDate: termEnd || undefined,
+        timezone: APP_TIME_ZONE,
+        defaultLocation: location || undefined,
+        defaultMeetingUrl: meetingUrl || undefined,
+      }
+      startTransition(async () => {
+        try {
+          const result = await updateSection(section.id, editPayload)
+          if (!result.ok) {
+            setError(result.error)
+            return
+          }
+          setStatus('已保存')
+          router.refresh()
+          if (!embedded) setOpen(false)
+        } catch (e) {
+          setError(e instanceof Error ? e.message : '保存失败')
+        }
+      })
+      return
+    }
+
+    // CREATE: seed the sectionMeeting grid from 上课时段 and materialize the initial lessons.
     const payload = {
       courseId,
       name: name || undefined,
@@ -186,10 +182,7 @@ export default function SectionForm({
     }
     startTransition(async () => {
       try {
-        const result =
-          isEdit && section
-            ? await updateSection(section.id, payload)
-            : await createSection(payload)
+        const result = await createSection(payload)
         if (!result.ok) {
           setError(result.error)
           return
@@ -199,8 +192,7 @@ export default function SectionForm({
           `已生成 ${res.inserted} 节课${res.conflicts ? `，${res.conflicts} 节因冲突跳过` : ''}`,
         )
         router.refresh()
-        if (!isEdit) onCreated?.(result.section.id)
-        if (isEdit && !embedded) setOpen(false)
+        onCreated?.(result.section.id)
       } catch (e) {
         setError(e instanceof Error ? e.message : '保存失败')
       }
@@ -249,62 +241,70 @@ export default function SectionForm({
         </label>
       )}
 
-      <div className="flex flex-col gap-1">
-        <span className="text-xs text-neutral-500">上课时段（可添加多个不同日期/时间）</span>
-        {meetings.map((m, i) => {
-          // B14: 逐行控件用含行序号 + 星期的动态标签，让屏幕阅读器区分这是哪一行。
-          const dayLabel = WEEKDAY_LABELS.find((d) => d.value === m.byDay)?.label ?? ''
-          const rowLabel = `第 ${i + 1} 个时段（${dayLabel}）`
-          return (
-            // MEDIUM: 用稳定的 m.key（非数组下标）作 React key。
-            <div key={m.key} className="flex flex-wrap items-center gap-2">
-              <select
-                className="rounded border border-neutral-300 px-2 py-1 text-sm"
-                aria-label={`${rowLabel} · 星期`}
-                value={m.byDay}
-                onChange={(e) => updateMeeting(i, { byDay: e.target.value as Weekday })}
-              >
-                {WEEKDAY_LABELS.map((d) => (
-                  <option key={d.value} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="time"
-                className="rounded border border-neutral-300 px-2 py-1 text-sm"
-                aria-label={`${rowLabel} · 开始时间`}
-                value={m.startTime}
-                onChange={(e) => updateMeeting(i, { startTime: e.target.value })}
-              />
-              <input
-                type="number"
-                className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm"
-                aria-label={`${rowLabel} · 时长（分钟）`}
-                placeholder="时长(分)"
-                value={m.durationMinutes}
-                onChange={(e) => updateMeeting(i, { durationMinutes: e.target.value })}
-              />
-              <button
-                type="button"
-                disabled={meetings.length <= 1}
-                aria-label={`删除${rowLabel}`}
-                className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
-                onClick={() => removeMeeting(i)}
-              >
-                删除
-              </button>
-            </div>
-          )
-        })}
-        <button
-          type="button"
-          className="self-start rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
-          onClick={addMeeting}
-        >
-          + 添加时段
-        </button>
-      </div>
+      {isEdit && (
+        <p className="rounded border border-neutral-200 bg-white px-2 py-1 text-xs text-neutral-400">
+          上课时段仅在创建班级时设置；如需增减课节，请到「排课」使用「添加课节 / 选择删除」。
+        </p>
+      )}
+
+      {!isEdit && (
+        <div className="flex flex-col gap-1">
+          <span className="text-xs text-neutral-500">上课时段（可添加多个不同日期/时间）</span>
+          {meetings.map((m, i) => {
+            // B14: 逐行控件用含行序号 + 星期的动态标签，让屏幕阅读器区分这是哪一行。
+            const dayLabel = WEEKDAY_LABELS.find((d) => d.value === m.byDay)?.label ?? ''
+            const rowLabel = `第 ${i + 1} 个时段（${dayLabel}）`
+            return (
+              // MEDIUM: 用稳定的 m.key（非数组下标）作 React key。
+              <div key={m.key} className="flex flex-wrap items-center gap-2">
+                <select
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                  aria-label={`${rowLabel} · 星期`}
+                  value={m.byDay}
+                  onChange={(e) => updateMeeting(i, { byDay: e.target.value as Weekday })}
+                >
+                  {WEEKDAY_LABELS.map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="time"
+                  className="rounded border border-neutral-300 px-2 py-1 text-sm"
+                  aria-label={`${rowLabel} · 开始时间`}
+                  value={m.startTime}
+                  onChange={(e) => updateMeeting(i, { startTime: e.target.value })}
+                />
+                <input
+                  type="number"
+                  className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm"
+                  aria-label={`${rowLabel} · 时长（分钟）`}
+                  placeholder="时长(分)"
+                  value={m.durationMinutes}
+                  onChange={(e) => updateMeeting(i, { durationMinutes: e.target.value })}
+                />
+                <button
+                  type="button"
+                  disabled={meetings.length <= 1}
+                  aria-label={`删除${rowLabel}`}
+                  className="rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-40"
+                  onClick={() => removeMeeting(i)}
+                >
+                  删除
+                </button>
+              </div>
+            )
+          })}
+          <button
+            type="button"
+            className="self-start rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+            onClick={addMeeting}
+          >
+            + 添加时段
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col text-xs text-neutral-500">
@@ -368,7 +368,7 @@ export default function SectionForm({
           className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
           onClick={submit}
         >
-          {isEdit ? '保存并重新生成课节' : '创建并生成课节'}
+          {isEdit ? '保存' : '创建并生成课节'}
         </button>
         <button
           type="button"

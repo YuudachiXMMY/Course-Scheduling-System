@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildWeeklyRrule, WEEKDAYS, type Weekday } from '@/lib/rrule-build'
+import { buildWeeklyRrule, buildRecurrenceRule, WEEKDAYS, type Weekday } from '@/lib/rrule-build'
 
 // Pure RFC5545 RRULE builder (luxon only, no DB/server-only). recurrence.test.ts already exercises the
 // happy `{ byDays, count }` path via expandRecurrence; this file targets the remaining branches:
@@ -47,5 +47,48 @@ describe('buildWeeklyRrule', () => {
 
   it('exports the seven ISO weekday tokens in Monday-first order', () => {
     expect(WEEKDAYS).toEqual<Weekday[]>(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'])
+  })
+})
+
+// The ad-hoc「添加课节」flow (排课 → 添加课节) needs DAILY / WEEKLY / BIWEEKLY / MONTHLY, which the
+// weekly-only builder can't express. buildRecurrenceRule emits a bare RRULE (NO UNTIL/COUNT/DTSTART):
+// expandRecurrence's between(windowStart, windowEnd) clips the range, exactly like the sectionMeeting
+// path in materialize.ts, so the date range is bounded by the query window, not by the rule.
+describe('buildRecurrenceRule', () => {
+  it('builds a daily rule', () => {
+    expect(buildRecurrenceRule({ freq: 'DAILY' })).toBe('FREQ=DAILY')
+  })
+
+  it('builds a weekly rule with one or more weekdays', () => {
+    expect(buildRecurrenceRule({ freq: 'WEEKLY', byDays: ['MO'] })).toBe('FREQ=WEEKLY;BYDAY=MO')
+    expect(buildRecurrenceRule({ freq: 'WEEKLY', byDays: ['MO', 'WE', 'FR'] })).toBe(
+      'FREQ=WEEKLY;BYDAY=MO,WE,FR',
+    )
+  })
+
+  it('builds a biweekly rule as FREQ=WEEKLY;INTERVAL=2', () => {
+    expect(buildRecurrenceRule({ freq: 'BIWEEKLY', byDays: ['TU', 'TH'] })).toBe(
+      'FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH',
+    )
+  })
+
+  it('builds a monthly rule pinned to a day-of-month', () => {
+    expect(buildRecurrenceRule({ freq: 'MONTHLY', byMonthDay: 15 })).toBe(
+      'FREQ=MONTHLY;BYMONTHDAY=15',
+    )
+  })
+
+  it('requires at least one weekday for weekly / biweekly', () => {
+    expect(() => buildRecurrenceRule({ freq: 'WEEKLY', byDays: [] })).toThrow(
+      /at least one weekday/,
+    )
+    expect(() => buildRecurrenceRule({ freq: 'BIWEEKLY' })).toThrow(/at least one weekday/)
+  })
+
+  it('requires a valid day-of-month (1..31) for monthly', () => {
+    expect(() => buildRecurrenceRule({ freq: 'MONTHLY' })).toThrow(/day of month/)
+    expect(() => buildRecurrenceRule({ freq: 'MONTHLY', byMonthDay: 0 })).toThrow(/day of month/)
+    expect(() => buildRecurrenceRule({ freq: 'MONTHLY', byMonthDay: 32 })).toThrow(/day of month/)
+    expect(() => buildRecurrenceRule({ freq: 'MONTHLY', byMonthDay: 12.5 })).toThrow(/day of month/)
   })
 })
