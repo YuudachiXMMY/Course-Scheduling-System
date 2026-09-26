@@ -1,7 +1,7 @@
 'use server'
 
 import { z } from 'zod'
-import { and, eq, gte, inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { DateTime } from 'luxon'
 import { requireAuthContext, AuthError, type AuthContext } from '@/auth/context'
@@ -9,9 +9,10 @@ import { requirePermission } from '@/auth/authorize'
 import { actorOwnsSectionById, sectionIdsForActor, isWholeTenantActor } from '@/auth/scope'
 import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
-import { course, classSection, sectionMeeting, lesson, member } from '@/db/schema'
+import { course, classSection, sectionMeeting, member } from '@/db/schema'
 import { buildWeeklyRrule, type Weekday, WEEKDAYS } from '@/lib/rrule-build'
 import { materializeSection } from '@/lib/materialize'
+import { toPortalActionError } from '@/lib/errors'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 
 export type Course = typeof course.$inferSelect
@@ -235,27 +236,6 @@ async function replaceMeetings(
   for (const m of existing) await forTenant(ctx).delete(sectionMeeting, m.id)
 }
 
-// H2: after a section's schedule is edited, its FUTURE auto-generated lessons must be dropped before
-// re-materializing — otherwise materializeSection (INSERT ... ON CONFLICT DO NOTHING) leaves the old
-// occurrences at their previous times sitting alongside the newly-generated ones (duplicate/ghost
-// lessons on the calendar). We only remove rows that are (a) still 'scheduled' (not canceled
-// tombstones), (b) in the future, and (c) still at their original slot (startAt == originalStartAt),
-// so manually-rescheduled lessons and past/attended history are preserved.
-async function clearFutureScheduledLessons(ctx: AuthContext, sectionId: string) {
-  const rows = await forTenant(ctx).select(
-    lesson,
-    and(
-      eq(lesson.sectionId, sectionId),
-      eq(lesson.status, 'scheduled'),
-      gte(lesson.startAt, new Date()),
-    ),
-  )
-  const untouched = rows.filter(
-    (r) => r.originalStartAt && r.startAt.getTime() === r.originalStartAt.getTime(),
-  )
-  for (const r of untouched) await forTenant(ctx).delete(lesson, r.id)
-}
-
 export async function listSectionMeetings(sectionId: string): Promise<SectionMeeting[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['read'] })
@@ -302,39 +282,63 @@ export async function createSection(input: SectionInput): Promise<CreateSectionR
   return { ok: true, section: row }
 }
 
-export async function updateSection(id: string, input: SectionInput): Promise<CreateSectionResult> {
+// EDIT no longer touches the recurrence grid. 上课时段 is an INITIALIZATION-only input (used once at
+// createSection to seed the sectionMeeting grid + first materialize); after that, sessions are managed
+// via 排课 → 添加课节 / 多选删除. So the edit form carries NO meetings, and updateSection updates only the
+// scalar fields — it never rewrites rrule/dtstart/meetings nor wipes future lessons. teacherId is also
+// never reassigned here (H1): the form has no teacher picker.
+const sectionEditSchema = z
+  .object({
+    name: z.string().trim().max(100).optional(),
+    capacity: z.coerce.number().int().min(1, '容量至少 1').max(15, '容量最多 15'),
+    termStartDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式 YYYY-MM-DD'),
+    termEndDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+    timezone: z.string().trim().default(APP_TIME_ZONE),
+    defaultLocation: z.string().trim().max(200).optional(),
+    defaultMeetingUrl: z
+      .string()
+      .trim()
+      .max(500)
+      .regex(/^https?:\/\//, '网课链接需以 http:// 或 https:// 开头')
+      .optional(),
+  })
+  .refine((d) => !d.termEndDate || d.termEndDate >= d.termStartDate, {
+    message: '学期结束日期不能早于开始日期',
+    path: ['termEndDate'],
+  })
+export type SectionEditInput = z.input<typeof sectionEditSchema>
+
+export async function updateSection(
+  id: string,
+  input: SectionEditInput,
+): Promise<CreateSectionResult> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['update'] })
-  // 工作流 E: a section-scoped teacher may only edit a section they teach — updateSection rewrites the
-  // recurrence/meetings AND wipes future auto-lessons (clearFutureScheduledLessons below), so a guessed
-  // same-tenant sectionId must never reach it. Checked BEFORE parse so an unowned section never leaks
-  // validation detail. Whole-tenant staff bypass via actorOwnsSectionById.
+  // 工作流 E: a section-scoped teacher may only edit a section they teach. Checked BEFORE parse so an
+  // unowned section never leaks validation detail. Whole-tenant staff bypass via actorOwnsSectionById.
   if (!(await actorOwnsSectionById(ctx, id))) return { ok: false, error: '无权修改该班级' }
 
-  const parsed = sectionSchema.safeParse(input)
+  const parsed = sectionEditSchema.safeParse(input)
   if (!parsed.success) {
     return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
   }
   const data = parsed.data
 
-  // H1: never reassign the teacher on edit. The form has no teacher picker and always submits the
-  // current user's id as teacherId; writing it would silently steal ownership of another teacher's
-  // section (and repoint lesson.teacherId via materialize). Preserve the stored teacherId by dropping
-  // it from the update column set — only an explicit teacher-change UI should ever touch it.
-  const { teacherId: _ignoredTeacherId, ...cols } = sectionRecurrenceColumns(data)
-  void _ignoredTeacherId
-
-  const [row] = await forTenant(ctx).update(classSection, id, cols)
+  const [row] = await forTenant(ctx).update(classSection, id, {
+    name: data.name,
+    capacity: data.capacity,
+    termStartDate: new Date(`${data.termStartDate}T00:00:00Z`),
+    termEndDate: data.termEndDate ? new Date(`${data.termEndDate}T00:00:00Z`) : null,
+    recurrenceTimezone: data.timezone,
+    defaultLocation: data.defaultLocation ?? null,
+    defaultMeetingUrl: data.defaultMeetingUrl ?? null,
+  })
   if (!row) return { ok: false, error: '班级不存在或不属于当前机构' }
-  await replaceMeetings(ctx, id, data.meetings)
-  // H2: the schedule may have changed → clear stale future auto-lessons before the caller
-  // re-materializes, so the calendar reflects the new times instead of accumulating duplicates.
-  await clearFutureScheduledLessons(ctx, id)
   revalidatePath('/dashboard/courses')
-  // STALE: clearFutureScheduledLessons DELETED future lesson rows, so the calendar's data is now stale.
-  // Without revalidating the schedule path too, /dashboard/schedule kept serving the pre-edit lessons
-  // until an unrelated schedule mutation happened to evict it. (createSection has no lessons yet; the
-  // caller re-materializes via materializeSectionAction, which already revalidates /dashboard/schedule.)
+  // Term-date changes shift the 排课 read window (getSectionLessons), so refresh the calendar too.
   revalidatePath('/dashboard/schedule')
   return { ok: true, section: row }
 }
@@ -348,4 +352,57 @@ export async function materializeSectionAction(sectionId: string) {
   const res = await materializeSection(ctx, sectionId)
   revalidatePath('/dashboard/schedule')
   return res
+}
+
+// Archived sections for the rail's「已归档班级」restore list. Mirrors listSections but returns ONLY the
+// archived rows within the actor's scope, so a teacher sees only their own archived classes.
+export async function listArchivedSections(): Promise<ClassSection[]> {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { course: ['list'] })
+  const scope = await sectionIdsForActor(ctx)
+  if (scope !== 'all' && scope.length === 0) return []
+  const archived = eq(classSection.isArchived, true)
+  return await forTenant(ctx).select(
+    classSection,
+    scope === 'all' ? archived : and(archived, inArray(classSection.id, scope)),
+  )
+}
+
+// 班级归档/恢复 — mirror archiveCourse/restoreCourse (soft-delete via isArchived). Return the discriminated
+// {ok,error} shape because thrown Server Action errors are redacted in production (React #441). Ownership
+// is enforced (actorOwnsSectionById) so a teacher can only archive/restore a section they teach.
+export type SectionResult = { ok: true; section: ClassSection } | { ok: false; error: string }
+
+export async function archiveSection(id: string): Promise<SectionResult> {
+  const ctx = await requireAuthContext()
+  try {
+    requirePermission(ctx, { course: ['update'] })
+    if (!(await actorOwnsSectionById(ctx, id))) return { ok: false, error: '无权归档该班级' }
+    const [row] = await forTenant(ctx).update(classSection, id, { isArchived: true })
+    if (!row) return { ok: false, error: '班级不存在或不属于当前机构' }
+    revalidatePath('/dashboard/courses')
+    revalidatePath('/dashboard/teach')
+    return { ok: true, section: row }
+  } catch (e) {
+    // CWE-209: ownership/permission denials already returned explicit messages above; here an AuthError
+    // (RBAC) maps to a generic denial and any unexpected DB fault is logged + collapsed to the fallback,
+    // never leaking a raw .message.
+    return toPortalActionError(e, '归档失败')
+  }
+}
+
+export async function restoreSection(id: string): Promise<SectionResult> {
+  const ctx = await requireAuthContext()
+  try {
+    requirePermission(ctx, { course: ['update'] })
+    if (!(await actorOwnsSectionById(ctx, id))) return { ok: false, error: '无权恢复该班级' }
+    const [row] = await forTenant(ctx).update(classSection, id, { isArchived: false })
+    if (!row) return { ok: false, error: '班级不存在或不属于当前机构' }
+    revalidatePath('/dashboard/courses')
+    revalidatePath('/dashboard/teach')
+    return { ok: true, section: row }
+  } catch (e) {
+    // CWE-209: see archiveSection — explicit denials returned above; unexpected faults collapse to fallback.
+    return toPortalActionError(e, '恢复失败')
+  }
 }
