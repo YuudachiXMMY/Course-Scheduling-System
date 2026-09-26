@@ -9,7 +9,7 @@ import { requirePermission } from '@/auth/authorize'
 import { actorOwnsSectionById, sectionIdsForActor, isWholeTenantActor } from '@/auth/scope'
 import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
-import { course, classSection, sectionMeeting, lesson, member } from '@/db/schema'
+import { course, classSection, sectionMeeting, sectionTeacher, lesson, member } from '@/db/schema'
 import { buildWeeklyRrule, type Weekday, WEEKDAYS } from '@/lib/rrule-build'
 import { materializeSection } from '@/lib/materialize'
 import { APP_TIME_ZONE } from '@/lib/timezone'
@@ -298,6 +298,10 @@ export async function createSection(input: SectionInput): Promise<CreateSectionR
     ...sectionRecurrenceColumns(data),
   })
   await replaceMeetings(ctx, row.id, data.meetings)
+  // 多教师: seed the access set with the primary teacher so they can open the section immediately.
+  // section_teacher is the authoritative access set (src/auth/scope.ts); classSection.teacherId (set via
+  // sectionRecurrenceColumns) is just the primary. teacherId was validated as an org member above (B8).
+  await forTenant(ctx).insert(sectionTeacher, { sectionId: row.id, userId: data.teacherId })
   revalidatePath('/dashboard/courses')
   return { ok: true, section: row }
 }

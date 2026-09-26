@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { requireAuthContext } from '@/auth/context'
-import { requirePagePermission } from '@/auth/authorize'
+import { requirePagePermission, can } from '@/auth/authorize'
 import { isWholeTenantActor } from '@/auth/scope'
 import { listCourses, listSections } from './actions'
 import { listTeachers } from './data'
@@ -15,6 +15,10 @@ export default async function CoursesPage() {
   requirePagePermission(ctx, { course: ['list'] })
   // CR2: only whole-tenant admins get the teacher picker; fetch the assignable list only for them.
   const canAssignTeacher = isWholeTenantActor(ctx)
+  // 多教师改造: only owner/admin may CREATE courses/sections or EDIT their settings. A teacher/assistant
+  // reaches this page (course:list) but sees it READ-ONLY — no create/edit forms, roster view-only.
+  const canCreate = can(ctx.role, { course: ['create'] })
+  const canUpdate = can(ctx.role, { course: ['update'] })
   const [courses, sections, students, teachers] = await Promise.all([
     listCourses(),
     listSections(),
@@ -37,7 +41,7 @@ export default async function CoursesPage() {
         <span>课程与报告已统一到「教务工作台」——在班级内直接管理学生、排课、报告与导出。</span>
         <span className="shrink-0 font-medium text-neutral-900">前往教务工作台 →</span>
       </Link>
-      <CourseForm />
+      {canCreate && <CourseForm />}
       <div className="flex flex-col gap-4">
         {activeCourses.length === 0 && (
           <p className="text-sm text-neutral-500">暂无课程，先创建一个课程模板。</p>
@@ -53,7 +57,7 @@ export default async function CoursesPage() {
                     {c.subject ?? '—'} · {c.level ?? '—'} · 默认 {c.defaultDurationMinutes} 分钟
                   </p>
                 </div>
-                <CourseForm course={c} />
+                {canUpdate && <CourseForm course={c} />}
               </div>
               <ul className="mb-3 flex flex-col gap-2">
                 {courseSections.map((s) => (
@@ -66,17 +70,20 @@ export default async function CoursesPage() {
                         {s.name ?? '（未命名班级）'} · {s.rrule ?? '无重复'} · {s.capacity} 人
                       </span>
                       <div className="flex shrink-0 items-center gap-2">
-                        <SectionForm
-                          courseId={c.id}
-                          defaultTeacherId={ctx.userId}
-                          section={s}
-                          teachers={teachers}
-                          canAssignTeacher={canAssignTeacher}
-                        />
+                        {canUpdate && (
+                          <SectionForm
+                            courseId={c.id}
+                            defaultTeacherId={ctx.userId}
+                            section={s}
+                            teachers={teachers}
+                            canAssignTeacher={canAssignTeacher}
+                          />
+                        )}
                         <SectionRoster
                           sectionId={s.id}
                           capacity={s.capacity}
                           students={studentOptions}
+                          readOnly={!canUpdate}
                         />
                         <a
                           href={`/api/export/section/${s.id}`}
@@ -92,12 +99,14 @@ export default async function CoursesPage() {
                   <li className="text-xs text-neutral-400">暂无班级</li>
                 )}
               </ul>
-              <SectionForm
-                courseId={c.id}
-                defaultTeacherId={ctx.userId}
-                teachers={teachers}
-                canAssignTeacher={canAssignTeacher}
-              />
+              {canCreate && (
+                <SectionForm
+                  courseId={c.id}
+                  defaultTeacherId={ctx.userId}
+                  teachers={teachers}
+                  canAssignTeacher={canAssignTeacher}
+                />
+              )}
             </div>
           )
         })}

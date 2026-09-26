@@ -296,18 +296,24 @@ describe('考勤/笔记/成绩写路径归属守卫（MEDIUM 1）— attendance 
   })
 })
 
-describe('班级配置写路径归属守卫（MEDIUM 1）— courses/actions', () => {
-  it('updateSection refuses another teacher’s section (and never wipes its future lessons)', async () => {
+describe('班级配置写路径归属守卫（MEDIUM 1 + 多教师）— courses/actions', () => {
+  it('updateSection is denied for a teacher (no course:update → FORBIDDEN, section untouched)', async () => {
+    // 多教师改造: updateSection maps to course:update, removed from teacher. requirePermission throws
+    // FORBIDDEN before the ownership check AND before clearFutureScheduledLessons, so a teacher can neither
+    // edit a section nor (as a side effect) wipe its future lessons. Only owner/admin edit sections.
     asActor(teacherBCtx)
-    const res = await updateSection(sA1, {
-      courseId: 'c_writes',
-      name: 'A1-hacked',
-      meetings: [],
-    } as unknown as Parameters<typeof updateSection>[1])
-    expect(res).toEqual({ ok: false, error: '无权修改该班级' })
+    await expect(
+      updateSection(sA1, {
+        courseId: 'c_writes',
+        name: 'A1-hacked',
+        meetings: [],
+      } as unknown as Parameters<typeof updateSection>[1]),
+    ).rejects.toThrow('FORBIDDEN')
   })
 
-  it('materializeSectionAction refuses another teacher’s section', async () => {
+  it('materializeSectionAction refuses another teacher’s section (lesson:create + ownership)', async () => {
+    // materialize maps to lesson:create (teacher KEEPS it), so this is still gated by section ownership,
+    // not permission — teacherB is not a member of sA1 → refused.
     asActor(teacherBCtx)
     await expect(materializeSectionAction(sA1)).rejects.toThrow('无权生成该班级课节')
   })
@@ -329,22 +335,20 @@ describe('报告写路径归属守卫（MEDIUM 1）— report-core', () => {
   })
 })
 
-// ── F1 — roster write path studentId ownership ───────────────────────────────────────────────────────
-describe('花名册写路径 studentId 归属守卫（F1）— enrollment-actions', () => {
-  it('a teacher cannot enroll/unenroll ANOTHER teacher’s private student into their OWN section', async () => {
+// ── F1 + 多教师 — roster writes are now owner/admin only ──────────────────────────────────────────────
+// 多教师改造: enroll/unenroll map to course:update, which a teacher no longer holds, so the roster is
+// VIEW-ONLY for teachers — the action is denied outright (FORBIDDEN). That is a strictly stronger guarantee
+// than the old per-student F1 object-level check (which is now unreachable for teachers but kept as
+// defense-in-depth for whole-tenant actors). Only owner/admin manage the roster.
+describe('花名册写路径归属守卫（F1 + 多教师）— enrollment-actions', () => {
+  it('a teacher can no longer enroll/unenroll — even a student in their OWN section (course:update removed)', async () => {
     asActor(teacherACtx)
-    // stuB is only ever created/enrolled under teacherB → outside teacherA's student scope. Owning the
-    // TARGET section (sA1) must not let teacherA pull a foreign student in and thereby self-grant PII +
-    // share-link visibility. Prior tests only covered "can't enroll into another teacher's section".
-    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('无权添加该学生')
-    await expect(unenrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('无权移除该学生')
-  })
-
-  it('the section owner may (idempotently) enroll a student already within their scope', async () => {
-    asActor(teacherACtx)
-    // stuA is active in sA1 (teacherA's section) → in scope; a re-click returns the existing active row.
-    const row = await enrollStudent({ studentId: stuA, sectionId: sA1 })
-    expect(row).toBeTruthy()
+    // stuA IS active in teacherA's own section sA1, yet enroll is still denied: the capability itself is
+    // gone (FORBIDDEN before any ownership/object-level check).
+    await expect(enrollStudent({ studentId: stuA, sectionId: sA1 })).rejects.toThrow('FORBIDDEN')
+    await expect(unenrollStudent({ studentId: stuA, sectionId: sA1 })).rejects.toThrow('FORBIDDEN')
+    // …and a foreign student is likewise denied at the permission gate.
+    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('FORBIDDEN')
   })
 
   it('whole-tenant staff may enroll any same-tenant student', async () => {

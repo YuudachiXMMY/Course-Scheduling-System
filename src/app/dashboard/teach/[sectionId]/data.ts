@@ -55,7 +55,7 @@ export interface SectionStudent {
 // teach/layout.tsx, so the rail is preserved).
 async function requireOwnedSection(ctx: AuthContext, id: string): Promise<Section> {
   const section = await forTenant(ctx).findById(classSection, id)
-  if (!section || !actorOwnsSection(ctx, section)) notFound()
+  if (!section || !(await actorOwnsSection(ctx, section))) notFound()
   return section
 }
 

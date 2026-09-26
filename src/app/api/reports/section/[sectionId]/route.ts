@@ -53,7 +53,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
     // (never another teacher's students' APPROVED report PDFs). This route is a sibling of the RSC teach
     // workspace but bypasses its layout guard, so it must enforce ownership itself; owner/admin/assistant/
     // superadmin bypass via actorOwnsSection. 404 (not 403) so it can't be used to probe section existence.
-    if (!actorOwnsSection(ctx, section)) return new Response('Not found', { status: 404 })
+    if (!(await actorOwnsSection(ctx, section))) return new Response('Not found', { status: 404 })
 
     const enrollments = await forTenant(ctx).select(
       enrollment,

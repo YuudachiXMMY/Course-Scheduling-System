@@ -154,18 +154,21 @@ describe('studentIdsForActor — 教师只见本班 active 学生', () => {
   })
 })
 
-describe('actorOwnsSection — 每班工作台入口守卫', () => {
-  const sectionOf = (teacherId: string) => ({ teacherId })
+describe('actorOwnsSection — 每班工作台入口守卫（主讲 or section_teacher 成员，异步）', () => {
+  // 多教师: actorOwnsSection is now async and takes { id, teacherId }. sA*/sB1 have their teacherId set as
+  // the PRIMARY teacher, so the primary path resolves without a section_teacher row (the membership path is
+  // covered by tests/section-teacher.test.ts). sec() builds the minimal { id, teacherId } row it needs.
+  const sec = (id: string, teacherId: string) => ({ id, teacherId })
 
-  it('a teacher owns their own section but not another teacher’s', () => {
-    expect(actorOwnsSection(teacherACtx, sectionOf(teacherA))).toBe(true)
-    expect(actorOwnsSection(teacherACtx, sectionOf(teacherB))).toBe(false)
-    expect(actorOwnsSection(teacherBCtx, sectionOf(teacherA))).toBe(false)
+  it('a teacher owns a section where they are the primary teacher, not another teacher’s', async () => {
+    expect(await actorOwnsSection(teacherACtx, sec(sA1, teacherA))).toBe(true)
+    expect(await actorOwnsSection(teacherACtx, sec(sB1, teacherB))).toBe(false)
+    expect(await actorOwnsSection(teacherBCtx, sec(sA1, teacherA))).toBe(false)
   })
 
-  it('whole-tenant staff (owner) and the platform superadmin own every section', () => {
-    expect(actorOwnsSection(ownerCtx, sectionOf(teacherB))).toBe(true)
-    expect(actorOwnsSection(superTeacherCtx, sectionOf(teacherB))).toBe(true)
+  it('whole-tenant staff (owner) and the platform superadmin own every section', async () => {
+    expect(await actorOwnsSection(ownerCtx, sec(sB1, teacherB))).toBe(true)
+    expect(await actorOwnsSection(superTeacherCtx, sec(sB1, teacherB))).toBe(true)
   })
 })
 
@@ -214,14 +217,13 @@ describe('数据层归属守卫 — getSectionHeader / getSectionRoster / getSec
 // but are 'use server' RPC boundaries (requireAuthContext is mocked to inject the principal). A teacher may
 // never enroll/drop into, or read the roster of, another teacher's section — the higher-risk mutation surface.
 describe('花名册写路径归属守卫 — enrollStudent / unenrollStudent / listSectionEnrollments（M2 补：写路径）', () => {
-  it('a teacher cannot enroll or unenroll students in another teacher’s section', async () => {
+  it('a teacher can no longer enroll or unenroll students at all (course:update removed → FORBIDDEN)', async () => {
+    // 多教师改造: enroll/unenroll require course:update, which a teacher no longer holds — the permission
+    // gate rejects (FORBIDDEN) before the per-section ownership check, so a teacher can't manage any
+    // roster, their own or another's. Roster management is owner/admin only.
     asActor(teacherBCtx)
-    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow(
-      '无权管理该班级',
-    )
-    await expect(unenrollStudent({ studentId: stuA, sectionId: sA1 })).rejects.toThrow(
-      '无权管理该班级',
-    )
+    await expect(enrollStudent({ studentId: stuB, sectionId: sA1 })).rejects.toThrow('FORBIDDEN')
+    await expect(unenrollStudent({ studentId: stuA, sectionId: sA1 })).rejects.toThrow('FORBIDDEN')
   })
 
   it('listSectionEnrollments returns [] for a foreign section but the real roster for one’s own', async () => {

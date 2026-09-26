@@ -22,7 +22,6 @@ export default async function SectionLayout({
     getSectionHeader(ctx, sectionId),
     getSectionPendingRescheduleCount(ctx, sectionId),
   ])
-  const canManage = can(ctx.role, { course: ['update'] })
   // Contextual signal only; the queue lives at /dashboard/reschedule. Reviewers (approve perm) see it
   // as an actionable link, read-only roles as plain text.
   const canReview = can(ctx.role, { rescheduleRequest: ['approve'] })
@@ -50,7 +49,7 @@ export default async function SectionLayout({
             </span>
           ))}
       </header>
-      <TabBar sectionId={sectionId} canManage={canManage} />
+      <TabBar sectionId={sectionId} />
       {children}
     </section>
   )

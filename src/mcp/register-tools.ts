@@ -220,9 +220,10 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const section = (await forTenant(ctx).findById(classSection, args.sectionId)) as
           typeof classSection.$inferSelect | null
         if (!section) throw new BusinessError('班级不存在或不属于当前机构')
-        // 工作流 E（B54）：只有本班教师（或 whole-tenant staff）可预览排课；非本班视同不存在，
-        // 避免泄露他人日历冲突课程标题/空闲时段并为其签发 confirmationToken。section 已加载 → 用同步版。
-        if (!actorOwnsSection(ctx, section)) throw new BusinessError('班级不存在或不属于当前机构')
+        // 工作流 E（B54）+ 多教师：只有被加入本班的教师/助教（或 whole-tenant staff）可预览排课；非本班
+        // 视同不存在，避免泄露他人日历冲突课程标题/空闲时段并为其签发 confirmationToken。
+        if (!(await actorOwnsSection(ctx, section)))
+          throw new BusinessError('班级不存在或不属于当前机构')
         if (!section.teacherId) throw new BusinessError('班级尚未指定教师，无法排课')
         const check = await checkTeacherConflict(ctx, {
           teacherId: section.teacherId,
@@ -286,9 +287,11 @@ export function registerCourseSchedulingTools(server: McpServer): void {
         const existing = (await forTenant(ctx).findById(lesson, args.id)) as
           typeof lesson.$inferSelect | null
         if (!existing) throw new BusinessError('课节不存在')
-        // 工作流 E（B54）：只有本班教师（或 whole-tenant staff）可预览改期；lesson.teacherId 由 section
-        // 反规范化而来，用同步 actorOwnsSection 即可，非本班视同不存在，避免泄露他人冲突/空闲时段。
-        if (!actorOwnsSection(ctx, { teacherId: existing.teacherId }))
+        // 工作流 E（B54）+ 多教师 SECURITY：只有被加入本班的教师/助教（或 whole-tenant staff）可预览改期。
+        // 按课节 CURRENT section 判权（section.teacherId + section_teacher 成员，非冻结的 lesson.teacherId
+        // ——被移出班级的教师其 id 仍烙在旧课节上），非本班视同不存在，避免泄露他人冲突/空闲时段。
+        const rsSection = await forTenant(ctx).findById(classSection, existing.sectionId)
+        if (!rsSection || !(await actorOwnsSection(ctx, rsSection)))
           throw new BusinessError('课节不存在')
         if (!existing.teacherId) throw new BusinessError('课节缺少教师信息')
         const check = await checkTeacherConflict(ctx, {

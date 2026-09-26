@@ -25,7 +25,7 @@ export async function enrollStudent(input: z.input<typeof enrollSchema>) {
   if (!section) throw new Error('班级不存在')
   // 工作流 E: a teacher may only manage the roster of sections they teach (defence-in-depth — the UI
   // never offers a foreign section, but a direct action call must not enroll into another teacher's class).
-  if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
+  if (!(await actorOwnsSection(ctx, section))) throw new Error('无权管理该班级')
   // F1: object-level authz on studentId — owning the SECTION is not enough. The only DB constraint is the
   // (tenantId, studentId) composite FK, which guarantees same-tenant but NOT same-roster. Without this a
   // section teacher could enroll ANY same-tenant student (e.g. another teacher's private student), and the
@@ -128,7 +128,7 @@ export async function unenrollStudent(input: z.input<typeof enrollSchema>) {
   // own sections. A foreign (or cross-tenant) section id resolves to null → 404-equivalent no-op.
   const section = await forTenant(ctx).findById(classSection, data.sectionId)
   if (!section) throw new Error('班级不存在')
-  if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
+  if (!(await actorOwnsSection(ctx, section))) throw new Error('无权管理该班级')
   // F1: same object-level authz as enrollStudent — a teacher may only drop a student already within their
   // scope, never a foreign-teacher student they merely guessed the id of.
   if (!(await actorOwnsStudent(ctx, data.studentId))) throw new Error('无权移除该学生')
@@ -153,7 +153,7 @@ export async function listSectionEnrollments(sectionId: string) {
   requirePermission(ctx, { course: ['read'] })
   // 工作流 E: a teacher may only read the roster of sections they teach. A foreign/cross-tenant id → [].
   const section = await forTenant(ctx).findById(classSection, sectionId)
-  if (!section || !actorOwnsSection(ctx, section)) return []
+  if (!section || !(await actorOwnsSection(ctx, section))) return []
   return await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, sectionId), eq(enrollment.status, 'active')),

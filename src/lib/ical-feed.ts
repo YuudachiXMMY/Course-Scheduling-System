@@ -2,9 +2,9 @@ import 'server-only'
 import ical from 'ical-generator'
 import { getVtimezoneComponent } from '@touch4it/ical-timezones'
 import { DateTime } from 'luxon'
-import { and, eq, gte, lt, ne } from 'drizzle-orm'
+import { and, eq, gte, inArray, lt, ne, or } from 'drizzle-orm'
 import { db } from '@/db'
-import { lesson, classSection, course } from '@/db/schema'
+import { lesson, classSection, course, sectionTeacher } from '@/db/schema'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 
 const ZONE = APP_TIME_ZONE
@@ -55,7 +55,9 @@ export function cardWindow(now = new Date()): { from: Date; to: Date } {
 // 评审 Slice D（B6/B45）收敛：`teacherId` 为 feed 行的归属维度——
 //   - teacherId 非空（section-scoped 教师自己的 feed）→ 只返回该教师所教 section 的课次；
 //   - teacherId 为 null（whole-tenant staff 的租户级 feed）→ 维持全租户课次（既有行为）。
-// 借用已有的 lesson→section inner join，直接按 classSection.teacherId 过滤，避免多取一次 sectionId。
+// 多教师: scope by section_teacher MEMBERSHIP (not classSection.teacherId) so a co-teacher's feed includes
+// every section they were added to and drops one they were removed from — the primary teacher is one member
+// of that set, so the pre-multi-teacher behavior is preserved for single-teacher sections.
 export async function getFeedLessons(
   tenantId: string,
   teacherId?: string | null,
@@ -85,8 +87,25 @@ export async function getFeedLessons(
     .where(
       and(
         eq(lesson.tenantId, tenantId),
-        // 归属收敛：非空 teacherId 时只取该教师所教 section 的课次；null → 不加此条件（全租户）。
-        teacherId ? eq(classSection.teacherId, teacherId) : undefined,
+        // 归属收敛：非空 teacherId → 取该教师作为「主讲」(classSection.teacherId) 或被加入 (section_teacher)
+        // 的 section 课次（混合模型，与 scope.ts 一致）；null → 不加此条件（全租户）。
+        teacherId
+          ? or(
+              eq(classSection.teacherId, teacherId),
+              inArray(
+                classSection.id,
+                db
+                  .select({ sectionId: sectionTeacher.sectionId })
+                  .from(sectionTeacher)
+                  .where(
+                    and(
+                      eq(sectionTeacher.tenantId, tenantId),
+                      eq(sectionTeacher.userId, teacherId),
+                    ),
+                  ),
+              ),
+            )
+          : undefined,
         gte(lesson.startAt, from),
         lt(lesson.startAt, to),
         ne(lesson.status, 'canceled'),

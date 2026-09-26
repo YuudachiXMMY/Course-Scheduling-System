@@ -34,6 +34,7 @@ export const ALLOWLIST: readonly string[] = [
   'src/auth/staff.ts',
   'src/app/dashboard/courses/data.ts', // member↔user join (roster), scoped by organizationId
   'src/app/dashboard/courses/actions.ts', // one member lookup; ALL tenant tables here use forTenant
+  'src/app/dashboard/courses/section-teacher-actions.ts', // member↔user join + membership check; section_teacher/class_section go through forTenant
   'src/app/dashboard/users/data.ts', // member↔user join; portalLink/student go through forTenant
   'src/lib/report-consent.ts', // reads/writes organization.metadata (auth table) in a tx
   'src/app/api/cron/reminders/route.ts', // cross-tenant cron: iterates the organization table
@@ -92,7 +93,7 @@ export function stripCommentsAndStrings(src: string): string {
   // Stack of `${…}` interpolations we are currently inside; each entry is the running brace depth of that
   // interpolation's code (0 = at the interpolation's own level, so the next `}` closes it).
   const interp: number[] = []
-  for (let i = 0; i < src.length; ) {
+  for (let i = 0; i < src.length;) {
     const c = src[i]
     const d = src[i + 1]
     if (mode === 'code') {
