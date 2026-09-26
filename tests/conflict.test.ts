@@ -19,6 +19,8 @@ const userId = 'user_conflict'
 const teacherId = userId
 let courseId: string
 let sectionId: string
+// A SECOND section taught by the same teacher — used to prove cross-section overlaps are now allowed.
+let sectionId2: string
 
 // A known Monday base (UTC times used directly — the app stores UTC instants).
 const at = (h: number, m = 0) => new Date(Date.UTC(2026, 2, 2, h, m)) // 2026-03-02
@@ -52,7 +54,13 @@ describe('teacher conflict detection + GiST backstop', () => {
       capacity: 1,
     })) as { id: string }[]
     sectionId = s.id
-    // Existing teacher lesson 10:00–11:00.
+    const [s2] = (await forTenant(ctx).insert(classSection, {
+      courseId,
+      teacherId,
+      capacity: 1,
+    })) as { id: string }[]
+    sectionId2 = s2.id
+    // Existing teacher lesson 10:00–11:00 in section 1.
     await db.insert(lesson).values({
       tenantId: org,
       sectionId,
@@ -65,9 +73,10 @@ describe('teacher conflict detection + GiST backstop', () => {
   })
   afterAll(cleanup)
 
-  it('detects an overlapping teacher lesson and returns suggestions', async () => {
+  it('detects an overlapping lesson in the SAME section and returns suggestions', async () => {
     const res = await checkTeacherConflict(ctxFor(org, userId), {
       teacherId,
+      sectionId,
       startAt: at(10, 30),
       endAt: at(11, 30),
     })
@@ -76,9 +85,23 @@ describe('teacher conflict detection + GiST backstop', () => {
     expect(res.suggestions.length).toBeGreaterThan(0)
   })
 
-  it('allows back-to-back lessons (10:00 end → 11:00 start)', async () => {
+  it('ALLOWS the same teacher to overlap in a DIFFERENT section (cross-class conflict permitted)', async () => {
+    // Same teacher, same wall-clock as the section-1 lesson (10:00–11:00), but a different section.
+    // Conflict detection is now scoped to a single class → no conflict across classes.
     const res = await checkTeacherConflict(ctxFor(org, userId), {
       teacherId,
+      sectionId: sectionId2,
+      startAt: at(10, 30),
+      endAt: at(11, 30),
+    })
+    expect(res.hasConflict).toBe(false)
+    expect(res.conflicts.length).toBe(0)
+  })
+
+  it('allows back-to-back lessons in the same section (10:00 end → 11:00 start)', async () => {
+    const res = await checkTeacherConflict(ctxFor(org, userId), {
+      teacherId,
+      sectionId,
       startAt: at(11),
       endAt: at(12),
     })
@@ -98,13 +121,14 @@ describe('teacher conflict detection + GiST backstop', () => {
     })
     const res = await checkTeacherConflict(ctxFor(org, userId), {
       teacherId,
+      sectionId,
       startAt: at(14, 15),
       endAt: at(14, 45),
     })
     expect(res.hasConflict).toBe(false)
   })
 
-  it('GiST constraint rejects a direct overlapping non-canceled insert (23P01)', async () => {
+  it('GiST constraint rejects a same-section overlapping non-canceled insert (23P01)', async () => {
     let threw = false
     try {
       await db.insert(lesson).values({
@@ -121,6 +145,24 @@ describe('teacher conflict detection + GiST backstop', () => {
       expect(isExclusionViolation(e)).toBe(true)
     }
     expect(threw).toBe(true)
+  })
+
+  it('GiST constraint ALLOWS the same teacher to overlap across DIFFERENT sections', async () => {
+    // Same teacher, overlapping the section-1 10:00–11:00 lesson, but inserted into section 2.
+    // The teacher-overlap exclusion is now scoped by section_id → cross-section overlaps are permitted.
+    const [row] = await db
+      .insert(lesson)
+      .values({
+        tenantId: org,
+        sectionId: sectionId2,
+        teacherId,
+        startAt: at(10, 30),
+        endAt: at(11, 30),
+        status: 'scheduled',
+        originalStartAt: at(10, 30),
+      })
+      .returning({ id: lesson.id })
+    expect(row?.id).toBeTruthy()
   })
 
   it('null-teacher lessons are exempt from the exclusion constraint', async () => {
