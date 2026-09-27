@@ -28,7 +28,8 @@ export interface StudentOption {
 // schema change surfaces at both call sites.
 export function toReportRows(rows: (typeof progressReport.$inferSelect)[]): ReportRow[] {
   const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
-  return rows
+  // Sort a copy: PURE means the caller's `rows` array is never reordered in place (Array.sort mutates).
+  return [...rows]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     .map((r) => ({
       id: r.id,
