@@ -16,6 +16,10 @@ export const user = pgTable("user", {
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
+  // App-side, admin-internal note about this account (parent/teacher/admin). Nullable, never surfaced in
+  // any portal/self view — only /dashboard/users manager UI reads/writes it. NOTE: this is a MANUAL column
+  // (not a Better Auth field), so re-add it if `pnpm auth:generate` regenerates this file.
+  notes: text("notes"),
 });
 
 export const session = pgTable(

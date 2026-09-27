@@ -11,6 +11,7 @@ import PortalAccountForm from '../students/portal-account-form'
 import { listPortalUsers } from './data'
 import { LinkControl, UnlinkButton } from './link-control'
 import ResetPasswordControl from './reset-password-control'
+import AccountNotes from './account-notes'
 import { formatDateTime } from '@/lib/format-datetime'
 
 // Students tab of /dashboard/users — the former /dashboard/students page, moved here verbatim, plus a
@@ -93,6 +94,7 @@ export default async function StudentsTab() {
                   </div>
                   <StudentForm student={s} />
                 </div>
+                <AccountNotes target={{ kind: 'student', id: s.id }} note={s.notes} />
                 <ExportPanel
                   studentId={s.id}
                   token={shareByStudent.get(s.id)?.token ?? null}

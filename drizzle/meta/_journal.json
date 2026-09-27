@@ -169,6 +169,13 @@
       "when": 1790462870627,
       "tag": "0023_conscious_risque",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790530239279,
+      "tag": "0024_add_user_notes",
+      "breakpoints": true
     }
   ]
 }

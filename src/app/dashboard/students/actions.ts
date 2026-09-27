@@ -8,6 +8,7 @@ import { requirePermission } from '@/auth/authorize'
 import { actorOwnsStudent, studentIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { student } from '@/db/schema'
+import { accountNoteSchema } from '@/lib/note-schema'
 
 export type Student = typeof student.$inferSelect
 
@@ -82,6 +83,24 @@ export async function updateStudent(id: string, input: UpdateStudentInput): Prom
     name: parsed.data.name,
     parentWechat: parsed.data.parentWechat,
     schoolGrade: parsed.data.schoolGrade,
+  })
+  revalidatePath('/dashboard/users')
+  return { ok: true, row }
+}
+
+// Set/clear the admin-internal note on a STUDENT (the 学生 tab counterpart of setUserNote for user rows).
+// Notes attach to the student entity — which need not have a login — so this reuses the existing student
+// write boundary: student:update + actorOwnsStudent (a section-scoped teacher may only annotate a student
+// they teach). A blank note normalizes to NULL so "cleared" and "never set" are one state. Admin-internal
+// only: student.notes is never surfaced in any portal view.
+export async function setStudentNotes(id: string, note: string): Promise<StudentResult> {
+  const ctx = await requireAuthContext()
+  requirePermission(ctx, { student: ['update'] })
+  if (!(await actorOwnsStudent(ctx, id))) return { ok: false, error: '无权修改该学生' }
+  const parsed = accountNoteSchema.safeParse(note)
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? '输入有误' }
+  const [row] = await forTenant(ctx).update(student, id, {
+    notes: parsed.data.length > 0 ? parsed.data : null,
   })
   revalidatePath('/dashboard/users')
   return { ok: true, row }

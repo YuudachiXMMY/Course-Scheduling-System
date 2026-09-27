@@ -8,6 +8,7 @@ import { deprovisionPortalMember } from '@/auth/provision'
 import { assertCanManageRole } from '@/auth/staff-authz'
 import { STAFF_ROLES } from '@/auth/roles'
 import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
+import { accountNoteSchema } from '@/lib/note-schema'
 import type { AuthContext } from '@/auth/context'
 
 // Staff-account cores for /dashboard/users (teachers/admins tabs). Headless like provision.ts: each takes
@@ -171,6 +172,59 @@ export async function deactivateStaffCore(ctx: AuthContext, targetUserId: string
       .where(eq(userTable.id, targetUserId))
     await tx.delete(session).where(eq(session.userId, targetUserId))
   })
+}
+
+// Edit an account's basic profile — display name + login email. Powers the 家长/教师/管理员 「编辑」 affordance
+// on /dashboard/users. Same tiered gate as the sibling cores: the target must be in-org and its current role
+// manageable by the actor (assertCanManageRole → a regular admin cannot edit an admin/owner; a super admin
+// can; parent/teacher/assistant are editable by any org manager). Editing your OWN info is refused here —
+// mirrors setStaffRole / deactivate / resetUserPassword, and the tabs hide the control for self too.
+//
+// The email is the UNIQUE login identifier: it is lower-cased (like createStaffUserCore) and a collision
+// with ANY other user is refused loudly, so an edit can never silently steal or merge another login. We do
+// NOT touch emailVerified — this app's logins are largely synthesized placeholders and login is by
+// user.email regardless; leaving it avoids re-triggering a verification flow the tutor never uses.
+const updateUserInfoSchema = z.object({
+  name: z.string().trim().min(1, '姓名不能为空').max(100),
+  email: z.string().trim().email('请输入有效邮箱').max(100),
+})
+export type UpdateUserInfoInput = z.input<typeof updateUserInfoSchema>
+
+export async function updateUserInfoCore(
+  ctx: AuthContext,
+  targetUserId: string,
+  input: UpdateUserInfoInput,
+): Promise<void> {
+  if (targetUserId === ctx.userId) throw new Error('不能在此编辑自己的信息')
+  const role = await requireStaffTarget(ctx, targetUserId) // in-org (cross-tenant reach refused) + role
+  assertCanManageRole(ctx, role) // tiered: admin/owner target → super admin only
+  const data = updateUserInfoSchema.parse(input)
+  const email = data.email.toLowerCase()
+  const [clash] = await db
+    .select({ id: userTable.id })
+    .from(userTable)
+    .where(eq(userTable.email, email))
+    .limit(1)
+  if (clash && clash.id !== targetUserId) throw new Error('该邮箱已被占用')
+  await db.update(userTable).set({ name: data.name, email }).where(eq(userTable.id, targetUserId))
+}
+
+// Set (or clear) the admin-internal note on an account. Same tiered gate — annotating an admin/owner account
+// is super-admin-only (assertCanManageRole), matching the decision that admin-account writes stay tiered. A
+// blank note is normalized to NULL so "cleared" and "never set" are one state. No self guard: an admin
+// noting themselves is harmless (and the admins tab hides the control for self anyway).
+export async function setUserNoteCore(
+  ctx: AuthContext,
+  targetUserId: string,
+  note: string | null,
+): Promise<void> {
+  const role = await requireStaffTarget(ctx, targetUserId)
+  assertCanManageRole(ctx, role)
+  const trimmed = accountNoteSchema.parse(note ?? '')
+  await db
+    .update(userTable)
+    .set({ notes: trimmed.length > 0 ? trimmed : null })
+    .where(eq(userTable.id, targetUserId))
 }
 
 // Re-enable a previously deactivated staff account. Same in-org + manageable-role guards; clears the ban
