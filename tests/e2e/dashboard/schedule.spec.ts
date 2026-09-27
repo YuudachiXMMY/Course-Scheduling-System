@@ -117,6 +117,35 @@ test.describe('排课日历', () => {
     await page.getByRole('button', { name: '关闭' }).click()
     await expect(page.getByTestId('lesson-detail-drawer')).toHaveCount(0)
   })
+
+  test('抽屉中「对外开放」勾选框默认勾选', async ({ page }) => {
+    await openFirstLessonDrawer(page)
+    await expect(page.getByText('加载中…')).toBeHidden()
+
+    // 新笔记（种子未建共享笔记行）→ sharedVisibility 缺省 shared → 勾选框默认勾选。
+    const shareToggle = page.getByLabel('对外开放（学生 / 家长可见）')
+    await expect(shareToggle).toBeVisible()
+    await expect(shareToggle).toBeChecked()
+
+    await page.getByRole('button', { name: '关闭' }).click()
+    await expect(page.getByTestId('lesson-detail-drawer')).toHaveCount(0)
+  })
+
+  test('抽屉中「一键保存所有更改」一次提交地点/笔记/点评', async ({ page }) => {
+    await openFirstLessonDrawer(page)
+    await expect(page.getByText('加载中…')).toBeHidden()
+
+    // 改动上课地点与共享笔记，然后仅点一次「一键保存所有更改」。
+    await page.getByLabel('上课地点').fill(`E2E地点-${Date.now()}`)
+    await page.getByPlaceholder('今天讲了…').fill(`E2E一键保存-${Date.now()}`)
+
+    await page.getByRole('button', { name: '一键保存所有更改', exact: true }).click()
+    // 断言绿色成功提示（汇总文案含「已保存全部更改」），never on global counts.
+    await expect(page.getByText(/已保存全部更改/)).toBeVisible()
+
+    await page.getByRole('button', { name: '关闭' }).click()
+    await expect(page.getByTestId('lesson-detail-drawer')).toHaveCount(0)
+  })
 })
 
 /**
