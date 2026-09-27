@@ -187,7 +187,7 @@ interface LessonGradeCell {
 
 export interface LessonNoteRow {
   summary: string // shared lesson note (note.studentId = null)
-  summaryVisibility: 'internal' | 'shared' // 共享笔记是否「对外开放」给门户学生/家长（无笔记时默认 internal）
+  summaryVisibility: 'internal' | 'shared' // 共享笔记是否「对外开放」给门户学生/家长（无笔记时默认 shared，新笔记默认勾选）
   comments: Record<string, string> // studentId -> per-student 点评 (note.studentId set)
   grades: Record<string, LessonGradeCell> // studentId -> 课堂成绩 (grade.title = QUICK_GRADE_TITLE)
   attendance: Record<string, AttendanceStatus> // studentId -> 出勤状态 (attendanceStatus enum union)
@@ -206,7 +206,7 @@ export async function getSectionLessonNotes(
   for (const id of lessonIds)
     byLesson[id] = {
       summary: '',
-      summaryVisibility: 'internal', // 默认内部；仅当存在共享笔记时用其 visibility 覆盖
+      summaryVisibility: 'shared', // 无笔记时默认 shared（新笔记「对外开放」默认勾选，纯 UI 种子）；仅当存在共享笔记时用其 visibility 覆盖
       comments: {},
       grades: {},
       attendance: {},

@@ -117,6 +117,8 @@ export async function listAttendance(lessonId: string) {
 export interface LessonNotes {
   shared: string
   perStudent: Record<string, string>
+  // 共享笔记是否「对外开放」给门户学生/家长；无共享笔记时默认 shared（新笔记默认勾选），有则回显该行 visibility。
+  sharedVisibility: 'internal' | 'shared'
 }
 
 export async function getLessonNotes(lessonId: string): Promise<LessonNotes> {
@@ -124,17 +126,26 @@ export async function getLessonNotes(lessonId: string): Promise<LessonNotes> {
   requirePermission(ctx, { lesson: ['read'] })
   // 工作流 E: row-level ownership guard, mirrors upsertSharedNote/upsertStudentNote (see getLessonRoster).
   // Private per-student teacher notes must never leak to a foreign teacher or a portal account.
-  if (!(await actorOwnsLesson(ctx, lessonId))) return { shared: '', perStudent: {} }
+  // 无权访问 → 空存根；sharedVisibility 取保守的 'internal'（无访问权者不应看到「对外开放」默认，least-surprise）。
+  // 与「无共享笔记缺省 shared」的 UI 种子规则区分：那是给有权教师新建笔记时默认勾选，此处是访问被拒。
+  if (!(await actorOwnsLesson(ctx, lessonId)))
+    return { shared: '', perStudent: {}, sharedVisibility: 'internal' }
   const rows = await forTenant(ctx).select(note, eq(note.lessonId, lessonId))
   // Oldest → newest so a later row wins per key (latest edit reflects current state).
   rows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
   let shared = ''
+  // 无共享笔记时缺省 shared（纯 UI 种子——门户仅暴露真实存在且 visibility='shared' 的行，故不泄露）；
+  // 存在共享笔记行时用其 visibility 覆盖，回显教师此前的显式选择。
+  let sharedVisibility: 'internal' | 'shared' = 'shared'
   const perStudent: Record<string, string> = {}
   for (const r of rows) {
     if (r.studentId) perStudent[r.studentId] = r.body
-    else shared = r.body
+    else {
+      shared = r.body
+      sharedVisibility = r.visibility
+    }
   }
-  return { shared, perStudent }
+  return { shared, perStudent, sharedVisibility }
 }
 
 // Shared lesson note (studentId = null): upsert the single row so it can be viewed and edited later.
