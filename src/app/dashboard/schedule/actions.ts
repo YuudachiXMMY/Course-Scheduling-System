@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { and, eq, gte, ne, inArray } from 'drizzle-orm'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
-import { actorOwnsLesson, actorOwnsSectionById, isWholeTenantActor } from '@/auth/scope'
+import { actorOwnsLesson, actorOwnsSectionById, sectionIdsForActor } from '@/auth/scope'
 import { forTenant } from '@/db/tenant'
 import { lesson } from '@/db/schema'
 import {
@@ -56,10 +56,11 @@ export async function cancelLessonAction(id: string): Promise<{ ok: true }> {
 
 // 排课 → 多选删除课节. Bulk-cancel the selected lessons (soft-delete tombstone, mirroring
 // cancelLessonAction). Ownership is enforced IN the WHERE clause — a section-scoped teacher only matches
-// lessons they teach (lesson.teacherId === ctx.userId), so a guessed same-tenant / foreign id simply
-// doesn't match and is silently skipped (never a partial-leak error); `canceled` reports only what was
-// actually tombstoned. PERF: ONE atomic updateWhereMany (mirrors cancelSeriesAction) instead of a
-// per-id select+update loop (up to ~1000 round-trips for the 500-id cap). Returns as DATA ({ok,error}).
+// lessons in a section they CURRENTLY own (lesson.sectionId ∈ sectionIdsForActor, never the frozen
+// lesson.teacherId), so a guessed same-tenant / foreign id — or a lesson of a section they were removed
+// from — simply doesn't match and is silently skipped (never a partial-leak error); `canceled` reports
+// only what was actually tombstoned. PERF: ONE atomic updateWhereMany (mirrors cancelSeriesAction) instead
+// of a per-id select+update loop (up to ~1000 round-trips for the 500-id cap). Returns as DATA ({ok,error}).
 export type CancelLessonsResult = { ok: true; canceled: number } | { ok: false; error: string }
 
 export async function cancelLessonsAction(ids: string[]): Promise<CancelLessonsResult> {
@@ -70,14 +71,21 @@ export async function cancelLessonsAction(ids: string[]): Promise<CancelLessonsR
     requirePermission(ctx, { lesson: ['update'] })
     // Dedupe so a repeated id can't inflate the count.
     const unique = [...new Set(parsed.data)]
-    // 工作流 E: whole-tenant staff may cancel any of the tenant's lessons; a section-scoped teacher is
-    // confined to their own (lesson.teacherId denormalized from the section). updateWhereMany always
-    // AND-s the tenant scope, so this stays within ctx.tenantId regardless. ne(canceled) keeps the count
-    // to lessons actually transitioned (re-canceling an already-tombstoned row is a no-op, not a +1).
+    // 多教师 SECURITY: whole-tenant staff may cancel any of the tenant's lessons; a section-scoped teacher
+    // is confined to the sections they CURRENTLY own. Authorize on the lesson's live section membership
+    // (sectionIdsForActor) — NOT the frozen lesson.teacherId, which is denormalized once at materialize time
+    // and never updated, so a teacher removed from a section (removeSectionTeacher repoints
+    // classSection.teacherId + deletes their link) would otherwise keep bulk-cancel rights over its
+    // already-materialized lessons. Mirrors actorOwnsLesson / cancelSeriesAction. updateWhereMany always
+    // AND-s the tenant scope, so this stays within ctx.tenantId regardless. ne(canceled) keeps the count to
+    // lessons actually transitioned (re-canceling an already-tombstoned row is a no-op, not a +1).
+    const ownedSections = await sectionIdsForActor(ctx)
+    // A section-scoped actor with no sections sees nothing — short-circuit before inArray([]) (invalid SQL).
+    if (ownedSections !== 'all' && ownedSections.length === 0) return { ok: true, canceled: 0 }
     const scope = and(
       inArray(lesson.id, unique),
       ne(lesson.status, 'canceled'),
-      isWholeTenantActor(ctx) ? undefined : eq(lesson.teacherId, ctx.userId),
+      ownedSections === 'all' ? undefined : inArray(lesson.sectionId, ownedSections),
     )
     // and() is typed `SQL | undefined` (in the general case every operand could be undefined). The first
     // two operands here are always defined, so it can never actually be undefined — enforce that invariant
