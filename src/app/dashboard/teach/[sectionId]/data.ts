@@ -19,6 +19,7 @@ import { APP_TIME_ZONE } from '@/lib/timezone'
 import { isUniqueViolation } from '@/lib/errors'
 import { actorOwnsSection } from '@/auth/scope'
 import type { AttendanceStatus } from '@/lib/report-stats'
+import { summarizeSchedule, type ScheduleSummary } from '@/lib/schedule-summary'
 import type { AuthContext } from '@/auth/context'
 import { toReportRows, type ReportRow } from '@/app/dashboard/reports/data'
 
@@ -130,6 +131,28 @@ export async function getSectionLessons(ctx: AuthContext, id: string): Promise<S
       meetingUrl: r.meetingUrl,
       isPast: r.endAt.getTime() < nowMs,
     }))
+}
+
+// 排课 tab summary card: aggregate counts + hours (总共/已上/本月) and semester week/month span. Uses the
+// FULL non-canceled lesson set of the section (not the display window) so "总共安排" is the true total,
+// including any ad-hoc lessons outside term dates. `now` is computed here (server-side) and threaded into
+// the pure aggregator so the client card renders no Date.now() (same rule as getSectionLessons' isPast).
+export async function getSectionScheduleSummary(
+  ctx: AuthContext,
+  id: string,
+): Promise<ScheduleSummary> {
+  const section = await requireOwnedSection(ctx, id) // 工作流 E: ownership guard (non-null section)
+  const rows = await forTenant(ctx).select(
+    lesson,
+    and(eq(lesson.sectionId, id), ne(lesson.status, 'canceled')),
+  )
+  return summarizeSchedule(
+    rows.map((r) => ({ startAt: r.startAt, endAt: r.endAt })),
+    section.termStartDate,
+    section.termEndDate,
+    new Date(),
+    APP_TIME_ZONE,
+  )
 }
 
 // Count of PENDING reschedule requests (portal-originated) that target a lesson in THIS section — a
