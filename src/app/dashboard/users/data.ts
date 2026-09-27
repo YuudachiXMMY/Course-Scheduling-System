@@ -12,6 +12,7 @@ export type PortalUserRow = {
   name: string
   email: string
   role: string
+  notes: string | null
   createdAt: Date
   updatedAt: Date
   students: { id: string; name: string }[]
@@ -35,6 +36,7 @@ export async function listPortalUsers(
       name: user.name,
       email: user.email,
       role: member.role,
+      notes: user.notes,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     })
@@ -70,6 +72,7 @@ export type StaffRow = {
   name: string
   email: string
   role: string
+  notes: string | null
   banned: boolean
   createdAt: Date
   updatedAt: Date
@@ -86,6 +89,7 @@ export async function listStaff(ctx: AuthContext): Promise<StaffRow[]> {
       name: user.name,
       email: user.email,
       role: member.role,
+      notes: user.notes,
       banned: user.banned,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
