@@ -185,8 +185,16 @@ describe('addSectionTeacher / removeSectionTeacher — 管理员管理（course:
     asActor(adminCtx)
     const first = await addSectionTeacher({ sectionId: sMain, userId: stranger })
     expect(first).toEqual({ ok: true })
-    // idempotent re-add is a no-op success (unique index + existence pre-check)
+    // Idempotent re-add is a no-op success. There is no select-then-insert pre-check anymore: the second
+    // add hits the insert, races uq_section_teacher_section_user, and the 23505 is swallowed — so this
+    // exercises that unique-violation catch path against the real DB.
     expect(await addSectionTeacher({ sectionId: sMain, userId: stranger })).toEqual({ ok: true })
+    // ...and no duplicate link row is created.
+    const dupCheck = await db
+      .select({ userId: sectionTeacher.userId })
+      .from(sectionTeacher)
+      .where(and(eq(sectionTeacher.sectionId, sMain), eq(sectionTeacher.userId, stranger)))
+    expect(dupCheck).toHaveLength(1)
     // stranger, now linked, can open the section
     expect(await actorOwnsSectionById(strangerCtx, sMain)).toBe(true)
     // cleanup this link so later assertions on sMain's roster are stable

@@ -5,11 +5,12 @@ import { and, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext, AuthError } from '@/auth/context'
 import { requirePermission } from '@/auth/authorize'
-import { actorOwnsSectionById } from '@/auth/scope'
+import { actorOwnsSection } from '@/auth/scope'
 import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { classSection, sectionTeacher, member, user } from '@/db/schema'
 import { STAFF_ROLES } from '@/auth/roles'
+import { isUniqueViolation } from '@/lib/errors'
 
 // 多教师/助教 — an admin assigns MULTIPLE teachers/assistants to a section from 班级设置. section_teacher is
 // the authoritative access set (src/auth/scope.ts); classSection.teacherId is kept as the PRIMARY teacher
@@ -44,13 +45,14 @@ const isStaff = (role: string) =>
 export async function listSectionTeachers(sectionId: string): Promise<SectionTeacherRow[]> {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['read'] })
-  if (!(await actorOwnsSectionById(ctx, sectionId))) return []
 
-  const [section, links] = await Promise.all([
-    forTenant(ctx).findById(classSection, sectionId),
-    forTenant(ctx).select(sectionTeacher, eq(sectionTeacher.sectionId, sectionId)),
-  ])
-  const primaryId = section?.teacherId ?? null
+  // Load the section ONCE and authorize against the loaded row. actorOwnsSectionById would re-fetch the
+  // same classSection row (findById) internally, so pairing it with the load below was a duplicate query.
+  const section = await forTenant(ctx).findById(classSection, sectionId)
+  if (!section || !(await actorOwnsSection(ctx, section))) return []
+
+  const links = await forTenant(ctx).select(sectionTeacher, eq(sectionTeacher.sectionId, sectionId))
+  const primaryId = section.teacherId ?? null
   // 多教师(hybrid): the roster is every LINKED userId UNION the PRIMARY teacher — the primary owns the
   // section even without an explicit link row (createSection seeds one, but stay robust to drift), so the
   // panel must always surface them. Deduped.
@@ -58,7 +60,8 @@ export async function listSectionTeachers(sectionId: string): Promise<SectionTea
   if (userIds.length === 0) return []
 
   // Names/roles come from member ⋈ user on the RAW db (member/user are auth-owned, no tenant column on
-  // user). Scope by organizationId === ctx.tenantId — the same join listTeachers uses.
+  // user). Scope by organizationId === ctx.tenantId — the same join listTeachers uses. Kept sequential
+  // AFTER the userIds short-circuit above (not folded into a Promise.all) so an empty roster skips it.
   const members = await db
     .select({ userId: member.userId, name: user.name, role: member.role })
     .from(member)
@@ -104,12 +107,14 @@ export async function addSectionTeacher(
       .limit(1)
     if (!m || !isStaff(m.role)) return { ok: false, error: '该用户不是当前机构的教师/助教' }
 
-    const existing = await forTenant(ctx).select(
-      sectionTeacher,
-      and(eq(sectionTeacher.sectionId, sectionId), eq(sectionTeacher.userId, userId)),
-    )
-    if (existing.length === 0) {
+    // Idempotent add: insert directly and let the uq_section_teacher_section_user unique index arbitrate.
+    // A select-then-insert pre-check had a TOCTOU window — two concurrent re-adds could both pass the check
+    // and the loser hit a raw 23505, leaking a Postgres error to the admin UI. Swallow the unique violation
+    // as an idempotent no-op success instead (mirrors the quick-grade upsert recovery in teach/data.ts).
+    try {
       await forTenant(ctx).insert(sectionTeacher, { sectionId, userId })
+    } catch (e) {
+      if (!isUniqueViolation(e)) throw e
     }
     // Fill an empty primary so the section always has a teacher for lesson denormalization / display.
     if (!section.teacherId) {

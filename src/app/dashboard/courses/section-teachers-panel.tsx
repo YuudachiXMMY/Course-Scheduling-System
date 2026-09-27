@@ -8,11 +8,10 @@ import {
   removeSectionTeacher,
   type SectionTeacherRow,
 } from './section-teacher-actions'
-
-interface TeacherOption {
-  id: string
-  name: string
-}
+// Reuse the shared shape (listTeachers/listAssignableTeachers feed `candidates`) instead of a local
+// duplicate, so the two can't drift. `import type` is erased at build → no server-only value crosses the
+// client boundary (data.ts is 'server-only').
+import type { TeacherOption } from './data'
 
 // 多教师/助教 — the 班级设置 panel where an admin assigns MULTIPLE teachers/assistants to a section. A
 // section-scoped teacher/assistant renders this read-only (canManage=false): they see WHO teaches the
