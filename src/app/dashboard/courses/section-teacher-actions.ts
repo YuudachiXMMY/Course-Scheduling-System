@@ -10,7 +10,7 @@ import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
 import { classSection, sectionTeacher, member, user } from '@/db/schema'
 import { STAFF_ROLES } from '@/auth/roles'
-import { isUniqueViolation } from '@/lib/errors'
+import { isUniqueViolation, toPortalActionError } from '@/lib/errors'
 
 // 多教师/助教 — an admin assigns MULTIPLE teachers/assistants to a section from 班级设置. section_teacher is
 // the authoritative access set (src/auth/scope.ts); classSection.teacherId is kept as the PRIMARY teacher
@@ -124,9 +124,10 @@ export async function addSectionTeacher(
     revalidatePath('/dashboard/courses')
     return { ok: true }
   } catch (e) {
-    console.error('addSectionTeacher failed', e)
+    // CWE-209: keep the specific auth message, but never forward a raw internal (Zod/DB fault) .message —
+    // toPortalActionError forwards only KNOWN Business/Conflict messages and logs+collapses the rest.
     if (e instanceof AuthError) return { ok: false, error: '无权管理该班级的教师' }
-    return { ok: false, error: e instanceof Error ? e.message : '添加教师失败' }
+    return toPortalActionError(e, '添加教师失败')
   }
 }
 
@@ -163,8 +164,8 @@ export async function removeSectionTeacher(
     revalidatePath('/dashboard/courses')
     return { ok: true }
   } catch (e) {
-    console.error('removeSectionTeacher failed', e)
+    // CWE-209: same as addSectionTeacher — specific auth message, otherwise collapse via toPortalActionError.
     if (e instanceof AuthError) return { ok: false, error: '无权管理该班级的教师' }
-    return { ok: false, error: e instanceof Error ? e.message : '移除教师失败' }
+    return toPortalActionError(e, '移除教师失败')
   }
 }
