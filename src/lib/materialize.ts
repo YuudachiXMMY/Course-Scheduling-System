@@ -1,12 +1,11 @@
 import 'server-only'
 import { eq } from 'drizzle-orm'
 import { DateTime } from 'luxon'
-import { db } from '@/db'
 import { lesson, classSection, sectionMeeting } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { expandRecurrence, type Occurrence } from './recurrence'
 import { buildWeeklyRrule, WEEKDAYS, type Weekday } from './rrule-build'
-import { isExclusionViolation } from './errors'
+import { insertLessonsWithConflictFallback } from './lesson-insert'
 import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
 
@@ -148,35 +147,7 @@ export async function materializeSection(
     meetingUrl: section.defaultMeetingUrl,
   }))
 
-  const target = [lesson.tenantId, lesson.sectionId, lesson.originalStartAt]
-
-  // Fast path: one bulk insert. A batch that overlaps EXISTING lessons can itself trip the GiST
-  // constraint (23P01) — fall back to per-occurrence inserts so good slots still land and conflicting
-  // ones are reported, instead of aborting the whole batch (P2-7 GOTCHA).
-  try {
-    const res = await db
-      .insert(lesson)
-      .values(rows)
-      .onConflictDoNothing({ target })
-      .returning({ id: lesson.id })
-    return { inserted: res.length, conflicts: 0 }
-  } catch (e) {
-    if (!isExclusionViolation(e)) throw e
-    let inserted = 0
-    let conflicts = 0
-    for (const row of rows) {
-      try {
-        const res = await db
-          .insert(lesson)
-          .values(row)
-          .onConflictDoNothing({ target })
-          .returning({ id: lesson.id })
-        inserted += res.length
-      } catch (inner) {
-        if (isExclusionViolation(inner)) conflicts += 1
-        else throw inner
-      }
-    }
-    return { inserted, conflicts }
-  }
+  // Conflict-tolerant bulk insert (dedup on re-run, GiST-collision → per-row fallback) is shared with
+  // add-sessions.ts so both scheduling paths report {inserted, conflicts} identically.
+  return insertLessonsWithConflictFallback(rows)
 }

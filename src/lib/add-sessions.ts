@@ -1,11 +1,10 @@
 import 'server-only'
 import { DateTime } from 'luxon'
-import { db } from '@/db'
-import { lesson, classSection } from '@/db/schema'
+import { classSection } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { expandRecurrence } from './recurrence'
 import { buildRecurrenceRule, type RecurrenceFreq, type Weekday } from './rrule-build'
-import { isExclusionViolation } from './errors'
+import { insertLessonsWithConflictFallback } from './lesson-insert'
 import { APP_TIME_ZONE } from './timezone'
 import type { MaterializeResult } from './materialize'
 import type { AuthContext } from '@/auth/context'
@@ -85,35 +84,7 @@ export async function addSessionsCore(
     meetingUrl: section.defaultMeetingUrl,
   }))
 
-  const target = [lesson.tenantId, lesson.sectionId, lesson.originalStartAt]
-
-  // Fast path: one bulk insert. A batch overlapping EXISTING lessons can itself trip the GiST
-  // constraint (23P01) — fall back to per-occurrence inserts so good slots still land and conflicting
-  // ones are reported, instead of aborting the whole batch.
-  try {
-    const res = await db
-      .insert(lesson)
-      .values(rows)
-      .onConflictDoNothing({ target })
-      .returning({ id: lesson.id })
-    return { inserted: res.length, conflicts: 0 }
-  } catch (e) {
-    if (!isExclusionViolation(e)) throw e
-    let inserted = 0
-    let conflicts = 0
-    for (const row of rows) {
-      try {
-        const res = await db
-          .insert(lesson)
-          .values(row)
-          .onConflictDoNothing({ target })
-          .returning({ id: lesson.id })
-        inserted += res.length
-      } catch (inner) {
-        if (isExclusionViolation(inner)) conflicts += 1
-        else throw inner
-      }
-    }
-    return { inserted, conflicts }
-  }
+  // Conflict-tolerant bulk insert (dedup on re-add, GiST-collision → per-row fallback) is shared with
+  // materialize.ts so both scheduling paths report {inserted, conflicts} identically.
+  return insertLessonsWithConflictFallback(rows)
 }

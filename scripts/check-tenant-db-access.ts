@@ -51,8 +51,7 @@ export const ALLOWLIST: readonly string[] = [
   // ── Documented forTenant bulk-write exceptions: forTenant has no bulk/upsert helper, so these use raw
   // db writes that FORCE an explicit tenantId in every row + the conflict target, so the write can never
   // touch another tenant's row (see the comment at each call site).
-  'src/lib/materialize.ts', // bulk lesson insert, onConflictDoNothing, tenantId: ctx.tenantId per row
-  'src/lib/add-sessions.ts', // bulk lesson insert (mirrors materialize), onConflictDoNothing, tenantId: ctx.tenantId per row
+  'src/lib/lesson-insert.ts', // bulk lesson insert (shared by materialize + add-sessions), onConflictDoNothing, tenantId: ctx.tenantId per row (asserted by callers)
   'src/lib/push-core.ts', // push_subscription upsert, tenantId: ctx.tenantId in values + conflict target
 ]
 

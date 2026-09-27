@@ -109,6 +109,29 @@ export async function provisionPortalMember(args: {
   return { userId, created: true }
 }
 
+// Shared mint step for both portal-login surfaces (provisioning + user-management): synthesize the
+// login email — a real email is lowercased, otherwise a WeChat-only placeholder `portal_<id>@<domain>`
+// is generated — then provision/reuse the org member. `created` is false when the email was ALREADY a
+// member of this org (reused; the password was IGNORED). Callers own their own linking/compensation
+// tails; this helper covers ONLY the email + provisionPortalMember step.
+async function provisionPortalLogin(
+  ctx: AuthContext,
+  data: { name: string; kind: 'parent' | 'student'; loginId?: string; password: string },
+): Promise<{ userId: string; email: string; created: boolean }> {
+  const email =
+    data.loginId && data.loginId.includes('@')
+      ? data.loginId.toLowerCase()
+      : `portal_${nanoid()}@${env.PORTAL_EMAIL_DOMAIN}`
+  const { userId, created } = await provisionPortalMember({
+    name: data.name,
+    email,
+    password: data.password,
+    orgId: ctx.tenantId,
+    orgRole: data.kind,
+  })
+  return { userId, email, created }
+}
+
 // Headless core (takes a resolved ctx; no requireAuthContext / revalidatePath — those live in the
 // thin Server Action, so this stays testable like report-core / reschedule-core). Provisions a
 // parent/student login for a student and links it. Returns the login email to hand to the family
@@ -125,18 +148,7 @@ export async function provisionPortalAccountCore(
   const s = await forTenant(ctx).findById(student, data.studentId)
   if (!s) throw new Error('学生不存在')
 
-  const email =
-    data.loginId && data.loginId.includes('@')
-      ? data.loginId.toLowerCase()
-      : `portal_${nanoid()}@${env.PORTAL_EMAIL_DOMAIN}`
-
-  const { userId, created } = await provisionPortalMember({
-    name: data.name,
-    email,
-    password: data.password,
-    orgId: ctx.tenantId,
-    orgRole: data.kind,
-  })
+  const { userId, email, created } = await provisionPortalLogin(ctx, data)
 
   try {
     // Idempotent link (tenant-scoped write; tenantId injected by forTenant). Skip if the
@@ -189,18 +201,7 @@ export async function createPortalUserCore(
   input: CreatePortalUserInput,
 ): Promise<{ userId: string; email: string; created: boolean }> {
   const data = createPortalUserSchema.parse(input)
-  const email =
-    data.loginId && data.loginId.includes('@')
-      ? data.loginId.toLowerCase()
-      : `portal_${nanoid()}@${env.PORTAL_EMAIL_DOMAIN}`
-  const { userId, created } = await provisionPortalMember({
-    name: data.name,
-    email,
-    password: data.password,
-    orgId: ctx.tenantId,
-    orgRole: data.kind,
-  })
-  return { userId, email, created }
+  return provisionPortalLogin(ctx, data)
 }
 
 // Link an EXISTING portal user to a student (idempotent). Powers both "assign a parent to a student"

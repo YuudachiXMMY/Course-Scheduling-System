@@ -2,32 +2,15 @@ import 'server-only'
 import type { AuthContext } from '@/auth/context'
 import { requireConsent } from '@/auth/portal'
 import { listNotificationsForUserCore } from '@/lib/notification-core'
+import { serializeNotifications, type NotificationRow } from '@/lib/notification-row'
 
-// Serializable notification row for the client boundary — every Date is an ISO string | null.
-export interface NotificationRow {
-  id: string
-  type: string
-  title: string
-  body: string | null
-  url: string | null
-  readAt: string | null
-  createdAt: string | null
-}
+// Re-exported so the client NotificationPanel keeps importing the type from './data'.
+export type { NotificationRow }
 
 // Row scope is userId-based: the core filters on ctx.userId, so a parent/student sees ONLY their own
 // notifications (created for their portalLink.userId at dispatch time). Newest-first.
 export async function listNotifications(ctx: AuthContext): Promise<NotificationRow[]> {
   await requireConsent(ctx) // 服务端同意门复检：读个人通知前必须已同意
   const rows = await listNotificationsForUserCore(ctx)
-  return rows
-    .map((r) => ({
-      id: r.id,
-      type: r.type,
-      title: r.title,
-      body: r.body,
-      url: r.url,
-      readAt: r.readAt ? r.readAt.toISOString() : null,
-      createdAt: r.createdAt ? r.createdAt.toISOString() : null,
-    }))
-    .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
+  return serializeNotifications(rows)
 }

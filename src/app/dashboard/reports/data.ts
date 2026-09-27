@@ -21,7 +21,26 @@ export interface StudentOption {
   name: string
 }
 
-const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
+// Serialize progressReport rows into the client ReportRow shape (Dates → ISO date strings), newest
+// first. PURE — takes an already-scoped/filtered row array and embeds NO tenant/permission scoping,
+// so both this whole-roster reports page and the per-section workspace (teach/[sectionId]/data.ts)
+// feed it their own scoped rows through the one serialization path. Typed against progressReport so a
+// schema change surfaces at both call sites.
+export function toReportRows(rows: (typeof progressReport.$inferSelect)[]): ReportRow[] {
+  const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
+  return rows
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .map((r) => ({
+      id: r.id,
+      studentId: r.studentId,
+      title: r.title,
+      periodStart: day(r.periodStart),
+      periodEnd: day(r.periodEnd),
+      status: r.status,
+      narrative: r.narrative,
+      createdAt: r.createdAt.toISOString().slice(0, 10),
+    }))
+}
 
 export async function getReportsPageData(
   ctx: AuthContext,
@@ -41,18 +60,7 @@ export async function getReportsPageData(
       : and(eq(student.status, 'active'), inArray(student.id, scope)),
   )
 
-  const reports: ReportRow[] = rows
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .map((r) => ({
-      id: r.id,
-      studentId: r.studentId,
-      title: r.title,
-      periodStart: day(r.periodStart),
-      periodEnd: day(r.periodEnd),
-      status: r.status,
-      narrative: r.narrative,
-      createdAt: r.createdAt.toISOString().slice(0, 10),
-    }))
+  const reports = toReportRows(rows)
 
   return { reports, students: students.map((s) => ({ id: s.id, name: s.name })) }
 }
