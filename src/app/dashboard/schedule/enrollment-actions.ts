@@ -16,24 +16,36 @@ const enrollSchema = z.object({
   sectionId: z.string().trim().min(1),
 })
 
-export async function enrollStudent(input: z.input<typeof enrollSchema>) {
+// Shared roster-mutation authorization preamble for enrollStudent/unenrollStudent (NOT
+// listSectionEnrollments — that reads with course:['read'] and returns [] instead of throwing). Runs,
+// in order: auth context → course:['update'] permission → input parse → section lookup (throws
+// '班级不存在') → section ownership (throws '无权管理该班级') → student ownership (throws `studentDenied`).
+//
+// 工作流 E: a teacher may only manage the roster of sections they teach (defence-in-depth — the UI never
+// offers a foreign section, but a direct action call must not touch another teacher's class).
+// F1: object-level authz on studentId — owning the SECTION is not enough. The only DB constraint is the
+// (tenantId, studentId) composite FK, which guarantees same-tenant but NOT same-roster. Without this a
+// section teacher could enroll ANY same-tenant student (e.g. another teacher's private student), and the
+// enrollment then permanently grants that teacher visibility to the student's parent PII, reports,
+// exports, and the ability to mint a persistent /s/{token} share link. Require the student to already be
+// within the actor's scope (created by them, or actively enrolled in a section they teach). Mirrors the
+// B31 fix on the grade write path, which is exactly the ownership relation this "minting" gate depends on.
+// The final student-denial message differs per verb (add vs remove), so it is a parameter.
+async function authorizeRosterMutation(input: z.input<typeof enrollSchema>, studentDenied: string) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['update'] })
   const data = enrollSchema.parse(input)
 
   const section = await forTenant(ctx).findById(classSection, data.sectionId)
   if (!section) throw new Error('班级不存在')
-  // 工作流 E: a teacher may only manage the roster of sections they teach (defence-in-depth — the UI
-  // never offers a foreign section, but a direct action call must not enroll into another teacher's class).
-  if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
-  // F1: object-level authz on studentId — owning the SECTION is not enough. The only DB constraint is the
-  // (tenantId, studentId) composite FK, which guarantees same-tenant but NOT same-roster. Without this a
-  // section teacher could enroll ANY same-tenant student (e.g. another teacher's private student), and the
-  // enrollment then permanently grants that teacher visibility to the student's parent PII, reports,
-  // exports, and the ability to mint a persistent /s/{token} share link. Require the student to already be
-  // within the actor's scope (created by them, or actively enrolled in a section they teach). Mirrors the
-  // B31 fix on the grade write path, which is exactly the ownership relation this "minting" gate depends on.
-  if (!(await actorOwnsStudent(ctx, data.studentId))) throw new Error('无权添加该学生')
+  if (!(await actorOwnsSection(ctx, section))) throw new Error('无权管理该班级')
+  if (!(await actorOwnsStudent(ctx, data.studentId))) throw new Error(studentDenied)
+
+  return { ctx, data, section }
+}
+
+export async function enrollStudent(input: z.input<typeof enrollSchema>) {
+  const { ctx, data } = await authorizeRosterMutation(input, '无权添加该学生')
 
   // Cheap fast-return outside the transaction: a re-click on an already-active enrollment does nothing.
   const existing = await forTenant(ctx).select(
@@ -120,18 +132,7 @@ export async function enrollStudent(input: z.input<typeof enrollSchema>) {
 }
 
 export async function unenrollStudent(input: z.input<typeof enrollSchema>) {
-  const ctx = await requireAuthContext()
-  requirePermission(ctx, { course: ['update'] })
-  const data = enrollSchema.parse(input)
-
-  // 工作流 E: same roster confinement as enrollStudent — a teacher may only drop students from their
-  // own sections. A foreign (or cross-tenant) section id resolves to null → 404-equivalent no-op.
-  const section = await forTenant(ctx).findById(classSection, data.sectionId)
-  if (!section) throw new Error('班级不存在')
-  if (!actorOwnsSection(ctx, section)) throw new Error('无权管理该班级')
-  // F1: same object-level authz as enrollStudent — a teacher may only drop a student already within their
-  // scope, never a foreign-teacher student they merely guessed the id of.
-  if (!(await actorOwnsStudent(ctx, data.studentId))) throw new Error('无权移除该学生')
+  const { ctx, data } = await authorizeRosterMutation(input, '无权移除该学生')
 
   const rows = await forTenant(ctx).select(
     enrollment,
@@ -153,7 +154,7 @@ export async function listSectionEnrollments(sectionId: string) {
   requirePermission(ctx, { course: ['read'] })
   // 工作流 E: a teacher may only read the roster of sections they teach. A foreign/cross-tenant id → [].
   const section = await forTenant(ctx).findById(classSection, sectionId)
-  if (!section || !actorOwnsSection(ctx, section)) return []
+  if (!section || !(await actorOwnsSection(ctx, section))) return []
   return await forTenant(ctx).select(
     enrollment,
     and(eq(enrollment.sectionId, sectionId), eq(enrollment.status, 'active')),

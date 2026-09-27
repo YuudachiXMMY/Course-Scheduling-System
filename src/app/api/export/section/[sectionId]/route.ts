@@ -55,7 +55,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ section
     // (never another teacher's roster, schedules, or a fresh public /s/{token} minted for their students).
     // This route bypasses the RSC layout guard, so it must enforce ownership itself; whole-tenant staff +
     // superadmin bypass via actorOwnsSection. 404 (not 403) so it can't probe section existence.
-    if (!actorOwnsSection(ctx, section)) return new Response('Not found', { status: 404 })
+    if (!(await actorOwnsSection(ctx, section))) return new Response('Not found', { status: 404 })
 
     const enrollments = await forTenant(ctx).select(
       enrollment,

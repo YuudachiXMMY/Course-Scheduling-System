@@ -15,18 +15,12 @@ const TABS = [
   { key: 'settings', label: '设置' },
 ] as const
 
-export default function TabBar({
-  sectionId,
-  canManage,
-}: {
-  sectionId: string
-  canManage: boolean
-}) {
+export default function TabBar({ sectionId }: { sectionId: string }) {
   const sp = useSearchParams()
   const active = sp.get('tab') ?? 'lessons'
-  // 设置 needs course:update; hide it for read-only roles (assistant) instead of showing a dead tab
-  // that only yields a permission-denied message.
-  const tabs = canManage ? TABS : TABS.filter((t) => t.key !== 'settings')
+  // 多教师改造: 设置 tab is visible to everyone who can open the section — teachers/assistants get a
+  // READ-ONLY settings view (see settings-panel.tsx), owner/admin get the editable forms. No longer hidden.
+  const tabs = TABS
 
   return (
     <nav

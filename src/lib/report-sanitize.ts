@@ -78,18 +78,9 @@ function stripCodeFences(text: string): string {
     .join('\n')
 }
 
-export function sanitizeNarrative(raw: string): string {
-  if (!raw) return ''
-  let text = raw.replace(/\r\n?/g, '\n')
-
-  // 0. 推理模型思维链 <think>…</think>：必须最先剥离，否则其内部的 Markdown/代码围栏会污染后续步骤。
-  text = stripReasoning(text)
-
-  // 1. 代码围栏。
-  text = stripCodeFences(text)
-
-  // 2. 逐行剥离块级 Markdown 标记（保留文字）。
-  text = text
+/** 逐行剥离块级 Markdown 标记（保留文字）：水平分割线折成空行，去除引用块/ATX 标题/有序无序列表标记。 */
+function stripBlockMarkdown(text: string): string {
+  return text
     .split('\n')
     .map((line) => {
       let l = line.replace(/[ \t]+$/, '') // 行尾空白
@@ -101,18 +92,27 @@ export function sanitizeNarrative(raw: string): string {
       return l
     })
     .join('\n')
+}
 
-  // 3. 行内 Markdown。** / __ 恒为 Markdown（中文正文不会出现连续两个），直接全局删除，天然处理
-  //    嵌套外层（***word*** / **外*内*外**）；单个 * 与乘号易混，仅在成对包裹「非数字开头」内容时才
-  //    去除，避免把「5*3」粘成「53」。
-  text = text
+/**
+ * 剥离行内 Markdown。** / __ 恒为 Markdown（中文正文不会出现连续两个），直接全局删除，天然处理
+ * 嵌套外层（***word*** / **外*内*外**）；单个 * 与乘号易混，仅在成对包裹「非数字开头」内容时才
+ * 去除，避免把「5*3」粘成「53」。
+ */
+function stripInlineMarkdown(text: string): string {
+  return text
     .replace(/\*\*/g, '')
     .replace(/__/g, '')
     .replace(/\*([^*\n\d][^*\n]*?)\*/g, '$1')
     .replace(/`([^`\n]+)`/g, '$1')
     .replace(/\[([^\]\n]+)\]\([^)\n]+\)/g, '$1')
+}
 
-  // 4. 会话式前缀 / 后缀：循环剥离（LLM 可能连写多行寒暄），每轮各剥至多一行，且必须留有其它正文。
+/**
+ * 剥离会话式前缀 / 后缀寒暄：循环剥离（LLM 可能连写多行寒暄），每轮各剥至多一行，且必须留有其它正文。
+ * 前缀判定见 {@link isPreambleLine}，后缀见 {@link isSignoffLine}（后者要求显式提及产物本身，零误伤优先）。
+ */
+function stripConversationalMeta(text: string): string {
   const lines = text.split('\n')
   const firstNonEmpty = () => lines.findIndex((l) => l.trim().length > 0)
   const lastNonEmpty = () => {
@@ -131,11 +131,26 @@ export function sanitizeNarrative(raw: string): string {
     if (!lines.slice(0, li).some((l) => l.trim().length > 0)) break
     lines.splice(li, 1)
   }
-  text = lines.join('\n')
+  return lines.join('\n')
+}
 
-  // 5. 空白规整：折叠 3+ 连续换行为一个空段；去首尾空白。段内单换行保留（PDF 靠它分段）。
-  text = text.replace(/\n{3,}/g, '\n\n')
-  return text.trim()
+/** 空白规整：折叠 3+ 连续换行为一个空段。段内单换行保留（PDF 靠它分段）。 */
+function collapseBlankLines(text: string): string {
+  return text.replace(/\n{3,}/g, '\n\n')
+}
+
+// 出口侧清洗管道。各步为纯文本变换，顺序不可乱——尤其 <think> 必须最先剥（步 0），否则其内部的
+// Markdown/代码围栏会污染后续步骤。每一步都对「已经干净」的中文叙述为 no-op，故整条管道亦为 no-op。
+export function sanitizeNarrative(raw: string): string {
+  if (!raw) return ''
+  let text = raw.replace(/\r\n?/g, '\n')
+  text = stripReasoning(text) // 0. 推理模型思维链 <think>…</think>（须最先）
+  text = stripCodeFences(text) // 1. 代码围栏
+  text = stripBlockMarkdown(text) // 2. 块级 Markdown 标记（保留文字）
+  text = stripInlineMarkdown(text) // 3. 行内 Markdown
+  text = stripConversationalMeta(text) // 4. 会话式前后缀寒暄
+  text = collapseBlankLines(text) // 5. 空白规整
+  return text.trim() // 去首尾空白
 }
 
 /**

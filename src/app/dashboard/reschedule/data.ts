@@ -2,7 +2,7 @@ import 'server-only'
 import { eq, inArray } from 'drizzle-orm'
 import type { AuthContext } from '@/auth/context'
 import { forTenant } from '@/db/tenant'
-import { actorOwnsSection, isWholeTenantActor } from '@/auth/scope'
+import { sectionIdsForActor } from '@/auth/scope'
 import { rescheduleRequest, lesson, student } from '@/db/schema'
 
 // Serializable review row for the teacher's pending-requests list. Dates → ISO for the client
@@ -30,9 +30,12 @@ export async function listRescheduleRequests(
 ): Promise<ReviewRow[]> {
   const reqs = await forTenant(ctx).select(rescheduleRequest, eq(rescheduleRequest.status, status))
 
-  // 工作流 E: the pending queue is tenant-wide, so a section-scoped teacher must only see requests
-  // against lessons they teach; whole-tenant staff + superadmin see the whole tenant's queue.
-  const wholeTenant = isWholeTenantActor(ctx)
+  // 工作流 E + 多教师: the pending queue is tenant-wide, so a section-scoped teacher/assistant must only see
+  // requests against lessons in a section they were ADDED to (or are the primary of). sectionIdsForActor
+  // resolves the CURRENT access set ('all' for whole-tenant/superadmin) — never the frozen lesson.teacherId,
+  // so a reviewer removed from a section immediately stops seeing its requests.
+  const scope = await sectionIdsForActor(ctx)
+  const scopeSet = scope === 'all' ? null : new Set(scope)
 
   // PERF3: batch-hydrate the lesson (current time + teacher for the scope check) and student (name)
   // with two IN queries instead of 1-2 findById round-trips per request row (N+1). Maps are built
@@ -58,7 +61,7 @@ export async function listRescheduleRequests(
   const out: ReviewRow[] = []
   for (const r of reqs) {
     const l = lessonsById.get(r.lessonId) ?? null
-    if (!wholeTenant && !(l && actorOwnsSection(ctx, { teacherId: l.teacherId }))) continue
+    if (scopeSet && !(l && scopeSet.has(l.sectionId))) continue
     const s = r.studentId ? (studentsById.get(r.studentId) ?? null) : null
     out.push({
       id: r.id,

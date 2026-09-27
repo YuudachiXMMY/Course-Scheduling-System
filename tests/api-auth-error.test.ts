@@ -87,7 +87,8 @@ describe('GET /api/export/section/[sectionId] (EH3 + PERF1)', () => {
 
   it('413 when the roster exceeds MAX_EXPORT_STUDENTS', async () => {
     vi.mocked(requireAuthContext).mockResolvedValue(ctx)
-    vi.mocked(actorOwnsSection).mockReturnValue(true)
+    // actorOwnsSection is async (multi-teacher: section_teacher membership check) → resolve, not return.
+    vi.mocked(actorOwnsSection).mockResolvedValue(true)
     const enrollments = Array.from({ length: 61 }, (_, i) => ({
       studentId: `s${i}`,
       status: 'active',

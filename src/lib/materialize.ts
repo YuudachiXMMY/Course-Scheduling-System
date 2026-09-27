@@ -1,12 +1,11 @@
 import 'server-only'
 import { eq } from 'drizzle-orm'
 import { DateTime } from 'luxon'
-import { db } from '@/db'
 import { lesson, classSection, sectionMeeting } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
 import { expandRecurrence, type Occurrence } from './recurrence'
 import { buildWeeklyRrule, WEEKDAYS, type Weekday } from './rrule-build'
-import { isExclusionViolation } from './errors'
+import { insertLessonsWithConflictFallback } from './lesson-insert'
 import { APP_TIME_ZONE } from './timezone'
 import type { AuthContext } from '@/auth/context'
 
@@ -127,9 +126,31 @@ export async function materializeSection(
   // temp lesson claim its OWN calendar week, so a later updateSection (which clears future pattern rows,
   // keeps exceptions, then re-materializes) saw that week as "occupied" and skipped it → the recurring
   // lesson was permanently deleted with no error. Excluding null-originalStartAt rows fixes that.
+  //
+  // 添加课节 FIX: addSessionsCore (add-sessions.ts) also inserts isException=true rows, but with a
+  // NON-null originalStartAt (=== startAt, its own fresh ad-hoc slot — it was never MOVED off a pattern
+  // slot). Those are ADDITIONAL lessons, not stand-ins, so they must NOT suppress the canonical pattern.
+  // A genuine reschedule is the only exception whose startAt was moved AWAY from its recurrence id, so
+  // require startAt !== originalStartAt: that admits moved reschedules (B47) while excluding both ad-hoc
+  // temps (null originalStartAt) and add-sessions rows (startAt === originalStartAt). Without this, adding
+  // a session in a week silently deleted that week's recurring lesson on the next re-materialize.
+  //
+  // KNOWN RESIDUAL (dormant): this heuristic cannot tell a moved PATTERN reschedule from a moved ADD-SESSION
+  // lesson — both end up startAt !== originalStartAt. If an add-sessions lesson is later rescheduled, it would
+  // wrongly re-enter exceptionWeeks (keyed by its ad-hoc originalStartAt week). This is currently UNREACHABLE:
+  // materializeSection has one production call site (materializeSectionAction ← section-form, run once at
+  // creation on an empty lesson table); updateSection does NOT re-materialize. Before any future feature wires
+  // a "regenerate lessons on an existing section" trigger, replace this heuristic with an explicit provenance
+  // flag (e.g. lesson.is_ad_hoc set by addSessionsCore/scheduleLessonCore) so add-session rows never suppress
+  // a pattern week regardless of later reschedules. Tracked as a follow-up in PR #81.
   const exceptionWeeks = new Set(
     existingLessons
-      .filter((l) => l.isException && l.originalStartAt != null)
+      .filter(
+        (l) =>
+          l.isException &&
+          l.originalStartAt != null &&
+          l.startAt.getTime() !== l.originalStartAt.getTime(),
+      )
       .map((l) => isoWeek(l.originalStartAt!)),
   )
   const freshOccurrences = occurrences.filter((o) => !exceptionWeeks.has(isoWeek(o.originalStartAt)))
@@ -148,35 +169,7 @@ export async function materializeSection(
     meetingUrl: section.defaultMeetingUrl,
   }))
 
-  const target = [lesson.tenantId, lesson.sectionId, lesson.originalStartAt]
-
-  // Fast path: one bulk insert. A batch that overlaps EXISTING lessons can itself trip the GiST
-  // constraint (23P01) — fall back to per-occurrence inserts so good slots still land and conflicting
-  // ones are reported, instead of aborting the whole batch (P2-7 GOTCHA).
-  try {
-    const res = await db
-      .insert(lesson)
-      .values(rows)
-      .onConflictDoNothing({ target })
-      .returning({ id: lesson.id })
-    return { inserted: res.length, conflicts: 0 }
-  } catch (e) {
-    if (!isExclusionViolation(e)) throw e
-    let inserted = 0
-    let conflicts = 0
-    for (const row of rows) {
-      try {
-        const res = await db
-          .insert(lesson)
-          .values(row)
-          .onConflictDoNothing({ target })
-          .returning({ id: lesson.id })
-        inserted += res.length
-      } catch (inner) {
-        if (isExclusionViolation(inner)) conflicts += 1
-        else throw inner
-      }
-    }
-    return { inserted, conflicts }
-  }
+  // Conflict-tolerant bulk insert (dedup on re-run, GiST-collision → per-row fallback) is shared with
+  // add-sessions.ts so both scheduling paths report {inserted, conflicts} identically.
+  return insertLessonsWithConflictFallback(rows)
 }

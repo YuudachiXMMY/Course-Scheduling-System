@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { requireAuthContext } from '@/auth/context'
 import { requirePermission, can } from '@/auth/authorize'
-import { listCourses, listSections } from '../courses/actions'
+import { listCourses, listSections, listArchivedSections } from '../courses/actions'
 import CourseTree from './course-tree'
 
 // Workspace shell. The rail (Course→Section tree) lives here so it mounts ONCE and survives
@@ -11,7 +11,11 @@ import CourseTree from './course-tree'
 export default async function TeachLayout({ children }: { children: ReactNode }) {
   const ctx = await requireAuthContext()
   requirePermission(ctx, { course: ['list'] })
-  const [courses, sections] = await Promise.all([listCourses(), listSections()])
+  const [courses, sections, archivedSections] = await Promise.all([
+    listCourses(),
+    listSections(),
+    listArchivedSections(),
+  ])
   const perms = {
     canCreate: can(ctx.role, { course: ['create'] }),
     canManage: can(ctx.role, { course: ['update'] }),
@@ -25,6 +29,7 @@ export default async function TeachLayout({ children }: { children: ReactNode })
         <CourseTree
           courses={courses}
           sections={sections}
+          archivedSections={archivedSections}
           perms={perms}
           defaultTeacherId={ctx.userId}
         />

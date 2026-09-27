@@ -51,7 +51,12 @@ const admin = ac.newRole({
 const teacher = ac.newRole({
   ...memberAc.statements,
   student: ['create', 'read', 'list', 'update'],
-  course: ['create', 'read', 'list', 'update'],
+  // 多教师改造: a teacher no longer CREATES courses/sections nor edits course/section settings, and can no
+  // longer add/remove students to a class (enroll/unenroll map to course:update). Only owner/admin manage
+  // those; a teacher READS the course/section (settings are view-only) and works its lessons/reports. An
+  // admin adds the teacher to a section (section_teacher) — that link, not a course:create/update grant, is
+  // what lets them open it.
+  course: ['read', 'list'],
   lesson: ['create', 'read', 'list', 'update'],
   rescheduleRequest: ['read', 'list', 'approve', 'reject'],
   creditPackage: ['read', 'list'],

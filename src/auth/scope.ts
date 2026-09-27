@@ -1,15 +1,16 @@
 import 'server-only'
 import { and, eq, inArray } from 'drizzle-orm'
-import { forTenant } from '@/db/tenant'
-import { classSection, enrollment, lesson, student } from '@/db/schema'
+import { forTenant, type TenantExecutor } from '@/db/tenant'
+import { classSection, enrollment, lesson, sectionTeacher, student } from '@/db/schema'
 import { hasWholeTenantRole, isSectionScopedRole } from '@/auth/roles'
 import type { AuthContext } from '@/auth/context'
 
-// 工作流 E — 教师本班收敛. Two-universe recap (permissions.ts): org roles run tenant business and the
-// platform superadmin bypasses tenant RBAC. On TOP of tenant isolation (forTenant is the only sanctioned
-// tenant-scoped path), a plain teacher is further confined to the sections they teach
-// (classSection.teacherId === their user id) and, by extension, the students actively enrolled in those
-// sections. owner/admin/assistant and the platform superadmin still manage the whole tenant.
+// 工作流 E + 多教师 — 教师/助教本班收敛. Two-universe recap (permissions.ts): org roles run tenant business
+// and the platform superadmin bypasses tenant RBAC. On TOP of tenant isolation (forTenant is the only
+// sanctioned tenant-scoped path), a section-scoped actor (teacher OR assistant) is further confined to the
+// sections they are LINKED to via section_teacher (an admin adds them in 班级设置) and, by extension, the
+// students actively enrolled in those sections. Only owner/admin and the platform superadmin manage the
+// whole tenant; an assistant/teacher who has NOT been added to any section sees nothing.
 //
 // The scope helpers return 'all' (no section/student restriction) OR the explicit id list. An EMPTY list
 // means "this actor sees nothing" — callers MUST short-circuit before inArray([]) (invalid SQL; the
@@ -20,12 +21,41 @@ export function isWholeTenantActor(ctx: AuthContext): boolean {
   return ctx.isPlatformAdmin || hasWholeTenantRole(ctx.role)
 }
 
-// Whether the actor may open a specific section's workspace. Whole-tenant staff → always; a teacher →
-// only sections they teach. Takes an already-loaded section row so the per-section guard adds no query —
-// getSectionHeader() calls it, gating the whole /dashboard/teach/[sectionId] route via its layout so a
-// teacher who guesses a foreign (same-tenant) section id gets notFound(), not another teacher's class.
-export function actorOwnsSection(ctx: AuthContext, section: { teacherId: string | null }): boolean {
-  return isWholeTenantActor(ctx) || section.teacherId === ctx.userId
+// 多教师归属: whether `userId` is LINKED to `sectionId` in section_teacher — a section-scoped
+// teacher/assistant's access set. Pure membership (the whole-tenant short-circuit lives in the callers
+// below). Runs on the forTenant spine so M1 tenant isolation still holds. H7: an optional `exec` lets a
+// caller inside db.transaction(tx => …) thread its `tx` so this read joins that ONE transaction (no second
+// pool borrow → no pool-exhaustion; default undefined → forTenant falls back to the module `db`).
+export async function isSectionMember(
+  ctx: AuthContext,
+  sectionId: string,
+  exec?: TenantExecutor,
+): Promise<boolean> {
+  const rows = await forTenant(ctx, exec).select(
+    sectionTeacher,
+    and(eq(sectionTeacher.sectionId, sectionId), eq(sectionTeacher.userId, ctx.userId)),
+  )
+  return rows.length > 0
+}
+
+// Whether the actor may open a specific section's workspace. Whole-tenant staff → always; a section-scoped
+// teacher/assistant → the section's PRIMARY teacher (classSection.teacherId) OR anyone LINKED to it via
+// section_teacher (multi-teacher). The primary is always considered a member (createSection seeds a link
+// for them; this OR is also a belt-and-suspenders against link/primary drift). Takes an already-loaded
+// section row (id + teacherId) — pass the CURRENT classSection row, never a lesson's frozen teacherId (see
+// actorOwnsLesson). getSectionHeader() calls it, gating the whole /dashboard/teach/[sectionId] route via
+// its layout so a section-scoped actor who guesses a foreign section id gets notFound(). `exec` is threaded
+// to the membership read for in-transaction callers (H7).
+export async function actorOwnsSection(
+  ctx: AuthContext,
+  section: { id: string; teacherId: string | null },
+  exec?: TenantExecutor,
+): Promise<boolean> {
+  return (
+    isWholeTenantActor(ctx) ||
+    section.teacherId === ctx.userId ||
+    (await isSectionMember(ctx, section.id, exec))
+  )
 }
 
 // The section ids this actor may see: 'all' for whole-tenant staff, else exactly the teacher's own
@@ -33,8 +63,14 @@ export function actorOwnsSection(ctx: AuthContext, section: { teacherId: string 
 export async function sectionIdsForActor(ctx: AuthContext): Promise<'all' | string[]> {
   if (isWholeTenantActor(ctx)) return 'all'
   if (!isSectionScopedRole(ctx.role)) return [] // defensive: portal/unknown role → see nothing
-  const rows = await forTenant(ctx).select(classSection, eq(classSection.teacherId, ctx.userId))
-  return rows.map((r) => r.id)
+  // 多教师: the sections this actor is LINKED to (section_teacher) UNION the sections where they are the
+  // PRIMARY teacher (classSection.teacherId). The primary is always a member conceptually; this UNION keeps
+  // access correct even if a link row were ever missing. Deduped.
+  const [links, primary] = await Promise.all([
+    forTenant(ctx).select(sectionTeacher, eq(sectionTeacher.userId, ctx.userId)),
+    forTenant(ctx).select(classSection, eq(classSection.teacherId, ctx.userId)),
+  ])
+  return [...new Set([...links.map((r) => r.sectionId), ...primary.map((r) => r.id)])]
 }
 
 // The student ids this actor may see: 'all', else the students ACTIVELY enrolled in the actor's sections
@@ -71,19 +107,36 @@ export async function actorOwnsStudent(ctx: AuthContext, studentId: string): Pro
 // updateSection, materializeSectionAction). Whole-tenant staff bypass without a query; a section-scoped
 // teacher loads the section and checks teacherId. A missing/foreign section → false (caller throws or
 // 404s), so a guessed same-tenant sectionId can never mutate another teacher's class.
-export async function actorOwnsSectionById(ctx: AuthContext, sectionId: string): Promise<boolean> {
+export async function actorOwnsSectionById(
+  ctx: AuthContext,
+  sectionId: string,
+  exec?: TenantExecutor,
+): Promise<boolean> {
   if (isWholeTenantActor(ctx)) return true
-  const section = await forTenant(ctx).findById(classSection, sectionId)
-  return !!section && actorOwnsSection(ctx, section)
+  const section = await forTenant(ctx, exec).findById(classSection, sectionId)
+  return (
+    !!section &&
+    (section.teacherId === ctx.userId || (await isSectionMember(ctx, sectionId, exec)))
+  )
 }
 
 // id-keyed ownership for the WRITE paths that only receive a lessonId (cancelLessonAction,
-// updateLessonAction, attendance/note/grade upserts). lesson.teacherId is denormalized from the
-// section, so ownership is the same teacherId === ctx.userId test. A missing/foreign lesson → false.
-export async function actorOwnsLesson(ctx: AuthContext, lessonId: string): Promise<boolean> {
+// updateLessonAction, attendance/note/grade upserts). 多教师 SECURITY: authorize on the lesson's CURRENT
+// section (section.teacherId + section_teacher membership via actorOwnsSection) — NEVER the frozen
+// lesson.teacherId. lesson.teacherId is denormalized once at materialize time and never updated, so a
+// teacher REMOVED from the section (their section_teacher link deleted, classSection.teacherId repointed)
+// would otherwise keep write access to every already-materialized lesson whose stale teacherId still equals
+// their id. Resolving the current section closes that hole. A missing/foreign lesson or section → false.
+export async function actorOwnsLesson(
+  ctx: AuthContext,
+  lessonId: string,
+  exec?: TenantExecutor,
+): Promise<boolean> {
   if (isWholeTenantActor(ctx)) return true
-  const row = await forTenant(ctx).findById(lesson, lessonId)
-  return !!row && actorOwnsSection(ctx, { teacherId: row.teacherId })
+  const row = await forTenant(ctx, exec).findById(lesson, lessonId)
+  if (!row) return false
+  const section = await forTenant(ctx, exec).findById(classSection, row.sectionId)
+  return !!section && (await actorOwnsSection(ctx, section, exec))
 }
 
 // F2 / B31: object-level authz for the lesson-scoped student WRITE paths (grade / attendance / per-student

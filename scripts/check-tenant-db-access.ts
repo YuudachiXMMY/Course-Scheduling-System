@@ -34,6 +34,7 @@ export const ALLOWLIST: readonly string[] = [
   'src/auth/staff.ts',
   'src/app/dashboard/courses/data.ts', // member↔user join (roster), scoped by organizationId
   'src/app/dashboard/courses/actions.ts', // one member lookup; ALL tenant tables here use forTenant
+  'src/app/dashboard/courses/section-teacher-actions.ts', // member↔user join + membership check; section_teacher/class_section go through forTenant
   'src/app/dashboard/users/data.ts', // member↔user join; portalLink/student go through forTenant
   'src/lib/report-consent.ts', // reads/writes organization.metadata (auth table) in a tx
   'src/app/api/cron/reminders/route.ts', // cross-tenant cron: iterates the organization table
@@ -50,7 +51,7 @@ export const ALLOWLIST: readonly string[] = [
   // ── Documented forTenant bulk-write exceptions: forTenant has no bulk/upsert helper, so these use raw
   // db writes that FORCE an explicit tenantId in every row + the conflict target, so the write can never
   // touch another tenant's row (see the comment at each call site).
-  'src/lib/materialize.ts', // bulk lesson insert, onConflictDoNothing, tenantId: ctx.tenantId per row
+  'src/lib/lesson-insert.ts', // bulk lesson insert (shared by materialize + add-sessions), onConflictDoNothing, tenantId: ctx.tenantId per row (asserted by callers)
   'src/lib/push-core.ts', // push_subscription upsert, tenantId: ctx.tenantId in values + conflict target
 ]
 
@@ -92,7 +93,7 @@ export function stripCommentsAndStrings(src: string): string {
   // Stack of `${…}` interpolations we are currently inside; each entry is the running brace depth of that
   // interpolation's code (0 = at the interpolation's own level, so the next `}` closes it).
   const interp: number[] = []
-  for (let i = 0; i < src.length; ) {
+  for (let i = 0; i < src.length;) {
     const c = src[i]
     const d = src[i + 1]
     if (mode === 'code') {

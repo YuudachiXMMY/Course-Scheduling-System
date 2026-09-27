@@ -40,3 +40,30 @@ export async function listTeachers(ctx: AuthContext): Promise<TeacherOption[]> {
   }
   return out
 }
+
+// 多教师: the candidates for the 班级设置 teacher/assistant picker (SectionTeachersPanel). Unlike
+// listTeachers (all staff — used when picking a section's single PRIMARY teacher), this returns ONLY
+// teacher/assistant: owner/admin are whole-tenant and already see every section, so listing them as
+// "add to this section" is redundant. Same auth-owned member ⋈ user join, deduped by user id.
+export async function listAssignableTeachers(ctx: AuthContext): Promise<TeacherOption[]> {
+  const rows = await db
+    .select({ userId: member.userId, name: user.name, role: member.role })
+    .from(member)
+    .innerJoin(user, eq(member.userId, user.id))
+    .where(eq(member.organizationId, ctx.tenantId))
+
+  const isSectionStaff = (role: string) =>
+    role
+      .split(',')
+      .map((r) => r.trim())
+      .some((r) => r === 'teacher' || r === 'assistant')
+
+  const seen = new Set<string>()
+  const out: TeacherOption[] = []
+  for (const r of rows) {
+    if (!isSectionStaff(r.role) || seen.has(r.userId)) continue
+    seen.add(r.userId)
+    out.push({ id: r.userId, name: r.name })
+  }
+  return out
+}

@@ -29,6 +29,7 @@ import {
   attendance,
   calendarFeed,
   classSection,
+  sectionTeacher,
   course,
   creditPackage,
   enrollment,
@@ -93,6 +94,7 @@ const DOMAIN_TABLES = [
   creditPackage,
   payment,
   calendarFeed,
+  sectionTeacher,
   classSection,
   course,
   student,
@@ -225,6 +227,11 @@ async function main() {
     classSection,
     sectionValues(E2E_FIXTURES.sectionB.name),
   )) as (typeof classSection.$inferSelect)[]
+
+  // 多教师: mirror what createSection now does — seed the section_teacher access link for the primary
+  // teacher of each section, so E2E exercises the same authoritative access set production uses.
+  await forTenant(ownerCtx).insert(sectionTeacher, { sectionId: sectionARow.id, userId: teacherId })
+  await forTenant(ownerCtx).insert(sectionTeacher, { sectionId: sectionBRow.id, userId: teacherId })
 
   // Distinct weekdays per section keep the shared teacher conflict-free (GiST exclusion is per teacher).
   const meetingsA: Meeting[] = [
@@ -430,7 +437,7 @@ async function main() {
 main()
   .then(() => process.exit(0))
   .catch((e) => {
-      console.error('[seed-e2e] FAILED:', e?.message ?? e)
-      console.error(e?.stack)
+    console.error('[seed-e2e] FAILED:', e?.message ?? e)
+    console.error(e?.stack)
     process.exit(1)
   })

@@ -31,6 +31,12 @@ export interface ConflictCheck {
  * Teacher double-booking pre-check (P2-3/P2-5). Uses forTenant().select(lesson, extra) so it stays
  * tenant-scoped; the overlap `sql` is passed as the `extra` arg — never a raw unscoped query.
  * Half-open `'[)'` matches the GiST constraint exactly (back-to-back allowed).
+ *
+ * Conflict scope is a SINGLE CLASS: when `sectionId` is supplied the overlap query is restricted to
+ * lessons of that same section, so the same teacher may hold overlapping lessons in DIFFERENT sections
+ * (cross-class conflicts are permitted). This mirrors the section-scoped `lesson_no_teacher_overlap`
+ * GiST constraint (drizzle/0022). Callers always pass the section they are scheduling into; a missing
+ * sectionId falls back to the tenant-wide teacher check (kept only as a defensive default).
  */
 export async function checkTeacherConflict(
   ctx: AuthContext,
@@ -39,13 +45,15 @@ export async function checkTeacherConflict(
     startAt: Date
     endAt: Date
     excludeLessonId?: string
+    // Restrict conflict detection to this class (section). Overlaps in other sections are allowed.
+    sectionId?: string
     // CR10: the zone used for the free-slot business-hours window. Threaded from the section's
     // recurrenceTimezone by the schedule cores; defaults to APP_TIME_ZONE (the app-wide default).
     zone?: string
   },
   exec: Exec = db,
 ): Promise<ConflictCheck> {
-  const { teacherId, startAt, endAt, excludeLessonId, zone } = args
+  const { teacherId, startAt, endAt, excludeLessonId, sectionId, zone } = args
   // Bind the bounds as ISO strings with explicit casts: postgres.js can't infer the param type
   // inside tstzrange(...) and fails to serialize a bare Date there.
   const overlaps = sql`tstzrange(${lesson.startAt}, ${lesson.endAt}, '[)') && tstzrange(${startAt.toISOString()}::timestamptz, ${endAt.toISOString()}::timestamptz, '[)')`
@@ -53,6 +61,7 @@ export async function checkTeacherConflict(
     lesson,
     and(
       eq(lesson.teacherId, teacherId),
+      sectionId ? eq(lesson.sectionId, sectionId) : undefined, // conflicts scoped to one class
       ne(lesson.status, 'canceled'),
       excludeLessonId ? ne(lesson.id, excludeLessonId) : undefined,
       overlaps,
@@ -65,16 +74,18 @@ export async function checkTeacherConflict(
     endAt: r.endAt,
   }))
   const suggestions = conflicts.length
-    ? await suggestFreeSlots(ctx, { teacherId, startAt, endAt, zone }, exec)
+    ? await suggestFreeSlots(ctx, { teacherId, sectionId, startAt, endAt, zone }, exec)
     : []
   return { hasConflict: conflicts.length > 0, conflicts, suggestions }
 }
 
 // Scan the SAME calendar day in 30-min steps for the first N gaps that fit. The day/window is
 // interpreted in `args.zone` (CR10: the section's recurrenceTimezone), defaulting to APP_TIME_ZONE.
+// `sectionId` scopes "busy" to the same class, matching checkTeacherConflict — a slot occupied only by
+// the teacher's OTHER sections is now free (cross-class overlaps are allowed), so it may be suggested.
 export async function suggestFreeSlots(
   ctx: AuthContext,
-  args: { teacherId: string; startAt: Date; endAt: Date; zone?: string },
+  args: { teacherId: string; sectionId?: string; startAt: Date; endAt: Date; zone?: string },
   exec: Exec = db,
 ): Promise<Date[]> {
   const zone = args.zone ?? APP_TIME_ZONE
@@ -90,6 +101,7 @@ export async function suggestFreeSlots(
     lesson,
     and(
       eq(lesson.teacherId, args.teacherId),
+      args.sectionId ? eq(lesson.sectionId, args.sectionId) : undefined, // same-class scope
       ne(lesson.status, 'canceled'),
       sql`tstzrange(${lesson.startAt}, ${lesson.endAt}, '[)') && tstzrange(${dayStart.toUTC().toISO()}::timestamptz, ${dayEnd.toUTC().toISO()}::timestamptz, '[)')`,
     ),

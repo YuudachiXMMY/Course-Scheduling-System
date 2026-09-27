@@ -64,7 +64,7 @@ export async function scheduleLessonCore(
   if (!section) throw new BusinessError('班级不存在或不属于当前机构')
   // 工作流 E: a section-scoped teacher may only schedule into a section they teach (shared by the
   // dashboard Server Action AND the MCP tool, so both paths are covered here).
-  if (!actorOwnsSection(ctx, section)) throw new BusinessError('无权在该班级排课')
+  if (!(await actorOwnsSection(ctx, section))) throw new BusinessError('无权在该班级排课')
   const teacherId = section.teacherId
   if (!teacherId) throw new BusinessError('班级尚未指定教师，无法排课')
 
@@ -73,6 +73,7 @@ export async function scheduleLessonCore(
   // consistent. Defaults to APP_TIME_ZONE today (classSection.recurrenceTimezone default).
   const check = await checkTeacherConflict(ctx, {
     teacherId,
+    sectionId: section.id, // conflicts scoped to this class only (cross-class overlaps allowed)
     startAt: data.startAt,
     endAt: data.endAt,
     zone: section.recurrenceTimezone,
@@ -118,15 +119,15 @@ export async function rescheduleLessonCore(
   // scheduleLessonCore above); reachable from reschedule_lesson_confirm.
   if (!existing) throw new BusinessError('课节不存在')
   if (!existing.teacherId) throw new BusinessError('课节缺少教师信息')
-  // 工作流 E: a section-scoped teacher may only move a lesson of a section they teach (lesson.teacherId
-  // is denormalized from the section). Also gates approveRescheduleRequestCore, which moves via here.
-  if (!actorOwnsSection(ctx, { teacherId: existing.teacherId }))
-    throw new BusinessError('无权修改该课节')
-
-  // CR10: the lesson row carries no zone; load its section for recurrenceTimezone so suggestions use the
-  // section's business-hours window (defaults to APP_TIME_ZONE). Missing section → fall back.
+  // CR10 + 多教师 SECURITY: load the lesson's CURRENT section — used for BOTH the ownership check and the
+  // recurrence timezone. Authorize on the section's current teacherId + section_teacher membership (NOT the
+  // frozen lesson.teacherId, which a teacher removed from the section would still match), and thread `exec`
+  // so the membership read joins the caller's tx (H7: no second pool borrow inside the approve txn).
   const section = await forTenant(ctx, exec).findById(classSection, existing.sectionId)
-  const zone = section?.recurrenceTimezone ?? ZONE
+  if (!section) throw new BusinessError('课节不存在')
+  if (!(await actorOwnsSection(ctx, section, exec)))
+    throw new BusinessError('无权修改该课节')
+  const zone = section.recurrenceTimezone ?? ZONE
 
   // H7: thread `exec` into the conflict pre-check too, so inside the approve transaction it reads on the
   // SAME tx connection (no second pool borrow → no pool-exhaustion deadlock; and a consistent snapshot).
@@ -134,6 +135,7 @@ export async function rescheduleLessonCore(
     ctx,
     {
       teacherId: existing.teacherId,
+      sectionId: existing.sectionId, // conflicts scoped to this class only (cross-class overlaps allowed)
       startAt: data.startAt,
       endAt: data.endAt,
       excludeLessonId: data.id, // don't conflict with itself

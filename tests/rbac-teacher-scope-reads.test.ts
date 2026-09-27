@@ -183,19 +183,22 @@ describe('学生读取归属守卫 — students/actions getStudent', () => {
   })
 })
 
-// ── B8/B15 — createSection 允许植入任意 teacherId ─────────────────────────────────────────────────────
+// ── B8/B15 + 多教师 — createSection 现对 section-scoped 教师直接拒绝 ──────────────────────────────────
+// 多教师改造: a teacher no longer holds course:create, so the old B8 vector (planting a section under a
+// colleague's teacherId) is closed by REMOVING the capability, not just neutralizing it — createSection
+// throws FORBIDDEN before any teacherId handling. Only owner/admin create sections and assign teachers.
 describe('班级创建归属守卫 — courses/actions createSection', () => {
-  it('section-scoped 教师植入他人 teacherId 时被强制归属自己', async () => {
+  it('section-scoped 教师无 course:create → createSection 被拒（FORBIDDEN）', async () => {
     asActor(teacherBCtx)
-    const res = await createSection({
-      courseId: 'c_reads',
-      teacherId: teacherA, // 试图挂到 teacherA 名下
-      capacity: 5,
-      meetings: [{ byDay: 'TU', startTime: '10:00', durationMinutes: 60 }],
-      termStartDate: '2026-03-01',
-    })
-    expect(res.ok).toBe(true)
-    if (res.ok) expect(res.section.teacherId).toBe(teacherB)
+    await expect(
+      createSection({
+        courseId: 'c_reads',
+        teacherId: teacherA, // 试图挂到 teacherA 名下
+        capacity: 5,
+        meetings: [{ byDay: 'TU', startTime: '10:00', durationMinutes: 60 }],
+        termStartDate: '2026-03-01',
+      }),
+    ).rejects.toThrow('FORBIDDEN')
   })
 })
 

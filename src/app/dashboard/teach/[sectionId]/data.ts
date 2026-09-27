@@ -20,7 +20,7 @@ import { isUniqueViolation } from '@/lib/errors'
 import { actorOwnsSection } from '@/auth/scope'
 import type { AttendanceStatus } from '@/lib/report-stats'
 import type { AuthContext } from '@/auth/context'
-import type { ReportRow } from '@/app/dashboard/reports/data'
+import { toReportRows, type ReportRow } from '@/app/dashboard/reports/data'
 
 // Server-only per-section loaders for the workspace. All reads go through forTenant(ctx) (the only
 // sanctioned tenant-scoped path — see src/db/tenant.ts). No new 'use server' surface; mutations reuse
@@ -55,7 +55,7 @@ export interface SectionStudent {
 // teach/layout.tsx, so the rail is preserved).
 async function requireOwnedSection(ctx: AuthContext, id: string): Promise<Section> {
   const section = await forTenant(ctx).findById(classSection, id)
-  if (!section || !actorOwnsSection(ctx, section)) notFound()
+  if (!section || !(await actorOwnsSection(ctx, section))) notFound()
   return section
 }
 
@@ -170,19 +170,7 @@ export async function getSectionReports(ctx: AuthContext, id: string): Promise<R
     progressReport,
     inArray(progressReport.studentId, [...rosterIds]),
   )
-  const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null)
-  return rows
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .map((r) => ({
-      id: r.id,
-      studentId: r.studentId,
-      title: r.title,
-      periodStart: day(r.periodStart),
-      periodEnd: day(r.periodEnd),
-      status: r.status,
-      narrative: r.narrative,
-      createdAt: r.createdAt.toISOString().slice(0, 10),
-    }))
+  return toReportRows(rows)
 }
 
 // The 排课 tab's inline editor manages ONE lightweight per-(lesson, student) grade row. This sentinel
