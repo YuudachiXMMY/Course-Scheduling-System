@@ -25,6 +25,9 @@ export default function SectionSharePanel({
   const router = useRouter()
 
   const shareUrl = token ? `${shareOrigin}/sec/${token}` : null
+  // 班级日历订阅: the SAME capability token, served as a live text/calendar feed. Rotating/revoking the
+  // share link above also invalidates this subscription (both resolve the one sectionShareLink row).
+  const calendarUrl = token ? `${shareOrigin}/api/calendar/section/${token}` : null
 
   async function copy(url: string) {
     try {
@@ -105,6 +108,28 @@ export default function SectionSharePanel({
         </div>
       ) : (
         <p className="text-sm text-neutral-600">尚未生成分享链接。</p>
+      )}
+
+      {calendarUrl && (
+        <div className="flex flex-col gap-1 border-t border-neutral-200 pt-3">
+          <span className="text-xs font-medium text-neutral-500">日历订阅（.ics）</span>
+          <div className="flex items-center gap-2">
+            <code className="rounded bg-neutral-100 px-1 py-0.5 text-sm break-all text-neutral-800">
+              {calendarUrl}
+            </code>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => copy(calendarUrl)}
+              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              复制
+            </button>
+          </div>
+          <p className="text-xs text-neutral-400">
+            在日历应用中选择「添加订阅日历 / 从 URL 订阅」并粘贴此链接，课表会自动同步更新。
+          </p>
+        </div>
       )}
 
       <div className="flex flex-wrap gap-2">

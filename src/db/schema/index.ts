@@ -1,6 +1,7 @@
 export * from './enums'
 export * from './student'
 export * from './course'
+export * from './section-teacher'
 export * from './enrollment'
 export * from './lesson'
 export * from './attendance'

@@ -8,7 +8,9 @@ import { seedOrg, unseedOrg } from './helpers/seed-org'
 
 // 班级设置 → 归档/恢复 单个班级. archiveSection/restoreSection mirror archiveCourse/restoreCourse: a
 // soft-delete (isArchived) that drops the section from listSections (rail) but keeps it restorable via
-// listArchivedSections. Ownership is enforced so a teacher can't archive a colleague's class.
+// listArchivedSections. 多教师改造 (PR#78): these are course:update actions, and a teacher now holds only
+// course:[read,list] — so archive/restore is owner/admin-only (管理员在班级设置操作). A teacher, even the
+// section's own primary, is read-only here and is denied at the permission gate.
 
 vi.mock('@/auth/context', async (importActual) => ({
   ...(await importActual<typeof import('@/auth/context')>()),
@@ -36,6 +38,9 @@ const ctxFor = (userId: string, role = 'teacher'): AuthContext => ({
 })
 const teacherACtx = ctxFor(teacherA)
 const teacherBCtx = ctxFor(teacherB)
+// 多教师改造: archive/restore requires course:update, which only owner/admin hold. An admin is also a
+// whole-tenant actor (isWholeTenantActor is role-based), so it owns every section in the tenant.
+const adminCtx = ctxFor('u_sec_arch_admin', 'admin')
 
 let sectionA: string
 
@@ -71,8 +76,8 @@ describe('archiveSection / restoreSection', () => {
   })
   afterAll(cleanup)
 
-  it('archives then restores, toggling the browse vs archived lists', async () => {
-    asActor(teacherACtx)
+  it('an admin archives then restores, toggling the browse vs archived lists', async () => {
+    asActor(adminCtx)
     expect((await listSections()).map((s) => s.id)).toContain(sectionA)
     expect((await listArchivedSections()).map((s) => s.id)).not.toContain(sectionA)
 
@@ -87,21 +92,22 @@ describe('archiveSection / restoreSection', () => {
     expect((await listArchivedSections()).map((s) => s.id)).not.toContain(sectionA)
   })
 
-  it('refuses to archive another teacher’s section', async () => {
-    asActor(teacherBCtx)
+  it('refuses a read-only teacher archiving — even the section’s OWN primary', async () => {
+    // teacherA is the primary of sectionA, yet post-PR#78 holds no course:update → denied at the gate.
+    asActor(teacherACtx)
     const res = await archiveSection(sectionA)
-    expect(res).toEqual({ ok: false, error: '无权归档该班级' })
-    const row = await forTenant(teacherACtx).findById(classSection, sectionA)
+    expect(res).toEqual({ ok: false, error: '无权执行该操作' })
+    const row = await forTenant(adminCtx).findById(classSection, sectionA)
     expect(row?.isArchived).toBe(false)
   })
 
-  it('refuses to restore another teacher’s section', async () => {
-    asActor(teacherACtx)
+  it('refuses a read-only teacher restoring an admin-archived section', async () => {
+    asActor(adminCtx)
     await archiveSection(sectionA)
     asActor(teacherBCtx)
     const res = await restoreSection(sectionA)
-    expect(res).toEqual({ ok: false, error: '无权恢复该班级' })
-    const row = await forTenant(teacherACtx).findById(classSection, sectionA)
+    expect(res).toEqual({ ok: false, error: '无权执行该操作' })
+    const row = await forTenant(adminCtx).findById(classSection, sectionA)
     expect(row?.isArchived).toBe(true)
   })
 })

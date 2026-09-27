@@ -4,7 +4,7 @@ import { and, count, eq, sql } from 'drizzle-orm'
 import type { AuthContext } from '@/auth/context'
 import { db } from '@/db'
 import { forTenant } from '@/db/tenant'
-import { rescheduleRequest, lesson, enrollment } from '@/db/schema'
+import { rescheduleRequest, lesson, enrollment, classSection } from '@/db/schema'
 import { assertLinkedToStudent } from '@/auth/portal'
 import { actorOwnsSection } from '@/auth/scope'
 import { rescheduleLessonCore } from '@/lib/schedule-core'
@@ -122,7 +122,11 @@ export async function createRescheduleRequestCore(
 async function assertReviewerOwnsRequestLesson(ctx: AuthContext, lessonId: string): Promise<void> {
   const target = await forTenant(ctx).findById(lesson, lessonId)
   if (!target) throw new BusinessError('课节不存在')
-  if (!actorOwnsSection(ctx, { teacherId: target.teacherId }))
+  // 多教师 SECURITY: authorize on the lesson's CURRENT section (teacherId + section_teacher membership),
+  // never the frozen lesson.teacherId — a reviewer removed from the section must lose review rights. A
+  // co-teacher linked via section_teacher can review; owner/admin/superadmin bypass via actorOwnsSection.
+  const section = await forTenant(ctx).findById(classSection, target.sectionId)
+  if (!section || !(await actorOwnsSection(ctx, section)))
     throw new BusinessError('无权处理该申请')
 }
 

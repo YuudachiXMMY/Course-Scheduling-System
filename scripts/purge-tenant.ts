@@ -50,9 +50,11 @@ export const PURGE_LOCK_KEY = CLEANUP_LOCK_KEY
 // Every tenant-scoped table, child -> parent, so the app-level RESTRICT FKs never block a delete.
 // section_share_link (added by 0019, NOT part of CLEANUP_TABLES) is a leaf child of class_section and
 // itself carries a tenant_id -> organization RESTRICT FK, so it MUST be removed before class_section
-// AND before the organization row. The purge-tenant.test.ts completeness assertion pins this list to
-// the live DB's actual set of tenant_id columns — add any new tenant table here or offboarding leaks it.
-export const PURGE_TABLES = ['section_share_link', ...CLEANUP_TABLES] as const
+// AND before the organization row. section_teacher (added by 0023) is likewise a leaf child of
+// class_section carrying a tenant_id, so it belongs in the same leading position. The
+// purge-tenant.test.ts completeness assertion pins this list to the live DB's actual set of tenant_id
+// columns — add any new tenant table here or offboarding leaks it.
+export const PURGE_TABLES = ['section_share_link', 'section_teacher', ...CLEANUP_TABLES] as const
 
 export interface PurgeSummary {
   tenantId: string

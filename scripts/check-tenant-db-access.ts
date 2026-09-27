@@ -34,6 +34,7 @@ export const ALLOWLIST: readonly string[] = [
   'src/auth/staff.ts',
   'src/app/dashboard/courses/data.ts', // member↔user join (roster), scoped by organizationId
   'src/app/dashboard/courses/actions.ts', // one member lookup; ALL tenant tables here use forTenant
+  'src/app/dashboard/courses/section-teacher-actions.ts', // member↔user join + membership check; section_teacher/class_section go through forTenant
   'src/app/dashboard/users/data.ts', // member↔user join; portalLink/student go through forTenant
   'src/lib/report-consent.ts', // reads/writes organization.metadata (auth table) in a tx
   'src/app/api/cron/reminders/route.ts', // cross-tenant cron: iterates the organization table
