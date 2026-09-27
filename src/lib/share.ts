@@ -82,6 +82,40 @@ async function courseTitlesForSections(
   return new Map(rows.map((r) => [r.id, sectionDisplayName(r.courseTitle, r.name)]))
 }
 
+// Shared tail of both public (token-scoped) read paths: given a set of section ids, load their
+// lessons, fill display titles from course/section, and slice to the window. The student path
+// passes its ACTIVE-enrollment section ids; the section-share path passes its single fixed
+// section as `[sectionId]` (功能2 mirror). Empty set → [] because `inArray([])` is invalid SQL.
+// Scope STRICTLY by the token-resolved `tenantId` (raw db, no forTenant) — never a request param.
+async function scheduleForSectionIds(
+  tenantId: string,
+  sectionIds: string[],
+  window: { from: Date; to: Date },
+): Promise<FeedLesson[]> {
+  if (sectionIds.length === 0) return []
+
+  const rows = await db
+    .select({
+      id: lesson.id,
+      title: lesson.title,
+      startAt: lesson.startAt,
+      endAt: lesson.endAt,
+      location: lesson.location,
+      sectionId: lesson.sectionId,
+      status: lesson.status,
+    })
+    .from(lesson)
+    .where(and(eq(lesson.tenantId, tenantId), inArray(lesson.sectionId, sectionIds)))
+
+  // Fill each lesson's display title from its course/section before slicing, so the public card
+  // shows "课程名 · 班级名" instead of the generic "课节" fallback.
+  const titleBySection = await courseTitlesForSections(tenantId, sectionIds)
+  const named = withSectionTitles(rows, titleBySection)
+
+  // Window + non-canceled + section membership all live in the pure helper (single logic path).
+  return sliceLessonsForSections(named, sectionIds, window)
+}
+
 // Resolve a capability token to its (non-revoked) shareLink row, or null. Global-unique token
 // index → a single row; a revoked token resolves to null so its URL 404s.
 export async function getShareByToken(token: string) {
@@ -121,29 +155,8 @@ export async function getStudentScheduleForShare(
       ),
     )
   const sectionIds = secs.map((s) => s.sectionId)
-  // Empty active-enrollment set → `inArray([])` is invalid SQL; early-return so we never emit it.
-  if (sectionIds.length === 0) return []
-
-  const rows = await db
-    .select({
-      id: lesson.id,
-      title: lesson.title,
-      startAt: lesson.startAt,
-      endAt: lesson.endAt,
-      location: lesson.location,
-      sectionId: lesson.sectionId,
-      status: lesson.status,
-    })
-    .from(lesson)
-    .where(and(eq(lesson.tenantId, tenantId), inArray(lesson.sectionId, sectionIds)))
-
-  // Fill each lesson's display title from its course/section before slicing, so the public card
-  // shows "课程名 · 班级名" instead of the generic "课节" fallback.
-  const titleBySection = await courseTitlesForSections(tenantId, sectionIds)
-  const named = withSectionTitles(rows, titleBySection)
-
-  // Window + non-canceled + section membership all live in the pure helper (single logic path).
-  return sliceLessonsForSections(named, sectionIds, window)
+  // Empty active-enrollment set → scheduleForSectionIds returns [] (an `inArray([])` is invalid SQL).
+  return scheduleForSectionIds(tenantId, sectionIds, window)
 }
 
 // 功能2 — section mirror of getShareByToken. Resolve a capability token to its (non-revoked)
@@ -175,26 +188,6 @@ export async function getSectionScheduleForShare(
   sectionId: string,
   window = feedWindow(),
 ): Promise<FeedLesson[]> {
-  const sectionIds = [sectionId]
-
-  const rows = await db
-    .select({
-      id: lesson.id,
-      title: lesson.title,
-      startAt: lesson.startAt,
-      endAt: lesson.endAt,
-      location: lesson.location,
-      sectionId: lesson.sectionId,
-      status: lesson.status,
-    })
-    .from(lesson)
-    .where(and(eq(lesson.tenantId, tenantId), eq(lesson.sectionId, sectionId)))
-
-  // Fill each lesson's display title from its course/section before slicing, so the public card
-  // shows "课程名 · 班级名" instead of the generic "课节" fallback.
-  const titleBySection = await courseTitlesForSections(tenantId, sectionIds)
-  const named = withSectionTitles(rows, titleBySection)
-
-  // Window + non-canceled + section membership all live in the pure helper (single logic path).
-  return sliceLessonsForSections(named, sectionIds, window)
+  // A section share is a single fixed section (no enrollment step) — its own lessons ARE the schedule.
+  return scheduleForSectionIds(tenantId, [sectionId], window)
 }
