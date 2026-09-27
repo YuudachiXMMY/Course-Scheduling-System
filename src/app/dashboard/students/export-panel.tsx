@@ -79,77 +79,88 @@ export default function ExportPanel({
     })
   }
 
+  // 「分享链接」整卡折叠：默认收起（无 open），点击 <summary> 展开。用原生 <details> 而非 useState，
+  // 免额外状态、无 JS 也可开合，e2e 直接点 summary 即可。summary 的默认三角标记跨浏览器隐藏（list-none
+  // + webkit marker），改用自绘 ▸，展开时随 group-open 旋转 90°。
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 p-4 shadow-sm">
-      {shareUrl ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-neutral-500">分享链接</span>
-          <div className="flex items-center gap-2">
-            <code className="rounded bg-neutral-100 px-1 py-0.5 text-sm break-all text-neutral-800">
-              {shareUrl}
-            </code>
+    <details className="group rounded-lg border border-neutral-200 p-4 shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-neutral-500 select-none [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="inline-block transition-transform group-open:rotate-90">
+          ▸
+        </span>
+        分享链接
+      </summary>
+      <div className="mt-3 flex flex-col gap-3">
+        {shareUrl ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-neutral-500">分享链接</span>
+            <div className="flex items-center gap-2">
+              <code className="rounded bg-neutral-100 px-1 py-0.5 text-sm break-all text-neutral-800">
+                {shareUrl}
+              </code>
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => copy(shareUrl)}
+                className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                复制
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-600">尚未生成分享链接。</p>
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={createOrCopy}
+            className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
+          >
+            {shareUrl ? '复制分享链接' : '生成分享链接'}
+          </button>
+          <a
+            href={pngUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            下载图片
+          </a>
+          <a
+            href={icsUrl}
+            className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+          >
+            下载 .ics
+          </a>
+        </div>
+
+        {shareUrl && (
+          <div className="flex gap-2 border-t border-neutral-200 pt-3">
             <button
               type="button"
               disabled={pending}
-              onClick={() => copy(shareUrl)}
-              className="shrink-0 rounded border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              onClick={rotate}
+              className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
             >
-              复制
+              重新生成
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={revoke}
+              className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              停用
             </button>
           </div>
-        </div>
-      ) : (
-        <p className="text-sm text-neutral-600">尚未生成分享链接。</p>
-      )}
+        )}
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={createOrCopy}
-          className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
-        >
-          {shareUrl ? '复制分享链接' : '生成分享链接'}
-        </button>
-        <a
-          href={pngUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          下载图片
-        </a>
-        <a
-          href={icsUrl}
-          className="rounded border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
-        >
-          下载 .ics
-        </a>
+        {msg && <p className="text-xs text-green-700">{msg}</p>}
+        {error && <p className="text-xs text-red-600">{error}</p>}
       </div>
-
-      {shareUrl && (
-        <div className="flex gap-2 border-t border-neutral-200 pt-3">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={rotate}
-            className="rounded border border-neutral-300 px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-          >
-            重新生成
-          </button>
-          <button
-            type="button"
-            disabled={pending}
-            onClick={revoke}
-            className="rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            停用
-          </button>
-        </div>
-      )}
-
-      {msg && <p className="text-xs text-green-700">{msg}</p>}
-      {error && <p className="text-xs text-red-600">{error}</p>}
-    </div>
+    </details>
   )
 }
