@@ -9,6 +9,7 @@ import { assertCanManageRole } from '@/auth/staff-authz'
 import { STAFF_ROLES } from '@/auth/roles'
 import { MIN_PASSWORD_LENGTH, PASSWORD_MIN_MESSAGE } from '@/auth/password-policy'
 import { accountNoteSchema } from '@/lib/note-schema'
+import { BusinessError, isUniqueViolation } from '@/lib/errors'
 import type { AuthContext } from '@/auth/context'
 
 // Staff-account cores for /dashboard/users (teachers/admins tabs). Headless like provision.ts: each takes
@@ -195,18 +196,34 @@ export async function updateUserInfoCore(
   targetUserId: string,
   input: UpdateUserInfoInput,
 ): Promise<void> {
-  if (targetUserId === ctx.userId) throw new Error('不能在此编辑自己的信息')
+  // Validation/business failures throw a BusinessError whose Chinese message is SAFE to surface; the thin
+  // Server Action forwards ONLY BusinessError.message and collapses everything else to a generic fallback
+  // (CWE-209). safeParse (not the throwing .parse) keeps a raw ZodError — a JSON-stringified issues array —
+  // from ever reaching that boundary.
+  if (targetUserId === ctx.userId) throw new BusinessError('不能在此编辑自己的信息')
   const role = await requireStaffTarget(ctx, targetUserId) // in-org (cross-tenant reach refused) + role
   assertCanManageRole(ctx, role) // tiered: admin/owner target → super admin only
-  const data = updateUserInfoSchema.parse(input)
-  const email = data.email.toLowerCase()
+  const parsed = updateUserInfoSchema.safeParse(input)
+  if (!parsed.success) throw new BusinessError(parsed.error.issues[0]?.message ?? '输入有误')
+  const email = parsed.data.email.toLowerCase()
   const [clash] = await db
     .select({ id: userTable.id })
     .from(userTable)
     .where(eq(userTable.email, email))
     .limit(1)
-  if (clash && clash.id !== targetUserId) throw new Error('该邮箱已被占用')
-  await db.update(userTable).set({ name: data.name, email }).where(eq(userTable.id, targetUserId))
+  if (clash && clash.id !== targetUserId) throw new BusinessError('该邮箱已被占用')
+  // The clash pre-check is a select-then-update TOCTOU: two concurrent edits to the same new email can both
+  // pass it, and the loser hits user.email's UNIQUE constraint (SQLSTATE 23505). Translate that raced 23505
+  // back into the same BusinessError instead of letting the raw driver/SQL message leak to the admin UI.
+  try {
+    await db
+      .update(userTable)
+      .set({ name: parsed.data.name, email })
+      .where(eq(userTable.id, targetUserId))
+  } catch (e) {
+    if (isUniqueViolation(e)) throw new BusinessError('该邮箱已被占用')
+    throw e
+  }
 }
 
 // Set (or clear) the admin-internal note on an account. Same tiered gate — annotating an admin/owner account
@@ -220,10 +237,13 @@ export async function setUserNoteCore(
 ): Promise<void> {
   const role = await requireStaffTarget(ctx, targetUserId)
   assertCanManageRole(ctx, role)
-  const trimmed = accountNoteSchema.parse(note ?? '')
+  // safeParse → BusinessError so an over-long note surfaces the clean '备注过长', never a raw ZodError JSON
+  // blob, at the Server-Action boundary (CWE-209).
+  const parsed = accountNoteSchema.safeParse(note ?? '')
+  if (!parsed.success) throw new BusinessError(parsed.error.issues[0]?.message ?? '输入有误')
   await db
     .update(userTable)
-    .set({ notes: trimmed.length > 0 ? trimmed : null })
+    .set({ notes: parsed.data.length > 0 ? parsed.data : null })
     .where(eq(userTable.id, targetUserId))
 }
 

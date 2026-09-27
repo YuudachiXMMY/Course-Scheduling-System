@@ -11,6 +11,7 @@ import {
   type LinkPortalUserInput,
 } from '@/auth/provision'
 import { updateUserInfoCore, setUserNoteCore, type UpdateUserInfoInput } from '@/auth/staff'
+import { BusinessError } from '@/lib/errors'
 
 // Business errors are returned as DATA (not thrown) so Chinese messages ("该邮箱已被其他账号占用", …)
 // survive Next.js's production redaction of thrown Server-Action messages (React #441) — mirrors
@@ -78,7 +79,10 @@ export async function updateUserInfo(
   } catch (e) {
     console.error('updateUserInfo failed', e)
     if (e instanceof AuthError) return { ok: false, error: '无权编辑该账号信息' }
-    return { ok: false, error: e instanceof Error ? e.message : '保存失败' }
+    // CWE-209: forward ONLY a BusinessError's message (safe by construction). A raw ZodError / DB fault must
+    // never reach the client verbatim — collapse it to a generic fallback.
+    if (e instanceof BusinessError) return { ok: false, error: e.message }
+    return { ok: false, error: '保存失败' }
   }
 }
 
@@ -94,6 +98,7 @@ export async function setUserNote(targetUserId: string, note: string): Promise<M
   } catch (e) {
     console.error('setUserNote failed', e)
     if (e instanceof AuthError) return { ok: false, error: '无权编辑该账号备注' }
-    return { ok: false, error: e instanceof Error ? e.message : '保存备注失败' }
+    if (e instanceof BusinessError) return { ok: false, error: e.message }
+    return { ok: false, error: '保存备注失败' }
   }
 }

@@ -5,6 +5,7 @@ import { organization, user, member, account, session } from '@/db/schema'
 import type { AuthContext } from '@/auth/context'
 import { updateUserInfoCore, setUserNoteCore } from '@/auth/staff'
 import { accountNoteSchema, ACCOUNT_NOTE_MAX } from '@/lib/note-schema'
+import { BusinessError } from '@/lib/errors'
 
 // New /dashboard/users behaviors, proven against a live DB — mirrors staff-admin.test.ts:
 //   - updateUserInfoCore: edit display name + login email, lower-cased; refuses self, cross-tenant, a
@@ -169,5 +170,26 @@ describe('updateUserInfoCore / setUserNoteCore (DB integration)', () => {
 
   it('refuses a note on a cross-tenant target', async () => {
     await expect(setUserNoteCore(adminCtx(), outsiderId, 'x')).rejects.toThrow('该用户不属于本机构')
+  })
+
+  // CWE-209: invalid input must throw a BusinessError with a CLEAN Chinese message (not a raw ZodError,
+  // whose `.message` is a JSON-stringified issues array). The Server Action forwards only BusinessError
+  // messages verbatim, so a raw ZodError here would leak schema internals to the admin UI. Assert the exact
+  // message (===, not substring) so a ZodError — which merely CONTAINS the message inside its JSON — fails.
+  it('updateUserInfoCore throws a clean BusinessError (not a raw ZodError) on an empty name', async () => {
+    const err = await updateUserInfoCore(adminCtx(), teacherId, {
+      name: '  ',
+      email: 'acct_teacher_new@x.com',
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(BusinessError)
+    expect((err as Error).message).toBe('姓名不能为空')
+  })
+
+  it('setUserNoteCore throws a clean BusinessError on an over-long note', async () => {
+    const err = await setUserNoteCore(adminCtx(), teacherId, 'x'.repeat(ACCOUNT_NOTE_MAX + 1)).catch(
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(BusinessError)
+    expect((err as Error).message).toBe('备注过长')
   })
 })
