@@ -112,7 +112,10 @@ export default async function CoursesPage() {
         })}
       </div>
 
-      {archivedCourses.length > 0 && (
+      {/* 多教师改造: the archived block is a management-only area — its sole control is CourseRestore, which
+          requires course:update. Gate it by canUpdate (like CourseForm/SectionForm above) so a section-scoped
+          teacher/assistant isn't shown a dead restore button that always fails server-side authorization. */}
+      {canUpdate && archivedCourses.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
             已归档（{archivedCourses.length}）

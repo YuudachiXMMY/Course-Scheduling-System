@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '@/db'
 import { course, classSection, lesson, user, member } from '@/db/schema'
 import { forTenant } from '@/db/tenant'
@@ -286,6 +286,39 @@ describe('addSessions (排课 → 添加课节)', () => {
       asActor(teacherACtx)
       const res = await cancelLessonsAction([])
       expect(res).toEqual({ ok: false, error: '请至少选择一节课' })
+    })
+
+    // BLOCKER 1 regression: authorize on the lesson's CURRENT section membership, NEVER the frozen
+    // lesson.teacherId. The lessons here were materialized while teacherA was primary, so their teacherId is
+    // frozen to teacherA. Simulate removeSectionTeacher repointing the section's primary to teacherB: teacherA
+    // is no longer a member, yet the stale lesson.teacherId still equals teacherA. The old code (eq(lesson
+    // .teacherId, ctx.userId)) let the removed teacherA mass-cancel the class; the fix (scope by
+    // sectionIdsForActor) must reject teacherA and still allow teacherB, the new current owner.
+    it('does NOT let a teacher REMOVED from the section bulk-cancel its lessons (stale lesson.teacherId is not authority)', async () => {
+      // Repoint the section's PRIMARY away from teacherA (as removeSectionTeacher would); restore in finally.
+      await db
+        .update(classSection)
+        .set({ teacherId: teacherB })
+        .where(and(eq(classSection.tenantId, org), eq(classSection.id, sectionA)))
+      try {
+        asActor(teacherACtx) // frozen on every lesson, but owns NO section now
+        const removed = await cancelLessonsAction(ids)
+        expect(removed).toEqual({ ok: true, canceled: 0 }) // nothing matched → nothing tombstoned
+        const afterRemoved = (await forTenant(teacherBCtx).select(
+          lesson,
+          eq(lesson.sectionId, sectionA),
+        )) as (typeof lesson.$inferSelect)[]
+        expect(afterRemoved.every((r) => r.status === 'scheduled')).toBe(true)
+
+        asActor(teacherBCtx) // the NEW current owner CAN cancel them
+        const byOwner = await cancelLessonsAction(ids)
+        expect(byOwner).toEqual({ ok: true, canceled: 3 })
+      } finally {
+        await db
+          .update(classSection)
+          .set({ teacherId: teacherA })
+          .where(and(eq(classSection.tenantId, org), eq(classSection.id, sectionA)))
+      }
     })
   })
 })

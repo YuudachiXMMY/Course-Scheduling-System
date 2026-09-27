@@ -126,9 +126,31 @@ export async function materializeSection(
   // temp lesson claim its OWN calendar week, so a later updateSection (which clears future pattern rows,
   // keeps exceptions, then re-materializes) saw that week as "occupied" and skipped it → the recurring
   // lesson was permanently deleted with no error. Excluding null-originalStartAt rows fixes that.
+  //
+  // 添加课节 FIX: addSessionsCore (add-sessions.ts) also inserts isException=true rows, but with a
+  // NON-null originalStartAt (=== startAt, its own fresh ad-hoc slot — it was never MOVED off a pattern
+  // slot). Those are ADDITIONAL lessons, not stand-ins, so they must NOT suppress the canonical pattern.
+  // A genuine reschedule is the only exception whose startAt was moved AWAY from its recurrence id, so
+  // require startAt !== originalStartAt: that admits moved reschedules (B47) while excluding both ad-hoc
+  // temps (null originalStartAt) and add-sessions rows (startAt === originalStartAt). Without this, adding
+  // a session in a week silently deleted that week's recurring lesson on the next re-materialize.
+  //
+  // KNOWN RESIDUAL (dormant): this heuristic cannot tell a moved PATTERN reschedule from a moved ADD-SESSION
+  // lesson — both end up startAt !== originalStartAt. If an add-sessions lesson is later rescheduled, it would
+  // wrongly re-enter exceptionWeeks (keyed by its ad-hoc originalStartAt week). This is currently UNREACHABLE:
+  // materializeSection has one production call site (materializeSectionAction ← section-form, run once at
+  // creation on an empty lesson table); updateSection does NOT re-materialize. Before any future feature wires
+  // a "regenerate lessons on an existing section" trigger, replace this heuristic with an explicit provenance
+  // flag (e.g. lesson.is_ad_hoc set by addSessionsCore/scheduleLessonCore) so add-session rows never suppress
+  // a pattern week regardless of later reschedules. Tracked as a follow-up in PR #81.
   const exceptionWeeks = new Set(
     existingLessons
-      .filter((l) => l.isException && l.originalStartAt != null)
+      .filter(
+        (l) =>
+          l.isException &&
+          l.originalStartAt != null &&
+          l.startAt.getTime() !== l.originalStartAt.getTime(),
+      )
       .map((l) => isoWeek(l.originalStartAt!)),
   )
   const freshOccurrences = occurrences.filter((o) => !exceptionWeeks.has(isoWeek(o.originalStartAt)))

@@ -53,7 +53,8 @@ export function isAdminRole(role: string): boolean {
   return roles.some((r) => (ADMIN_TIER_ROLES as readonly string[]).includes(r))
 }
 
-// True if ANY of the member's (comma-multi) roles grants whole-tenant visibility (owner/admin/assistant).
+// True if ANY of the member's (comma-multi) roles grants whole-tenant visibility (owner/admin only).
+// 多教师改造: assistant is NO LONGER whole-tenant — it is section-scoped like teacher (see WHOLE_TENANT_ROLES).
 export function hasWholeTenantRole(role: string): boolean {
   const roles = role.split(',').map((r) => r.trim())
   return roles.some((r) => (WHOLE_TENANT_ROLES as readonly string[]).includes(r))
