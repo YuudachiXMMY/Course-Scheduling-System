@@ -31,9 +31,19 @@ export default function LessonDetail({
 }) {
   const [roster, setRoster] = useState<RosterEntry[]>([])
   const [sharedNote, setSharedNote] = useState('')
+  // 「对外开放」：共享笔记 visibility='shared'，对门户学生/家长可见。默认勾选（新笔记），加载后按 sharedVisibility 校正。
+  const [shared, setShared] = useState(true)
   const [comments, setComments] = useState<Record<string, string>>({})
   const [location, setLocation] = useState('')
   const [meetingUrl, setMeetingUrl] = useState('')
+  // 一键保存所有更改的脏检查基线：加载完成后记录各字段初值，saveAll 只提交与之不同的字段。
+  const initialRef = useRef({
+    sharedNote: '',
+    comments: {} as Record<string, string>,
+    location: '',
+    meetingUrl: '',
+    shared: true,
+  })
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState<string | null>(null)
   // EH5：错误单独用 errorMsg 承载并以红色 role=alert 呈现，避免失败被渲染成绿色成功。
@@ -92,18 +102,22 @@ export default function LessonDetail({
 
   useEffect(() => {
     let active = true
-    Promise.all([
-      getLessonRoster(lessonId),
-      getLessonNotes(lessonId),
-      getLessonMeta(lessonId),
-    ])
+    Promise.all([getLessonRoster(lessonId), getLessonNotes(lessonId), getLessonMeta(lessonId)])
       .then(([r, notes, meta]) => {
         if (!active) return
         setRoster(r)
         setSharedNote(notes.shared)
+        setShared(notes.sharedVisibility === 'shared')
         setComments(notes.perStudent)
         setLocation(meta?.location ?? '')
         setMeetingUrl(meta?.meetingUrl ?? '')
+        initialRef.current = {
+          sharedNote: notes.shared,
+          comments: notes.perStudent,
+          location: meta?.location ?? '',
+          meetingUrl: meta?.meetingUrl ?? '',
+          shared: notes.sharedVisibility === 'shared',
+        }
         setLoading(false)
       })
       .catch((e) => {
@@ -145,10 +159,93 @@ export default function LessonDetail({
     }
     startTransition(async () => {
       try {
-        await upsertSharedNote({ lessonId, body: sharedNote })
+        await upsertSharedNote({
+          lessonId,
+          body: sharedNote,
+          visibility: shared ? 'shared' : 'internal',
+        })
         setMsg('已保存本节课笔记')
+        initialRef.current = { ...initialRef.current, sharedNote, shared }
       } catch {
         setErrorMsg('保存笔记失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
+      }
+    })
+  }
+
+  // 一键保存所有更改：脏检查后只提交与加载基线不同的字段——上课地点/网课链接、共享笔记（含可见性）、
+  // 逐生点评。出勤在抽屉内点击即时落库（见 mark），不纳入批量。清空 Summary/点评仍 out of scope（upsert
+  // 需 body.min(1)）。updateLessonAction 返回 {ok,error} 而非 throw，故包一层在 !ok 时 throw，令 Promise.all
+  // 的 catch 统一兜底。成功后刷新基线，避免重复点击重复写入。
+  function saveAll() {
+    setMsg(null)
+    setErrorMsg(null)
+    const init = initialRef.current
+    const tasks: Promise<unknown>[] = []
+    let saved = 0
+    let skippedEmpty = 0
+
+    if (location !== init.location || meetingUrl !== init.meetingUrl) {
+      tasks.push(
+        updateLessonAction({
+          id: lessonId,
+          location: location || undefined,
+          meetingUrl: meetingUrl || undefined,
+        }).then((res) => {
+          if (!res.ok) throw new Error(res.error)
+        }),
+      )
+      saved++
+    }
+
+    // 共享笔记：正文改动或「对外开放」开关被切换都需落库。visibility-only 的变更也要保存，否则翻动
+    // 开关但没改正文时开关状态会丢失。upsert 需 body.min(1)，故仍要求正文非空。
+    if (sharedNote !== init.sharedNote || shared !== init.shared) {
+      if (sharedNote.trim()) {
+        tasks.push(
+          upsertSharedNote({
+            lessonId,
+            body: sharedNote,
+            visibility: shared ? 'shared' : 'internal',
+          }),
+        )
+        saved++
+      } else {
+        skippedEmpty++ // 清空 Summary out of scope
+      }
+    }
+
+    for (const e of roster) {
+      const body = comments[e.studentId] ?? ''
+      const initialBody = init.comments[e.studentId] ?? ''
+      if (body !== initialBody) {
+        if (body.trim()) {
+          tasks.push(upsertStudentNote({ lessonId, studentId: e.studentId, body }))
+          saved++
+        } else {
+          skippedEmpty++ // 清空点评 out of scope
+        }
+      }
+    }
+
+    if (saved === 0) {
+      setMsg(skippedEmpty > 0 ? '清空笔记/点评暂不支持保存' : '没有需要保存的更改')
+      return
+    }
+
+    startTransition(async () => {
+      try {
+        await Promise.all(tasks)
+        setMsg(
+          skippedEmpty > 0
+            ? `已保存全部更改（${saved} 项，清空的笔记/点评已跳过）`
+            : `已保存全部更改（${saved} 项）`,
+        )
+        // 刷新基线为当前已落库值，避免二次点击重复写入。
+        initialRef.current = { sharedNote, comments, location, meetingUrl, shared }
+        router.refresh()
+      } catch {
+        setErrorMsg('部分更改保存失败，请重试') // 见 mark() 注释：生产脱敏
+        router.refresh()
       }
     })
   }
@@ -165,6 +262,11 @@ export default function LessonDetail({
       try {
         await upsertStudentNote({ lessonId, studentId, body })
         setMsg('已保存学生点评')
+        // 刷新该生的脏检查基线，避免随后「一键保存所有更改」把已保存的点评重复提交（见 saveShared）。
+        initialRef.current = {
+          ...initialRef.current,
+          comments: { ...initialRef.current.comments, [studentId]: body },
+        }
       } catch {
         setErrorMsg('保存点评失败，请重试') // 见 mark() 注释：生产脱敏，避免展示英文摘要
       }
@@ -185,6 +287,8 @@ export default function LessonDetail({
         return
       }
       setMsg('已保存上课地点/网课链接')
+      // 刷新地点/链接的脏检查基线，避免随后「一键保存所有更改」重复提交已保存值（见 saveShared）。
+      initialRef.current = { ...initialRef.current, location, meetingUrl }
       router.refresh()
     })
   }
@@ -295,7 +399,7 @@ export default function LessonDetail({
         </div>
 
         <div className="flex flex-col gap-2">
-          <h4 className="text-sm font-medium text-neutral-700">本节课笔记（全班共享）</h4>
+          <h4 className="text-sm font-medium text-neutral-700">本节课笔记（全班共享 · Summary）</h4>
           <textarea
             aria-label="本节课笔记（全班共享）"
             className="min-h-20 rounded border border-neutral-300 px-2 py-1 text-sm"
@@ -303,14 +407,27 @@ export default function LessonDetail({
             value={sharedNote}
             onChange={(ev) => setSharedNote(ev.target.value)}
           />
-          <button
-            type="button"
-            disabled={pending}
-            className="self-start rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
-            onClick={saveShared}
-          >
-            保存笔记
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={pending}
+              className="rounded bg-neutral-900 px-3 py-1 text-xs text-white hover:bg-neutral-800 disabled:opacity-50"
+              onClick={saveShared}
+            >
+              保存笔记
+            </button>
+            {/* 逐条「对外开放」：勾选后该课节笔记 visibility='shared'，门户的关联学生/家长可见。新笔记默认勾选。 */}
+            <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <input
+                type="checkbox"
+                checked={shared}
+                disabled={pending}
+                onChange={(e) => setShared(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              对外开放（学生 / 家长可见）
+            </label>
+          </div>
         </div>
 
         {!loading && roster.length > 0 && (
@@ -352,7 +469,7 @@ export default function LessonDetail({
           </p>
         )}
 
-        <div className="mt-auto flex gap-2 border-t border-neutral-200 pt-4">
+        <div className="mt-auto flex items-center justify-between gap-2 border-t border-neutral-200 pt-4">
           <button
             data-testid="lesson-cancel"
             type="button"
@@ -361,6 +478,14 @@ export default function LessonDetail({
             onClick={cancelOne}
           >
             取消这一节
+          </button>
+          <button
+            type="button"
+            disabled={pending || loading}
+            className="rounded bg-neutral-900 px-4 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+            onClick={saveAll}
+          >
+            一键保存所有更改
           </button>
         </div>
       </div>

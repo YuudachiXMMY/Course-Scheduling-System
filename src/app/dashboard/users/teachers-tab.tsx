@@ -6,6 +6,8 @@ import { listStaff } from './data'
 import StaffForm from './staff-form'
 import { StaffRoleControl, StaffActiveToggle } from './staff-controls'
 import ResetPasswordControl from './reset-password-control'
+import AccountInfoForm from './account-info-form'
+import AccountNotes from './account-notes'
 import type { CreateStaffInput } from '@/auth/staff'
 import { formatDateTime } from '@/lib/format-datetime'
 
@@ -63,11 +65,13 @@ export default async function TeachersTab() {
                 </div>
                 {!isSelf && (
                   <div className="flex flex-wrap items-center gap-2">
+                    <AccountInfoForm userId={s.userId} name={s.name} email={s.email} />
                     <StaffRoleControl userId={s.userId} currentRole={s.role} options={assignable} />
                     <StaffActiveToggle userId={s.userId} banned={s.banned} />
                     <ResetPasswordControl targetUserId={s.userId} />
                   </div>
                 )}
+                {!isSelf && <AccountNotes target={{ kind: 'user', id: s.userId }} note={s.notes} />}
               </li>
             )
           })}

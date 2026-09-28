@@ -88,7 +88,7 @@ describe('upsertSharedNoteCore —— 落库 visibility + getSectionLessonNotes 
     expect(m[l1].summaryVisibility).toBe('shared')
   })
 
-  it('无共享笔记的课节 summaryVisibility 缺省为 internal', async () => {
+  it('无共享笔记的课节 summaryVisibility 缺省为 shared（新笔记「对外开放」默认勾选）', async () => {
     const [le2] = (await forTenant(ctx).insert(lesson, {
       sectionId,
       teacherId: userId,
@@ -97,6 +97,8 @@ describe('upsertSharedNoteCore —— 落库 visibility + getSectionLessonNotes 
     })) as { id: string }[]
     const m = await getSectionLessonNotes(ctx, [le2.id])
     expect(m[le2.id].summary).toBe('')
-    expect(m[le2.id].summaryVisibility).toBe('internal')
+    // 无笔记时缺省 shared —— 只是勾选框的 UI 种子，门户仅暴露真实存在且 visibility='shared' 的笔记行，
+    // 因此不会泄露任何内容；教师保存前可取消勾选。已存在的 internal 笔记仍回显 internal（见上一用例）。
+    expect(m[le2.id].summaryVisibility).toBe('shared')
   })
 })

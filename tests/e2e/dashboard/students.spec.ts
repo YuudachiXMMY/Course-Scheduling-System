@@ -87,6 +87,10 @@ test.describe('学生管理', () => {
     await createStudent(page, { name, grade: '高一' })
 
     const row = activeRow(page, name)
+    // 分享链接卡片默认折叠：其内容（含「生成分享链接」按钮）被收进 <details>，初始不可见。
+    await expect(row.getByRole('button', { name: '生成分享链接' })).toBeHidden()
+    // 点击卡片的 <summary>（标题「分享链接」）展开后，按钮才可见可点。
+    await row.locator('summary').click()
     // No share yet → the button reads 生成分享链接.
     await row.getByRole('button', { name: '生成分享链接' }).click()
 

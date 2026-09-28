@@ -5,6 +5,8 @@ import { listPortalUsers } from './data'
 import UserForm from './user-form'
 import { LinkControl, UnlinkButton } from './link-control'
 import ResetPasswordControl from './reset-password-control'
+import AccountInfoForm from './account-info-form'
+import AccountNotes from './account-notes'
 import { formatDateTime } from '@/lib/format-datetime'
 
 // 家长 tab of /dashboard/users — manage PARENT portal accounts and their student links. Student-role logins
@@ -49,8 +51,12 @@ export default async function ParentsTab() {
                       创建于 {formatDateTime(u.createdAt)} · 最近修改 {formatDateTime(u.updatedAt)}
                     </span>
                   </div>
-                  <ResetPasswordControl targetUserId={u.userId} />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <AccountInfoForm userId={u.userId} name={u.name} email={u.email} />
+                    <ResetPasswordControl targetUserId={u.userId} />
+                  </div>
                 </div>
+                <AccountNotes target={{ kind: 'user', id: u.userId }} note={u.notes} />
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs text-neutral-500">
                     关联学生

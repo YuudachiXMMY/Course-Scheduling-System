@@ -535,7 +535,10 @@ export default function SectionLessons({
                         initial={
                           notes[l.id] ?? {
                             summary: '',
-                            summaryVisibility: 'internal',
+                            // 与 getSectionLessonNotes 的「无笔记默认 shared」种子保持一致（见 data.ts）。
+                            // 实际上 getSectionLessonNotes 会为每个 lessonId 填充 byLesson，此 ?? 兜底不可达，
+                            // 仅作防御；保持同一默认避免语义漂移。
+                            summaryVisibility: 'shared',
                             comments: {},
                             grades: {},
                             attendance: {},

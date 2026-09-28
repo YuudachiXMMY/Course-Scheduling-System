@@ -143,11 +143,19 @@ describe('课节只读动作归属守卫 — attendance-actions', () => {
     expect((await listAttendance(lessonA1)).length).toBeGreaterThan(0)
   })
 
-  it('getLessonNotes: 另一教师得到空笔记；本班教师拿到共享笔记', async () => {
+  it('getLessonNotes: 另一教师得到空笔记；本班教师拿到共享笔记（回显 visibility）', async () => {
     asActor(teacherBCtx)
-    expect(await getLessonNotes(lessonA1)).toEqual({ shared: '', perStudent: {} })
+    // 无权访问 → 空存根；sharedVisibility 取保守 'internal'（无访问权者不应看到「对外开放」默认）。
+    expect(await getLessonNotes(lessonA1)).toEqual({
+      shared: '',
+      perStudent: {},
+      sharedVisibility: 'internal',
+    })
     asActor(teacherACtx)
-    expect((await getLessonNotes(lessonA1)).shared).toBe('本课共享笔记')
+    const notes = await getLessonNotes(lessonA1)
+    expect(notes.shared).toBe('本课共享笔记')
+    // 种子笔记 visibility='internal' → 回显 internal（教师此前的「不对外开放」选择不被默认勾选覆盖）。
+    expect(notes.sharedVisibility).toBe('internal')
   })
 })
 
