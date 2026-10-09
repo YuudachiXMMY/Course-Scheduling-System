@@ -109,6 +109,12 @@ test.describe('排课日历', () => {
     // Unique content so repeated/overlapping runs never collide; we assert on the toast, not the body.
     const noteBody = `E2E临时笔记-${Date.now()}`
     await page.getByPlaceholder('今天讲了…').fill(noteBody)
+
+    // 本用例测的是「保存」，不是「发布」。PR#85 起「对外开放」默认勾选，不取消就会把这条
+    // 测试笔记真的发给家长/学生 —— 那会打红 tests/e2e/portal/notes.spec.ts 的空态用例
+    // （portal project 在 staff 之后跑，共用同一个库）。发布本身由下面的「默认勾选」用例覆盖。
+    await page.getByLabel('对外开放（学生 / 家长可见）').uncheck()
+
     await page.getByRole('button', { name: '保存笔记', exact: true }).click()
 
     // saveShared() sets msg='已保存本节课笔记' after the server action resolves (attendance-actions.ts).
@@ -138,6 +144,10 @@ test.describe('排课日历', () => {
     // 改动上课地点与共享笔记，然后仅点一次「一键保存所有更改」。
     await page.getByLabel('上课地点').fill(`E2E地点-${Date.now()}`)
     await page.getByPlaceholder('今天讲了…').fill(`E2E一键保存-${Date.now()}`)
+
+    // 同上：测的是「一次提交三类改动」，不是「发布」。不取消默认勾选就会把笔记发给门户，
+    // 打红 portal 的空态用例（见 tests/e2e/portal/notes.spec.ts 顶部说明）。
+    await page.getByLabel('对外开放（学生 / 家长可见）').uncheck()
 
     await page.getByRole('button', { name: '一键保存所有更改', exact: true }).click()
     // 断言绿色成功提示（汇总文案含「已保存全部更改」），never on global counts.
