@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, desc, eq, isNull, lte, gte, or } from 'drizzle-orm'
+import { and, desc, eq, isNull, lte, gte, or, sql } from 'drizzle-orm'
 import { db } from '@/db'
 import { contactMessage, subscriber, popup } from '@/db/schema'
 import { isUniqueViolation } from '@/lib/errors'
@@ -19,7 +19,7 @@ export class IngestValidationError extends Error {
 // 官网(ithacateens.com)服务端调用的写入/读取路径。
 //
 // ⚠️ 这里**没有 AuthContext**——调用方是另一个服务，不是一个登录用户。
-// 主体验证由路由层的 SITE_INGEST_SECRET 恒定时间比对完成(src/app/api/site/_auth.ts),
+// 主体验证由路由层的 SITE_INGEST_SECRET 恒定时间比对完成(src/lib/site/ingest-auth.ts),
 // 本模块只负责数据正确性。两件事必须分清:
 //   · 密钥证明"是官网在调"，不证明"官网没出 bug"→ 所以每个函数都自己再跑一遍 zod。
 //   · 这些函数绝不接受任何形式的"以某用户身份"参数 —— 没有身份可冒充，也就无从越权。
@@ -51,14 +51,27 @@ export async function recordContactCore(input: unknown): Promise<void> {
     })
 
     if (d.subscribe) {
-      // 原子 upsert 关掉了"先查后写"的 TOCTOU(唯一键是 email)。update 分支在已是 active 时
-      // 是个无害的 no-op —— 但仍要写 name:访客这次留了姓名、上次没留，应该补上。
+      // 原子 upsert 关掉了"先查后写"的 TOCTOU(唯一键是 email)。
+      //
+      // name 用 COALESCE(既有值, 新值)——**只填空，绝不覆盖**。这一行的措辞很要紧:
+      // 官网原版的 update 分支是 `{ status: 'active' }`,完全不碰 name。照搬的话，一个此前
+      // 没留姓名的订阅者永远补不上;但无条件写 d.name 又会在"同一邮箱被另一个人(配偶/同事)
+      // 用来发询盘"时把已有姓名悄悄改掉 —— 那是在改一条记录的身份字段，而且无痕。
+      // COALESCE 两头都顾:空则补，有则留。
+      //
+      // 注意这与 recordSubscribeCore 的 `name ?? existing.name` 语义**不同**，而这是对的:
+      // 那是订阅表单(本人在订阅，报的就是自己的名字，应当覆盖),这里是询盘表单勾了"同时订阅"
+      // (填表人未必是原订阅者)。两个原版行为本就不同，移植要各自保持。
       await tx
         .insert(subscriber)
         .values({ email: d.email, name: d.name, status: 'active' })
         .onConflictDoUpdate({
           target: subscriber.email,
-          set: { status: 'active', name: d.name, updatedAt: new Date() },
+          set: {
+            status: 'active',
+            name: sql`coalesce(${subscriber.name}, ${d.name})`,
+            updatedAt: new Date(),
+          },
         })
     }
   })

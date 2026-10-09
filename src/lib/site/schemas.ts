@@ -15,11 +15,14 @@ const httpUrl = z
 
 // 两个日期字段在表单里是 datetime-local 的字符串或空串。空串在 Server Action 的 FormData 里
 // 不可避免，所以 schema 层面就接受它并视作"清空"，而不是让调用方各自做空串判断。
-const optionalDateTime = z.union([
-  z.iso.datetime({ offset: true }),
-  z.iso.datetime(),
-  z.literal(''),
-])
+//
+// 显式给 union 配错误文案:zod 的 union 失败时只给一句英文 "Invalid input"(它无从判断该报
+// 哪个分支的错),而 core 会把 issues[0].message 当作给人看的提示交出去。不写这一句，
+// 绕过表单直接调 action 的人会收到一条既不是中文、也说不清问题在哪的消息。
+const optionalDateTime = z.union(
+  [z.iso.datetime({ offset: true }), z.iso.datetime(), z.literal('')],
+  { error: '时间格式不正确' },
+)
 
 export const createPopupSchema = z.object({
   title: z.string().min(1, '标题不能为空').max(200, '标题过长'),
@@ -29,7 +32,11 @@ export const createPopupSchema = z.object({
   isActive: z.boolean().default(false),
   startDate: optionalDateTime.optional().nullable(),
   endDate: optionalDateTime.optional().nullable(),
-  displayRules: z.string().max(2000, '展示规则过长').optional(),
+  // nullable 不是可选的装饰 —— 它和 updatePopupSchema 必须**一致**。只写 .optional() 的话,
+  // 共用同一个 payload 构造器的表单就只能对两条路径都发 undefined,而 undefined 在
+  // updatePopupCore 的部分更新里意味着"别动这个字段"→ 清空展示规则会静默失败(旧 JSON 留在
+  // 库里，界面却显示"已保存")。两个 schema 都接受 null,"清空"才有一个能表达出来的写法。
+  displayRules: z.string().max(2000, '展示规则过长').optional().nullable(),
 })
 
 export const updatePopupSchema = z.object({

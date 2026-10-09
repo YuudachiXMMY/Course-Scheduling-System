@@ -46,3 +46,25 @@ export function parsePagination(params: Record<string, string | string[] | undef
 export function buildPagination(total: number, page: number, limit: number): Pagination {
   return { total, page, limit, totalPages: Math.ceil(total / limit) }
 }
+
+/**
+ * 把请求的页码夹到实际存在的最后一页。
+ *
+ * 为什么需要:超出范围的页码会查出空结果，于是界面显示"暂无数据"——但数据明明还在，只是在
+ * 前面的页上。运营方看到的是"数据没了"。触发方式不止一种:
+ *   · 在第 2 页删掉最后一行(官网原版为此专门写了"退一页"的前端逻辑);
+ *   · 另一个管理员并发删除;
+ *   · 书签/历史记录里的深链接;
+ *   · 手敲 URL。
+ *
+ * 所以夹取放在服务端而不是删除按钮里 —— 一处修好，上面四种全都覆盖，而照搬原版的客户端
+ * 退页逻辑只能覆盖第一种。
+ *
+ * 返回 null 表示请求的页码本来就有效(不必重查)。
+ */
+export function clampPage(q: PageQuery, total: number): PageQuery | null {
+  if (total === 0) return null // 空表:停在第 1 页，"暂无数据"此时是**真话**
+  const totalPages = Math.ceil(total / q.limit)
+  if (q.page <= totalPages) return null
+  return { page: totalPages, limit: q.limit, offset: (totalPages - 1) * q.limit }
+}

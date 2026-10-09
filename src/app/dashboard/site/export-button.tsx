@@ -2,21 +2,20 @@
 
 import { useState, useTransition } from 'react'
 import { downloadCsv } from '@/lib/site/csv'
+import type { ExportResult } from './actions'
 
 // CSV 导出按钮。首屏不预载全量数据 —— 点了才去 action 取，所以列表页只渲染当前一页。
 //
-// 泛型化:询盘和订阅者的列类型不同，但"取数 → 失败则内联提示 → 成功则下载"这套流程完全一样。
-export default function ExportButton<Row>({
-  filenamePrefix,
-  headers,
+// 边界上**只有一个 Server Action** 跨过去。早先的写法额外传了一个 `toRow` 映射函数,
+// 那是行不通的:普通函数无法序列化到 Client Component,React 会抛
+// "Functions cannot be passed directly to Client Components",结果整个按钮静默不渲染
+// (tsc 和 eslint 都看不出来,只有真跑页面才暴露)。现在列映射留在服务端的 action 里,
+// 这个组件只负责"取 → 失败则内联提示 → 成功则下载"。
+export default function ExportButton({
   fetchRows,
-  toRow,
   label = '导出 CSV',
 }: {
-  filenamePrefix: string
-  headers: string[]
-  fetchRows: () => Promise<{ ok: true; rows: Row[] } | { ok: false; error: string }>
-  toRow: (row: Row) => string[]
+  fetchRows: () => Promise<ExportResult>
   label?: string
 }) {
   const [pending, startTransition] = useTransition()
@@ -37,7 +36,7 @@ export default function ExportButton<Row>({
           setError('暂无数据可导出')
           return
         }
-        downloadCsv(filenamePrefix, headers, res.rows.map(toRow))
+        downloadCsv(res.filename, res.headers, res.rows)
       } catch {
         setError('导出失败，请稍后重试')
       }

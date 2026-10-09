@@ -13,15 +13,19 @@ vi.mock('@/lib/mail', () => ({
 }))
 
 const { db } = await import('@/db')
-const { subscriber, contactMessage, emailCampaign, emailDelivery, popup } = await import(
-  '@/db/schema'
-)
+const { subscriber, contactMessage, emailCampaign, emailDelivery, popup } =
+  await import('@/db/schema')
 const { recordContactCore, recordSubscribeCore, getActivePopupCore, IngestValidationError } =
   await import('@/lib/site/ingest-core')
-const { sendCampaignCore, createCampaignCore, listCampaignsCore, STALE_SENDING_MS } = await import(
-  '@/lib/site/campaigns-core'
-)
-const { listSubscribersCore, deleteSubscriberCore } = await import('@/lib/site/admin-core')
+const { sendCampaignCore, createCampaignCore, listCampaignsCore, STALE_SENDING_MS } =
+  await import('@/lib/site/campaigns-core')
+const {
+  listSubscribersCore,
+  deleteSubscriberCore,
+  createPopupCore,
+  updatePopupCore,
+  listPopupsCore,
+} = await import('@/lib/site/admin-core')
 const { parsePagination } = await import('@/lib/site/pagination')
 type AuthContext = import('@/auth/context').AuthContext
 
@@ -87,7 +91,10 @@ describe('recordContactCore — 询盘写入', () => {
     expect(rows[0].name).toBe('张三')
     expect(rows[0].programs).toEqual([]) // 默认空数组，而不是 null
     expect(rows[0].status).toBe('new')
-    const subs = await db.select().from(subscriber).where(eq(subscriber.email, mail('c1')))
+    const subs = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('c1')))
     expect(subs).toHaveLength(0)
   })
 
@@ -97,7 +104,10 @@ describe('recordContactCore — 询盘写入', () => {
       .select()
       .from(contactMessage)
       .where(eq(contactMessage.email, mail('c2')))
-    const subs = await db.select().from(subscriber).where(eq(subscriber.email, mail('c2')))
+    const subs = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('c2')))
     expect(contacts).toHaveLength(1)
     expect(subs).toHaveLength(1)
     expect(subs[0].status).toBe('active')
@@ -105,13 +115,38 @@ describe('recordContactCore — 询盘写入', () => {
   })
 
   it('已退订的人再次勾选订阅 → upsert 把状态恢复为 active 并补上姓名', async () => {
-    await db
-      .insert(subscriber)
-      .values({ email: mail('c3'), name: null, status: 'unsubscribed' })
+    await db.insert(subscriber).values({ email: mail('c3'), name: null, status: 'unsubscribed' })
     await recordContactCore({ name: '王五', email: mail('c3'), subscribe: true })
-    const [s] = await db.select().from(subscriber).where(eq(subscriber.email, mail('c3')))
+    const [s] = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('c3')))
     expect(s.status).toBe('active')
     expect(s.name).toBe('王五') // 上次没留姓名，这次留了 → 补上
+  })
+
+  it('已有姓名的订阅者不会被询盘表单覆盖掉姓名', async () => {
+    // 这是移植时最容易写错的一处:官网原版的 upsert update 分支是 `{ status: 'active' }`,
+    // 压根不碰 name。无条件写 d.name 会在"同一邮箱被配偶/同事用来发询盘"时把已有姓名
+    // 悄悄改掉 —— 改的是一条记录的身份字段，而且无痕。COALESCE 只填空、不覆盖。
+    await db.insert(subscriber).values({ email: mail('keep'), name: '原订阅人', status: 'active' })
+    await recordContactCore({ name: '另一个人', email: mail('keep'), subscribe: true })
+    const [s] = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('keep')))
+    expect(s.name).toBe('原订阅人')
+    expect(s.status).toBe('active')
+  })
+
+  it('姓名为空的订阅者会被补上姓名（只填空）', async () => {
+    await db.insert(subscriber).values({ email: mail('fill'), name: null, status: 'active' })
+    await recordContactCore({ name: '补上的名字', email: mail('fill'), subscribe: true })
+    const [s] = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('fill')))
+    expect(s.name).toBe('补上的名字')
   })
 
   it('保留资格字段(locale/grade/programs/topic/source)', async () => {
@@ -124,7 +159,10 @@ describe('recordContactCore — 询盘写入', () => {
       topic: 'program',
       source: '微信',
     })
-    const [c] = await db.select().from(contactMessage).where(eq(contactMessage.email, mail('c4')))
+    const [c] = await db
+      .select()
+      .from(contactMessage)
+      .where(eq(contactMessage.email, mail('c4')))
     expect(c.locale).toBe('zh')
     expect(c.grade).toBe(9)
     expect(c.programs).toEqual(['ev-team', 'robotics'])
@@ -133,9 +171,7 @@ describe('recordContactCore — 询盘写入', () => {
   })
 
   it('非法输入抛 IngestValidationError(路由层据此回 400 而不是 500)', async () => {
-    await expect(recordContactCore({ email: 'nope' })).rejects.toBeInstanceOf(
-      IngestValidationError,
-    )
+    await expect(recordContactCore({ email: 'nope' })).rejects.toBeInstanceOf(IngestValidationError)
     await expect(
       recordContactCore({ name: 'A', email: mail('c5'), grade: 99 }),
     ).rejects.toBeInstanceOf(IngestValidationError)
@@ -153,9 +189,14 @@ describe('recordSubscribeCore — 订阅三态', () => {
   })
 
   it('曾退订 → reactivated（恢复订阅但不发欢迎信）', async () => {
-    await db.insert(subscriber).values({ email: mail('s3'), name: '老用户', status: 'unsubscribed' })
+    await db
+      .insert(subscriber)
+      .values({ email: mail('s3'), name: '老用户', status: 'unsubscribed' })
     expect(await recordSubscribeCore({ email: mail('s3') })).toBe('reactivated')
-    const [s] = await db.select().from(subscriber).where(eq(subscriber.email, mail('s3')))
+    const [s] = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('s3')))
     expect(s.status).toBe('active')
     // 本次没带姓名 → 保留原有姓名，不要清成 null。
     expect(s.name).toBe('老用户')
@@ -164,7 +205,10 @@ describe('recordSubscribeCore — 订阅三态', () => {
   it('恢复订阅时带了新姓名则覆盖', async () => {
     await db.insert(subscriber).values({ email: mail('s4'), name: '旧名', status: 'unsubscribed' })
     expect(await recordSubscribeCore({ email: mail('s4'), name: '新名' })).toBe('reactivated')
-    const [s] = await db.select().from(subscriber).where(eq(subscriber.email, mail('s4')))
+    const [s] = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('s4')))
     expect(s.name).toBe('新名')
   })
 
@@ -178,7 +222,10 @@ describe('recordSubscribeCore — 订阅三态', () => {
     ])
     expect(results.filter((r) => r === 'created')).toHaveLength(1)
     expect(results.filter((r) => r === 'already_active')).toHaveLength(2)
-    const rows = await db.select().from(subscriber).where(eq(subscriber.email, mail('s5')))
+    const rows = await db
+      .select()
+      .from(subscriber)
+      .where(eq(subscriber.email, mail('s5')))
     expect(rows).toHaveLength(1)
   })
 })
@@ -223,6 +270,71 @@ describe('getActivePopupCore — 生效弹窗', () => {
   })
 })
 
+describe('createPopupCore / updatePopupCore — 部分更新的"清空"语义', () => {
+  it('创建时可以不带展示规则', async () => {
+    const p = await createPopupCore(superAdmin, { title: `${P}p1`, content: 'c', isActive: false })
+    expect(p.displayRules).toBeNull()
+  })
+
+  it('展示规则可以被清空 —— 这是 undefined/null 之分的要害', async () => {
+    // 部分更新里 undefined 意味着"别动这个字段"。表单若把空串变成 undefined,清空就会
+    // 静默失败:旧 JSON 留在库里，界面却显示"已保存"。null 才表示"清空"。
+    const p = await createPopupCore(superAdmin, {
+      title: `${P}p2`,
+      content: 'c',
+      displayRules: '{"pages":["home"],"frequency":"once"}',
+    })
+    expect(p.displayRules).toContain('home')
+
+    const cleared = await updatePopupCore(superAdmin, { id: p.id, displayRules: null })
+    expect(cleared.displayRules).toBeNull()
+  })
+
+  it('不传的字段保持原值（undefined = 别动）', async () => {
+    const p = await createPopupCore(superAdmin, {
+      title: `${P}p3`,
+      content: '原内容',
+      buttonText: '了解更多',
+      displayRules: '{"frequency":"always"}',
+    })
+    // 只改标题，其余一个都没传 —— 它们都该原封不动。
+    const updated = await updatePopupCore(superAdmin, { id: p.id, title: `${P}p3-改` })
+    expect(updated.title).toBe(`${P}p3-改`)
+    expect(updated.content).toBe('原内容')
+    expect(updated.buttonText).toBe('了解更多')
+    expect(updated.displayRules).toBe('{"frequency":"always"}')
+  })
+
+  it('按钮链接的空串在库里是 NULL，不是 ""', async () => {
+    // '' 会让官网渲染出一个 href="" 的按钮(点了会重载当前页)。
+    const p = await createPopupCore(superAdmin, { title: `${P}p4`, content: 'c', buttonLink: '' })
+    expect(p.buttonLink).toBeNull()
+  })
+
+  it('非法 CTA 链接在 core 层就被拒（不只靠前端）', async () => {
+    await expect(
+      createPopupCore(superAdmin, {
+        title: `${P}p5`,
+        content: 'c',
+        buttonLink: 'javascript:alert(1)',
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('改不存在的弹窗报业务错误，而不是静默成功', async () => {
+    await expect(
+      updatePopupCore(superAdmin, { id: 'nope-does-not-exist', title: 'x' }),
+    ).rejects.toThrow(/弹窗不存在/)
+  })
+
+  it('非超管不能建/改弹窗', async () => {
+    await expect(
+      createPopupCore(notSuperAdmin, { title: `${P}p6`, content: 'c' }),
+    ).rejects.toThrow()
+    await expect(listPopupsCore(notSuperAdmin)).rejects.toThrow()
+  })
+})
+
 describe('sendCampaignCore — 群发状态机', () => {
   async function seedSubscribers(n: number) {
     await db
@@ -244,19 +356,17 @@ describe('sendCampaignCore — 群发状态机', () => {
   it('全部送达 → sent，recipientCount = 实际送达人数，台账逐人入账', async () => {
     await seedSubscribers(3)
     const c = await newCampaign('ok')
-    sendMock.mockImplementation(
-      async (msgs: { to: string }[]) => ({ delivered: msgs.map((m) => m.to), failed: [] }),
-    )
+    sendMock.mockImplementation(async (msgs: { to: string }[]) => ({
+      delivered: msgs.map((m) => m.to),
+      failed: [],
+    }))
 
     expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: 3 })
     const [after] = await db.select().from(emailCampaign).where(eq(emailCampaign.id, c.id))
     expect(after.status).toBe('sent')
     expect(after.recipientCount).toBe(3)
     expect(after.sentAt).not.toBeNull()
-    const ledger = await db
-      .select()
-      .from(emailDelivery)
-      .where(eq(emailDelivery.campaignId, c.id))
+    const ledger = await db.select().from(emailDelivery).where(eq(emailDelivery.campaignId, c.id))
     expect(ledger).toHaveLength(3)
   })
 
@@ -287,10 +397,7 @@ describe('sendCampaignCore — 群发状态机', () => {
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1)
     // 每人只入账一次(unique(campaign_id,email) + onConflictDoNothing)。
-    const ledger = await db
-      .select()
-      .from(emailDelivery)
-      .where(eq(emailDelivery.campaignId, c.id))
+    const ledger = await db.select().from(emailDelivery).where(eq(emailDelivery.campaignId, c.id))
     expect(ledger).toHaveLength(2)
   })
 
@@ -306,10 +413,7 @@ describe('sendCampaignCore — 群发状态机', () => {
     await expect(sendCampaignCore(superAdmin, c.id)).rejects.toThrow(/收件人发送失败/)
     const [mid] = await db.select().from(emailCampaign).where(eq(emailCampaign.id, c.id))
     expect(mid.status).toBe('failed')
-    const ledger1 = await db
-      .select()
-      .from(emailDelivery)
-      .where(eq(emailDelivery.campaignId, c.id))
+    const ledger1 = await db.select().from(emailDelivery).where(eq(emailDelivery.campaignId, c.id))
     expect(ledger1).toHaveLength(1) // 只有真正送达的那个入账
 
     // 第二次(重试):mail 层只应收到**剩下 2 个**收件人 —— 已送达的那个不得再发。
@@ -329,12 +433,10 @@ describe('sendCampaignCore — 群发状态机', () => {
     await seedSubscribers(2)
     const c = await newCampaign('alldone')
     // 手工把两人都写进台账，再把状态置回 failed(模拟"发完了但收尾写状态失败")。
-    await db
-      .insert(emailDelivery)
-      .values([
-        { campaignId: c.id, email: mail('r0') },
-        { campaignId: c.id, email: mail('r1') },
-      ])
+    await db.insert(emailDelivery).values([
+      { campaignId: c.id, email: mail('r0') },
+      { campaignId: c.id, email: mail('r1') },
+    ])
     await db.update(emailCampaign).set({ status: 'failed' }).where(eq(emailCampaign.id, c.id))
 
     expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: 2 })

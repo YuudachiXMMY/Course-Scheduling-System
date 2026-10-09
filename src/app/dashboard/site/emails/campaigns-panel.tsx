@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { formatDateTime } from '@/lib/format-datetime'
+import { campaignStatusLabel } from '@/lib/site/labels'
 import { createCampaign, deleteCampaign, sendCampaign } from '../actions'
 
 export interface CampaignView {
@@ -13,13 +14,6 @@ export interface CampaignView {
   recipientCount: number
   sentAt: Date | null
   createdAt: Date
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  draft: '草稿',
-  sending: '发送中',
-  sent: '已发送',
-  failed: '失败',
 }
 
 const STATUS_CLASS: Record<string, string> = {
@@ -187,7 +181,7 @@ export default function CampaignsPanel({
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[c.status] ?? 'bg-neutral-100 text-neutral-600'}`}
                   >
-                    {STATUS_LABEL[c.status] ?? c.status}
+                    {campaignStatusLabel(c.status)}
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 tabular-nums">

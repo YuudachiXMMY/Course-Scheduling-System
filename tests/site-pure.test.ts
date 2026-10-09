@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { partitionRecipients } from '@/lib/site/recipients'
-import { parsePagination, buildPagination, DEFAULT_PAGE_SIZE } from '@/lib/site/pagination'
+import {
+  parsePagination,
+  buildPagination,
+  clampPage,
+  DEFAULT_PAGE_SIZE,
+} from '@/lib/site/pagination'
+import { toLocalInput, fromLocalInput } from '@/lib/site/form-time'
 import { isPopupLive } from '@/lib/site/popup-active'
 import { createPopupSchema, siteContactSchema, siteSubscribeSchema } from '@/lib/site/schemas'
 
@@ -75,6 +81,36 @@ describe('parsePagination — NaN 不得泄漏到 SQL', () => {
   })
 })
 
+describe('clampPage — 越界页码不得渲染成"暂无数据"', () => {
+  const q = (page: number, limit = 20) => ({ page, limit, offset: (page - 1) * limit })
+
+  it('页码有效时返回 null(不必重查)', () => {
+    expect(clampPage(q(1), 21)).toBeNull()
+    expect(clampPage(q(2), 21)).toBeNull()
+  })
+
+  it('删掉第 2 页最后一行后:请求第 2 页但只剩 20 条 → 夹到第 1 页', () => {
+    // 这正是官网原版用前端"退一页"逻辑规避的那个场景。放在服务端夹取还能覆盖深链接、
+    // 他人并发删除、手敲 URL —— 那三种前端退页逻辑都管不到。
+    expect(clampPage(q(2), 20)).toEqual({ page: 1, limit: 20, offset: 0 })
+  })
+
+  it('远超范围的页码夹到最后一页，而不是第 1 页', () => {
+    // 夹到最后一页而非第一页:用户的意图是"看靠后的记录"，把他扔回第 1 页会丢失这个意图。
+    expect(clampPage(q(99), 45)).toEqual({ page: 3, limit: 20, offset: 40 })
+  })
+
+  it('空表返回 null —— 此时"暂无数据"是真话，不该重查', () => {
+    expect(clampPage(q(1), 0)).toBeNull()
+    expect(clampPage(q(5), 0)).toBeNull()
+  })
+
+  it('恰好填满最后一页时不夹取', () => {
+    expect(clampPage(q(2), 40)).toBeNull() // 40 条 / 每页 20 = 正好 2 页
+    expect(clampPage(q(3), 40)).toEqual({ page: 2, limit: 20, offset: 20 })
+  })
+})
+
 describe('isPopupLive — 时间窗四分支', () => {
   const now = new Date('2026-06-15T12:00:00Z')
   const past = new Date('2026-06-01T00:00:00Z')
@@ -109,6 +145,51 @@ describe('isPopupLive — 时间窗四分支', () => {
     // 在它唯一有意义的那一刻不显示。
     expect(isPopupLive({ isActive: true, startDate: now, endDate: null }, now)).toBe(true)
     expect(isPopupLive({ isActive: true, startDate: null, endDate: now }, now)).toBe(true)
+  })
+})
+
+describe('datetime-local ↔ ISO 往返（APP_TIME_ZONE = America/Toronto）', () => {
+  it('填进去的挂钟时间必须原样回来', () => {
+    // 这是整件事的要点:运营方填"晚上八点"，存的得是多伦多的晚上八点。少了显式时区解读,
+    // 它会被当成 UTC 八点，在多伦多显示成下午三四点。
+    const r = fromLocalInput('2026-06-15T20:00')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(toLocalInput(new Date(r.iso!))).toBe('2026-06-15T20:00')
+  })
+
+  it('冬令时（EST，-05:00）与夏令时（EDT，-04:00）都正确', () => {
+    const summer = fromLocalInput('2026-07-01T12:00')
+    const winter = fromLocalInput('2026-01-01T12:00')
+    expect(summer.ok && summer.iso).toContain('-04:00')
+    expect(winter.ok && winter.iso).toContain('-05:00')
+  })
+
+  it('空串表示"未设置"，不是错误', () => {
+    expect(fromLocalInput('')).toEqual({ ok: true, iso: null })
+    expect(toLocalInput(null)).toBe('')
+  })
+
+  it('夏令时跳表的那一小时必须被拒，而不是被静默挪后一小时', () => {
+    // 2026-03-08 多伦多 02:00 直接跳到 03:00,02:30 这个挂钟时刻根本不存在。
+    // Luxon 对它 isValid === true 并静默返回 03:30 —— 所以 .isValid 守不住，必须折回比对。
+    const r = fromLocalInput('2026-03-08T02:30')
+    expect(r.ok).toBe(false)
+    expect(!r.ok && r.reason).toBe('该时刻不存在（夏令时跳表）')
+  })
+
+  it('秋季回拨的重复小时**可以**接受（该时刻确实存在，只是出现两次）', () => {
+    // 与跳表相反:11-01 01:30 在多伦多出现两次。Luxon 取第一次(EDT)。这不是错误 ——
+    // 拒掉它会让一个合法时间无法填写，而两次之间的差别对弹窗时间窗没有实际意义。
+    const r = fromLocalInput('2026-11-01T01:30')
+    expect(r.ok).toBe(true)
+  })
+
+  it('格式错误与"时刻不存在"报不同的原因', () => {
+    // 两者混为一谈会让人对着一个格式完全正确的输入反复检查格式。
+    const bad = fromLocalInput('not-a-date')
+    expect(bad.ok).toBe(false)
+    expect(!bad.ok && bad.reason).toBe('格式不正确')
   })
 })
 

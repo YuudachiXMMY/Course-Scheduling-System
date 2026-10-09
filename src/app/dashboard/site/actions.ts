@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { toPortalActionError } from '@/lib/errors'
+import { formatDateTime } from '@/lib/format-datetime'
 import { requireSiteAdmin } from '@/lib/site/authz'
+import { subscriberStatusLabel } from '@/lib/site/labels'
 import {
   deleteSubscriberCore,
   createPopupCore,
@@ -122,24 +124,54 @@ export async function sendCampaign(
 // ── CSV 导出 ────────────────────────────────────────────────────────────────────────────────
 // 导出走 action 而不是在首屏把全表塞进客户端 bundle:列表页只渲染当前一页，点了导出才去取全量。
 //
+// action 返回的是**已排好的 CSV 数据**(表头 + 字符串行),不是原始行 + 一个映射函数。
+// 原因是硬性的:普通函数无法跨 Server→Client 边界(React 会报 "Functions cannot be passed
+// directly to Client Components"),所以列映射只能留在服务端。这反而是对的位置 —— 列的选择、
+// 时区格式化、状态文案本来就属于服务端，客户端只负责把它变成文件下载。
+//
+// 顺带少传一份数据:原始行里有 CSV 不需要的列(id、内部备注),排好再传就不会把它们发到浏览器。
+//
 // 与官网版的一处有意差异:官网的导出按钮只导出**当前页**(它从前端已加载的数组里取数),
 // 点一次拿到 20 行。那是个陷阱而不是需求 —— 运营方点"导出"是要拿全量去外部处理。
 // 这里导出全表，并由 core 的 EXPORT_MAX_ROWS 兜住内存:超限时明确报错，绝不静默截断。
-export async function exportContacts(): Promise<
-  { ok: true; rows: ContactRow[] } | { ok: false; error: string }
-> {
+export type ExportResult =
+  { ok: true; filename: string; headers: string[]; rows: string[][] } | { ok: false; error: string }
+
+export async function exportContacts(): Promise<ExportResult> {
   try {
-    return { ok: true, rows: await exportContactsCore(await requireSiteAdmin()) }
+    const rows = await exportContactsCore(await requireSiteAdmin())
+    return {
+      ok: true,
+      filename: 'contacts',
+      headers: ['姓名', '邮箱', '电话', '留言', '是否订阅', '提交时间'],
+      rows: rows.map((c: ContactRow) => [
+        c.name,
+        c.email,
+        c.phone ?? '',
+        c.message ?? '',
+        c.subscribe ? '是' : '否',
+        formatDateTime(c.createdAt),
+      ]),
+    }
   } catch (e) {
     return toPortalActionError(e, '导出询盘失败')
   }
 }
 
-export async function exportSubscribers(): Promise<
-  { ok: true; rows: SubscriberRow[] } | { ok: false; error: string }
-> {
+export async function exportSubscribers(): Promise<ExportResult> {
   try {
-    return { ok: true, rows: await exportSubscribersCore(await requireSiteAdmin()) }
+    const rows = await exportSubscribersCore(await requireSiteAdmin())
+    return {
+      ok: true,
+      filename: 'subscribers',
+      headers: ['邮箱', '姓名', '状态', '订阅时间'],
+      rows: rows.map((s: SubscriberRow) => [
+        s.email,
+        s.name ?? '',
+        subscriberStatusLabel(s.status),
+        formatDateTime(s.subscribedAt),
+      ]),
+    }
   } catch (e) {
     return toPortalActionError(e, '导出订阅者失败')
   }

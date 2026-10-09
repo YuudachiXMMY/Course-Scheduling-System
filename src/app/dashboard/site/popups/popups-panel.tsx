@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { DateTime } from 'luxon'
 import { APP_TIME_ZONE } from '@/lib/timezone'
 import { formatDateTime } from '@/lib/format-datetime'
+import { toLocalInput, fromLocalInput } from '@/lib/site/form-time'
 import { createPopup, updatePopup, deletePopup } from '../actions'
 
 export interface PopupView {
@@ -22,23 +22,6 @@ export interface PopupView {
   // 不在渲染期算:那需要 Date.now(),而渲染期读当前时间是不纯的(react-hooks/purity),
   // 会让徽章随无关重渲染漂移。判定逻辑也因此只有一份(tests/site-pure.test.ts 钉住它)。
   live: boolean
-}
-
-// <input type="datetime-local"> 要的是**无时区**的本地挂钟串。库里存 UTC,所以渲染时要
-// 转成 APP_TIME_ZONE 的挂钟、提交时再转回带时区的 ISO —— 这一来一回不能省，否则运营方
-// 填的"晚上八点"会被当成 UTC 八点，在多伦多变成下午三四点。
-function toLocalInput(d: Date | null): string {
-  if (!d) return ''
-  return DateTime.fromJSDate(d, { zone: 'utc' })
-    .setZone(APP_TIME_ZONE)
-    .toFormat("yyyy-MM-dd'T'HH:mm")
-}
-
-function fromLocalInput(v: string): string | null {
-  if (!v) return null
-  // 明确按 APP_TIME_ZONE 解读这个挂钟串，再输出带偏移的 ISO 交给 zod 的 datetime 校验。
-  const dt = DateTime.fromISO(v, { zone: APP_TIME_ZONE })
-  return dt.isValid ? dt.toISO() : null
 }
 
 type Draft = {
@@ -94,16 +77,19 @@ export default function PopupsPanel({ popups }: { popups: PopupView[] }) {
     setError(null)
 
     // 两个日期都在客户端先校验一次:提交一个非法串只会换来一条服务端 400,不如就地拦住。
-    const startDate = fromLocalInput(draft.startDate)
-    const endDate = fromLocalInput(draft.endDate)
-    if (draft.startDate && !startDate) {
-      setError('开始时间格式不正确')
+    const start = fromLocalInput(draft.startDate)
+    if (!start.ok) {
+      setError(`开始时间${start.reason}`)
       return
     }
-    if (draft.endDate && !endDate) {
-      setError('结束时间格式不正确')
+    const end = fromLocalInput(draft.endDate)
+    if (!end.ok) {
+      setError(`结束时间${end.reason}`)
       return
     }
+    const startDate = start.iso
+    const endDate = end.iso
+
     // 结束早于开始 = 一个永不显示的弹窗。schema 层没有这条跨字段约束(官网原版也没有),
     // 但在表单里拦住它是对的:这种配置没有任何合理用途，只会让人以为弹窗坏了。
     if (startDate && endDate && new Date(endDate) < new Date(startDate)) {
@@ -119,7 +105,9 @@ export default function PopupsPanel({ popups }: { popups: PopupView[] }) {
       isActive: draft.isActive,
       startDate,
       endDate,
-      displayRules: draft.displayRules || undefined,
+      // null(不是 undefined)才表示"清空"。undefined 在 updatePopupCore 的部分更新里
+      // 意味着"别动这个字段",于是清空展示规则会静默失败。两个 schema 都收 null,见 schemas.ts。
+      displayRules: draft.displayRules || null,
     }
 
     startTransition(async () => {

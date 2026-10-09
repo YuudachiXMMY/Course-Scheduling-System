@@ -5,7 +5,7 @@ import { contactMessage, subscriber, popup, emailCampaign } from '@/db/schema'
 import { BusinessError } from '@/lib/errors'
 import type { AuthContext } from '@/auth/context'
 import { assertSiteAdmin } from './authz'
-import { buildPagination, type PageQuery, type Pagination } from './pagination'
+import { buildPagination, clampPage, type PageQuery, type Pagination } from './pagination'
 import { createPopupSchema, updatePopupSchema } from './schemas'
 
 // 官网控制台的读 + 简单 CRUD(询盘 / 订阅者 / 弹窗 / 概览统计)。邮件群发的复杂状态机单独放在
@@ -29,17 +29,26 @@ export async function listContactsCore(
   q: PageQuery,
 ): Promise<{ contacts: ContactRow[]; pagination: Pagination }> {
   assertSiteAdmin(ctx)
-  // 列表和总数互不依赖 —— 一个 Promise.all 并发发出，而不是两次串行往返。
-  const [contacts, [total]] = await Promise.all([
+  const page = (offset: number, limit: number) =>
     db
       .select()
       .from(contactMessage)
       .orderBy(desc(contactMessage.createdAt))
-      .limit(q.limit)
-      .offset(q.offset),
+      .limit(limit)
+      .offset(offset)
+
+  // 列表和总数互不依赖 —— 一个 Promise.all 并发发出，而不是两次串行往返。
+  const [rows, [total]] = await Promise.all([
+    page(q.offset, q.limit),
     db.select({ value: count() }).from(contactMessage),
   ])
-  return { contacts, pagination: buildPagination(total?.value ?? 0, q.page, q.limit) }
+
+  // 页码越界(删到空页 / 深链接 / 并发删除)时重查最后一页，而不是渲染一个会被误读成
+  // "数据丢了"的空列表。常见路径不受影响:只有真越界时才多一次查询。
+  const clamped = clampPage(q, total?.value ?? 0)
+  const eff = clamped ?? q
+  const contacts = clamped ? await page(clamped.offset, clamped.limit) : rows
+  return { contacts, pagination: buildPagination(total?.value ?? 0, eff.page, eff.limit) }
 }
 
 // ── 订阅者(列表 + 删除)────────────────────────────────────────────────────────────────────
@@ -48,16 +57,19 @@ export async function listSubscribersCore(
   q: PageQuery,
 ): Promise<{ subscribers: SubscriberRow[]; pagination: Pagination }> {
   assertSiteAdmin(ctx)
-  const [subscribers, [total]] = await Promise.all([
-    db
-      .select()
-      .from(subscriber)
-      .orderBy(desc(subscriber.subscribedAt))
-      .limit(q.limit)
-      .offset(q.offset),
+  const page = (offset: number, limit: number) =>
+    db.select().from(subscriber).orderBy(desc(subscriber.subscribedAt)).limit(limit).offset(offset)
+
+  const [rows, [total]] = await Promise.all([
+    page(q.offset, q.limit),
     db.select({ value: count() }).from(subscriber),
   ])
-  return { subscribers, pagination: buildPagination(total?.value ?? 0, q.page, q.limit) }
+
+  // 见 listContactsCore 的同款说明:删掉第 2 页最后一行后不该显示"暂无订阅者"。
+  const clamped = clampPage(q, total?.value ?? 0)
+  const eff = clamped ?? q
+  const subscribers = clamped ? await page(clamped.offset, clamped.limit) : rows
+  return { subscribers, pagination: buildPagination(total?.value ?? 0, eff.page, eff.limit) }
 }
 
 export async function deleteSubscriberCore(ctx: AuthContext, id: string): Promise<void> {

@@ -12,8 +12,6 @@ import ExportButton from '../export-button'
 // status/notes 七个字段(官网表单在写它们),但官网自己的 /admin 询盘页从来没展示过。这里按
 // 严格对等移植，列已经建好、数据照常写入，展示和三态分诊留作后续一笔(见 PR 描述)。
 
-const CSV_HEADERS = ['姓名', '邮箱', '电话', '留言', '是否订阅', '提交时间']
-
 export default async function SiteContactsPage({
   searchParams,
 }: {
@@ -21,10 +19,7 @@ export default async function SiteContactsPage({
 }) {
   // Next 16:searchParams 是 Promise，必须 await。
   const ctx = await requireSiteAdmin()
-  const { contacts, pagination } = await listContactsCore(
-    ctx,
-    parsePagination(await searchParams),
-  )
+  const { contacts, pagination } = await listContactsCore(ctx, parsePagination(await searchParams))
 
   return (
     <div className="flex flex-col gap-4">
@@ -32,19 +27,8 @@ export default async function SiteContactsPage({
         <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
           询盘（{pagination.total}）
         </h3>
-        <ExportButton
-          filenamePrefix="contacts"
-          headers={CSV_HEADERS}
-          fetchRows={exportContacts}
-          toRow={(c) => [
-            c.name,
-            c.email,
-            c.phone ?? '',
-            c.message ?? '',
-            c.subscribe ? '是' : '否',
-            formatDateTime(c.createdAt),
-          ]}
-        />
+        {/* 列映射在 action 里(服务端)——普通函数不能跨 Server→Client 边界。 */}
+        <ExportButton fetchRows={exportContacts} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200">

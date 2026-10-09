@@ -1,5 +1,6 @@
 import { listSubscribersCore } from '@/lib/site/admin-core'
 import { requireSiteAdmin } from '@/lib/site/authz'
+import { subscriberStatusLabel } from '@/lib/site/labels'
 import { parsePagination } from '@/lib/site/pagination'
 import { formatDateTime } from '@/lib/format-datetime'
 import { exportSubscribers } from '../actions'
@@ -11,14 +12,6 @@ import DeleteSubscriberButton from './delete-subscriber-button'
 //
 // status 是 'active' | 'unsubscribed':退订的人**留在表里**而不是被删掉，这样"此人已明确
 // 退订"是一条可查的事实，而不是"查不到就当没订过"。群发只发给 active。
-
-const CSV_HEADERS = ['邮箱', '姓名', '状态', '订阅时间']
-
-function statusLabel(status: string): string {
-  if (status === 'active') return '订阅中'
-  if (status === 'unsubscribed') return '已退订'
-  return status // 未知状态原样显示,而不是悄悄归类成某一种
-}
 
 export default async function SiteSubscribersPage({
   searchParams,
@@ -37,17 +30,8 @@ export default async function SiteSubscribersPage({
         <h3 className="text-sm font-medium text-neutral-700 tabular-nums">
           订阅者（{pagination.total}）
         </h3>
-        <ExportButton
-          filenamePrefix="subscribers"
-          headers={CSV_HEADERS}
-          fetchRows={exportSubscribers}
-          toRow={(s) => [
-            s.email,
-            s.name ?? '',
-            statusLabel(s.status),
-            formatDateTime(s.subscribedAt),
-          ]}
-        />
+        {/* 列映射在 action 里(服务端)——普通函数不能跨 Server→Client 边界。 */}
+        <ExportButton fetchRows={exportSubscribers} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
@@ -81,7 +65,7 @@ export default async function SiteSubscribersPage({
                         : 'rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-600'
                     }
                   >
-                    {statusLabel(s.status)}
+                    {subscriberStatusLabel(s.status)}
                   </span>
                 </td>
                 <td className="px-4 py-2 whitespace-nowrap tabular-nums">
