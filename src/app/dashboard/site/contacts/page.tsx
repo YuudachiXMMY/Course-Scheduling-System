@@ -1,16 +1,18 @@
 import { listContactsCore } from '@/lib/site/admin-core'
 import { requireSiteAdmin } from '@/lib/site/authz'
 import { parsePagination } from '@/lib/site/pagination'
-import { formatDateTime } from '@/lib/format-datetime'
 import { exportContacts } from '../actions'
 import PaginationNav from '../pagination-nav'
 import ExportButton from '../export-button'
+import ContactsTable from './contacts-table'
 
-// 询盘收件箱。只读 + CSV 导出 —— 与官网原版功能对等。
+// 询盘收件箱。只读 + CSV 导出。
 //
-// 有意未做:官网的 contact_messages 里已经有改版 PRD 加的 locale/grade/programs/topic/source/
-// status/notes 七个字段(官网表单在写它们),但官网自己的 /admin 询盘页从来没展示过。这里按
-// 严格对等移植，列已经建好、数据照常写入，展示和三态分诊留作后续一笔(见 PR 描述)。
+// 官网表单在写 locale/grade/programs/topic/source/status/notes 七个资格字段(改版 PRD 加的),
+// 官网自己的 /admin 从来没展示过它们。这里把它们放进可展开的行详情:列表只保留能扫的摘要,
+// 点开才显示全部字段 —— 全摊成表格列会横向溢出，每列都窄到读不了。
+//
+// 仍未做:状态/备注的**编辑**(三态分诊)。本页是只读的，展开区里的状态和备注只显示不可改。
 
 export default async function SiteContactsPage({
   searchParams,
@@ -31,48 +33,9 @@ export default async function SiteContactsPage({
         <ExportButton fetchRows={exportContacts} />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
-            <tr>
-              <th className="px-4 py-2 font-medium">姓名</th>
-              <th className="px-4 py-2 font-medium">邮箱</th>
-              <th className="px-4 py-2 font-medium">电话</th>
-              <th className="px-4 py-2 font-medium">留言</th>
-              <th className="px-4 py-2 font-medium">订阅</th>
-              <th className="px-4 py-2 font-medium">提交时间</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100">
-            {contacts.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
-                  暂无询盘
-                </td>
-              </tr>
-            )}
-            {contacts.map((c) => (
-              <tr key={c.id} className="align-top">
-                <td className="px-4 py-2 whitespace-nowrap">{c.name}</td>
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <a href={`mailto:${c.email}`} className="text-neutral-700 hover:underline">
-                    {c.email}
-                  </a>
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">{c.phone ?? '—'}</td>
-                {/* 留言可能很长:限宽 + 换行，而不是让它把表格撑破。 */}
-                <td className="max-w-md px-4 py-2 break-words whitespace-pre-wrap">
-                  {c.message ?? '—'}
-                </td>
-                <td className="px-4 py-2 whitespace-nowrap">{c.subscribe ? '是' : '否'}</td>
-                <td className="px-4 py-2 whitespace-nowrap tabular-nums">
-                  {formatDateTime(c.createdAt)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* 整行照传(每一列都在展开区里用到)。Date 可以跨 Server→Client 边界;ContactsTable
+          自己声明 ContactView,所以这里不会把 server-only 的 ContactRow 类型拖进客户端。 */}
+      <ContactsTable contacts={contacts} />
 
       <PaginationNav basePath="/dashboard/site/contacts" pagination={pagination} />
     </div>
