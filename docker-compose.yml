@@ -75,6 +75,20 @@ services:
       # hardened host that cannot grant unprivileged user namespaces can't fall back — PNG/PDF export
       # fails to launch chromium. Empty default keeps the secure sandboxed default (see src/lib/browser.ts).
       CHROMIUM_NO_SANDBOX: ${CHROMIUM_NO_SANDBOX:-}
+      # 官网运营控制台(/dashboard/site)。全部可选、空值视为未设置 —— 不配也能正常启动:
+      #   · SITE_INGEST_SECRET 未设 → /api/site/* 保持 401 惰性(fail closed,绝不放行);
+      #   · SMTP_* 未设 → 控制台能存草稿，但群发会被明确拒绝(不会假装发成功)。
+      # standalone 运行时**不读 .env**,所以这些必须在此注入，否则只在 next dev 下生效。
+      SITE_INGEST_SECRET: ${SITE_INGEST_SECRET:-}
+      # SMTP_HOST 在服务器上填内网别名 `stalwart`(与本应用同在 proxy 网络);
+      # ⚠️ SMTP_TLS_INSECURE 只有在 SMTP_HOST 正是该内网别名时才可设为 1 ——
+      # 配成公网主机名会让应用拒绝启动(src/lib/mail.ts 的 assertTlsConfigSafe)。
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TLS_INSECURE: ${SMTP_TLS_INSECURE:-}
     ports:
       # F17: bind to loopback only (mirrors postgres above) — the app is meant to sit behind the Traefik
       # TLS edge, which reaches it over the compose network, not the host port. A bare 0.0.0.0:3000 on a
