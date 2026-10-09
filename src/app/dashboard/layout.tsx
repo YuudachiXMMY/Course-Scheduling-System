@@ -25,12 +25,19 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   // Unread badge for the 通知 nav item. Cheap at single-tutor scale; recomputed each render and
   // refreshed by revalidatePath('/dashboard/notifications') after a mark-read.
   const unreadCount = await unreadCountForUserCore(ctx)
+  // 官网运营控制台(/dashboard/site)仅平台超管可进 —— 同一个判断同时决定导航项是否出现,
+  // 免得普通管理员看到一个点进去就被弹回 /dashboard 的死链。安全边界在 requireSiteAdmin()。
+  const canManageSite = ctx.isPlatformAdmin
 
   return (
     <div className="min-h-dvh">
       <header className="flex flex-col gap-3 border-b border-neutral-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-base font-semibold">课程排课系统</h1>
-        <NavLinks canManageUsers={canManageUsers} unreadCount={unreadCount} />
+        <NavLinks
+          canManageUsers={canManageUsers}
+          canManageSite={canManageSite}
+          unreadCount={unreadCount}
+        />
       </header>
       <main className="p-6">{children}</main>
     </div>
