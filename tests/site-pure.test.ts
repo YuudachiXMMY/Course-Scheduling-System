@@ -9,6 +9,7 @@ import {
 import { toLocalInput, fromLocalInput } from '@/lib/site/form-time'
 import { isPopupLive } from '@/lib/site/popup-active'
 import { createPopupSchema, siteContactSchema, siteSubscribeSchema } from '@/lib/site/schemas'
+import { contactLocaleLabel, contactTopicLabel, contactStatusLabel } from '@/lib/site/labels'
 
 // 官网 /admin 移植的纯逻辑。每个用例钉住的都是"移植时最容易被悄悄简化掉"的那一条性质 ——
 // 幂等重试的收件人切分、NaN 分页、弹窗时间窗四分支、以及拒掉 javascript: 的 CTA 链接。
@@ -258,5 +259,35 @@ describe('官网写入端点的第二道校验', () => {
 
   it('name 缺失被拒 —— 官网校验过不等于这里可以免检', () => {
     expect(siteContactSchema.safeParse({ email: 'a@x.com' }).success).toBe(false)
+  })
+})
+
+describe('询盘资格字段的显示文案', () => {
+  it('三个枚举都有中文文案', () => {
+    expect(contactLocaleLabel('zh')).toBe('中文')
+    expect(contactLocaleLabel('en')).toBe('英文')
+    expect(contactTopicLabel('program')).toBe('项目咨询')
+    expect(contactTopicLabel('join')).toBe('加入我们')
+    expect(contactTopicLabel('general')).toBe('一般咨询')
+    expect(contactStatusLabel('new')).toBe('新询盘')
+    expect(contactStatusLabel('contacted')).toBe('已联系')
+    expect(contactStatusLabel('closed')).toBe('已关闭')
+  })
+
+  it('没填 → "—"，而不是空字符串', () => {
+    // 展开面板按固定栅格渲染每个字段，空值必须占位;空串会让那一格看起来像渲染失败。
+    expect(contactLocaleLabel(null)).toBe('—')
+    expect(contactLocaleLabel(undefined)).toBe('—')
+    expect(contactLocaleLabel('')).toBe('—')
+    expect(contactTopicLabel(null)).toBe('—')
+    expect(contactTopicLabel('')).toBe('—')
+  })
+
+  it('官网新增的未知取值原样显示，不被伪装成"没填"', () => {
+    // 这两边的枚举在不同仓里演进:官网 /api/contact 加一个 topic 取值不需要改本项目。
+    // 那时控制台必须把原值摆出来让运营看见，归类成 '—' 等于悄悄丢信息。
+    expect(contactTopicLabel('scholarship')).toBe('scholarship')
+    expect(contactLocaleLabel('fr')).toBe('fr')
+    expect(contactStatusLabel('archived')).toBe('archived')
   })
 })
