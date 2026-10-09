@@ -113,7 +113,12 @@ test.describe('排课日历', () => {
     // 本用例测的是「保存」，不是「发布」。PR#85 起「对外开放」默认勾选，不取消就会把这条
     // 测试笔记真的发给家长/学生 —— 那会打红 tests/e2e/portal/notes.spec.ts 的空态用例
     // （portal project 在 staff 之后跑，共用同一个库）。发布本身由下面的「默认勾选」用例覆盖。
-    await page.getByLabel('对外开放（学生 / 家长可见）').uncheck()
+    const shareToggle = page.getByLabel('对外开放（学生 / 家长可见）')
+    await shareToggle.uncheck()
+    // 勾选框是受控组件:上面那个 `加载中…` toBeHidden 在元素尚未挂载时也会立即通过,所以
+    // 理论上 uncheck 可能抢在加载回调之前,被随后的 setShared() 覆盖回勾选。断言一下,
+    // 让这种情况当场红掉 —— 否则它会静默地把笔记发布出去,再去打红另一个文件里的用例。
+    await expect(shareToggle).not.toBeChecked()
 
     await page.getByRole('button', { name: '保存笔记', exact: true }).click()
 
@@ -125,10 +130,19 @@ test.describe('排课日历', () => {
   })
 
   test('抽屉中「对外开放」勾选框默认勾选', async ({ page }) => {
-    await openFirstLessonDrawer(page)
+    // 必须打开一节**没有任何用例写过共享笔记**的课，否则这个断言测的不是"默认值"而是
+    // "上一个用例写入的回显"。它此前正是如此:三个抽屉用例都用 .first() 开同一节课,
+    // 而「保存本节课共享笔记」先跑并按 PR#85 的新默认存成 shared,于是这里读回 shared
+    // 就绿了 —— 和缺省逻辑毫无关系。给上面那个用例加 uncheck() 后它读回 internal 才暴露。
+    await openFirstLessonDrawer(page, 'last')
     await expect(page.getByText('加载中…')).toBeHidden()
 
-    // 新笔记（种子未建共享笔记行）→ sharedVisibility 缺省 shared → 勾选框默认勾选。
+    // 把上面那条前提变成显式断言:正文为空 ⇒ 库里没有这节课的共享笔记行 ⇒
+    // getLessonNotes 走 attendance-actions.ts 的"无行则缺省 shared"分支。
+    // 少了这一条，将来任何用例一旦写到这节课，本用例会再次静默地变成在测回显。
+    await expect(page.getByPlaceholder('今天讲了…')).toHaveValue('')
+
+    // 新笔记（无共享笔记行）→ sharedVisibility 缺省 shared → 勾选框默认勾选。
     const shareToggle = page.getByLabel('对外开放（学生 / 家长可见）')
     await expect(shareToggle).toBeVisible()
     await expect(shareToggle).toBeChecked()
@@ -147,7 +161,11 @@ test.describe('排课日历', () => {
 
     // 同上：测的是「一次提交三类改动」，不是「发布」。不取消默认勾选就会把笔记发给门户，
     // 打红 portal 的空态用例（见 tests/e2e/portal/notes.spec.ts 顶部说明）。
-    await page.getByLabel('对外开放（学生 / 家长可见）').uncheck()
+    // saveAll 的脏检查含 `shared !== init.shared`，所以 visibility-only 的改动也会落库
+    // （lesson-detail.tsx:202/208）—— 取消勾选不会被当成"没改动"而跳过。
+    const shareToggle = page.getByLabel('对外开放（学生 / 家长可见）')
+    await shareToggle.uncheck()
+    await expect(shareToggle).not.toBeChecked()
 
     await page.getByRole('button', { name: '一键保存所有更改', exact: true }).click()
     // 断言绿色成功提示（汇总文案含「已保存全部更改」），never on global counts.
@@ -160,11 +178,16 @@ test.describe('排课日历', () => {
 
 /**
  * Navigate to the schedule, switch FullCalendar to month view (surfaces every seeded event as a
- * clickable block — no dayMaxEvents collapsing is configured), then open the first lesson's detail
+ * clickable block — no dayMaxEvents collapsing is configured), then open one lesson's detail
  * drawer. Returns the drawer locator. The seed guarantees section A has lessons around now, and the
  * calendar's initialDate is the first event's start, so month view always contains at least one event.
+ *
+ * `which` picks WHICH event — and that choice is load-bearing, not cosmetic. Every drawer test in
+ * this file shares one database (workers:1, serial), so two tests that both open 'first' see each
+ * other's writes. A test whose premise is "this lesson has no shared-note row yet" must therefore
+ * open a lesson no other test writes to; pass 'last' for that.
  */
-async function openFirstLessonDrawer(page: Page) {
+async function openFirstLessonDrawer(page: Page, which: 'first' | 'last' = 'first') {
   await page.goto('/dashboard/schedule')
   await expect(page.locator('.fc').first()).toBeVisible()
 
@@ -172,7 +195,8 @@ async function openFirstLessonDrawer(page: Page) {
   await page.locator('.fc-dayGridMonth-button').click()
 
   // Each mounted event gets a `calendar-event-<lessonId>` testid via eventDidMount (calendar.tsx).
-  const firstEvent = page.locator('[data-testid^="calendar-event-"]').first()
+  const events = page.locator('[data-testid^="calendar-event-"]')
+  const firstEvent = which === 'last' ? events.last() : events.first()
   await expect(firstEvent).toBeVisible()
   await firstEvent.click()
 

@@ -73,7 +73,11 @@ test.describe('Portal 课节笔记', () => {
     }
   })
 
-  test('越权隔离：未「对外开放」的笔记与逐生点评都不出现在门户', async ({ page, browser, seed }) => {
+  test('越权隔离：未「对外开放」的笔记与逐生点评都不出现在门户', async ({
+    page,
+    browser,
+    seed,
+  }) => {
     const internalToken = `E2E内部笔记-${Date.now()}`
     const commentToken = `E2E逐生点评-${Date.now()}`
 
