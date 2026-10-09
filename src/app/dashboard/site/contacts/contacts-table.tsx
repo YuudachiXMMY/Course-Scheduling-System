@@ -71,9 +71,13 @@ function ContactDetail({ c }: { c: ContactView }) {
             // (src/lib/content/programs.ts),复制过来必然在官网上新项目时静默过期,
             // 显示一个过期的中文名比显示一个自解释的英文 slug 更糟。
             <span className="flex flex-wrap gap-1">
-              {c.programs.map((p) => (
+              {/* key 带上下标:programs 的 schema 是 array(slug).max(6),不约束唯一性，所以公开
+                  表单重复提交同一个 slug 时裸用 slug 当 key 会撞。这里不去重 —— 去重会改变显示
+                  内容，而且除非 CSV 那边的 join 也去重，界面和导出就会漂移。本列表静态、不重排,
+                  下标当 key 是安全的。 */}
+              {c.programs.map((p, i) => (
                 <span
-                  key={p}
+                  key={`${p}-${i}`}
                   className="rounded bg-neutral-200 px-1.5 py-0.5 font-mono text-xs text-neutral-700"
                 >
                   {p}
@@ -143,7 +147,12 @@ export default function ContactsTable({ contacts }: { contacts: ContactView[] })
                     <button
                       type="button"
                       aria-expanded={isOpen}
-                      aria-controls={detailId}
+                      // 收起时详情那一行并没有挂载，所以不能发 aria-controls —— 指向一个不存在的
+                      // id 等于给辅助技术一个断掉的引用。aria-expanded 单独用就是完整的披露模式。
+                      // 另一种修法是始终渲染详情行、用 hidden 藏起来，这里不采用:一页最多 100 条,
+                      // 会把 100 个没人看的面板挂进 DOM，而且 <tr hidden> 很脆 —— UA 的
+                      // [hidden]{display:none} 特异性极低，任何 display:table-row 都能盖掉它。
+                      aria-controls={isOpen ? detailId : undefined}
                       className="flex items-center gap-1.5 text-left font-medium text-neutral-800"
                     >
                       <span aria-hidden className="text-xs text-neutral-400">
