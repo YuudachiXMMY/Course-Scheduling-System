@@ -4,7 +4,12 @@ import { revalidatePath } from 'next/cache'
 import { toPortalActionError } from '@/lib/errors'
 import { formatDateTime } from '@/lib/format-datetime'
 import { requireSiteAdmin } from '@/lib/site/authz'
-import { subscriberStatusLabel } from '@/lib/site/labels'
+import {
+  subscriberStatusLabel,
+  contactStatusLabel,
+  contactLocaleLabel,
+  contactTopicLabel,
+} from '@/lib/site/labels'
 import {
   deleteSubscriberCore,
   createPopupCore,
@@ -143,7 +148,23 @@ export async function exportContacts(): Promise<ExportResult> {
     return {
       ok: true,
       filename: 'contacts',
-      headers: ['姓名', '邮箱', '电话', '留言', '是否订阅', '提交时间'],
+      // 这些列与询盘行展开后显示的字段一一对应。两者必须同进同退 —— labels.ts 存在的全部
+      // 理由就是防止"界面显示中文、CSV 里是 slug"这种漂移,只给界面加字段会把它重新造出来。
+      headers: [
+        '姓名',
+        '邮箱',
+        '电话',
+        '留言',
+        '是否订阅',
+        '提交时间',
+        '状态',
+        '语言',
+        '年级',
+        '咨询主题',
+        '意向项目',
+        '来源',
+        '内部备注',
+      ],
       rows: rows.map((c: ContactRow) => [
         c.name,
         c.email,
@@ -151,6 +172,15 @@ export async function exportContacts(): Promise<ExportResult> {
         c.message ?? '',
         c.subscribe ? '是' : '否',
         formatDateTime(c.createdAt),
+        contactStatusLabel(c.status),
+        // 未填的字段在 CSV 里留空，而不是沿用界面那个 '—' 占位符:这些列会进 Excel 做筛选和
+        // 统计，一个破折号会被当成真实取值(界面上反过来，空格子看着像渲染失败)。
+        c.locale ? contactLocaleLabel(c.locale) : '',
+        c.grade === null ? '' : String(c.grade),
+        c.topic ? contactTopicLabel(c.topic) : '',
+        c.programs.join(' / '),
+        c.source ?? '',
+        c.notes ?? '',
       ]),
     }
   } catch (e) {

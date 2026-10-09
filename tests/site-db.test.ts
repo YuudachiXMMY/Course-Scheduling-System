@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { eq, like, inArray } from 'drizzle-orm'
+import { and, count, eq, like, inArray, notLike } from 'drizzle-orm'
 
 // mail 模块在被测模块导入**之前**替换掉:真实 mail.ts 会按 env 建 SMTP 连接池,而这里要
 // 控制"送达/失败"的结果来驱动群发状态机。isMailConfigured 置 true 以越过第一道硬失败守卫。
@@ -42,6 +42,15 @@ const notSuperAdmin: AuthContext = { ...superAdmin, isPlatformAdmin: false }
 // 所有测试数据用这个前缀，清理时按前缀删 —— 不会碰到同一个库里别的测试或开发数据。
 const P = 'sitetest_'
 const mail = (n: string) => `${P}${n}@example.com`
+
+// 这个库里**与本套夹具无关**的活跃订阅者有多少(开发库里就会有真实订阅者)。
+// 群发用例按"活跃订阅者总数"这个性质断言，所以它们不需要这个数;只有"没有活跃订阅者"
+// 那一条的前提无法由前缀隔离的夹具满足，它据此跳过。量一次就够 —— 测试自己不碰这些行。
+const foreignActive = await db
+  .select({ value: count() })
+  .from(subscriber)
+  .where(and(eq(subscriber.status, 'active'), notLike(subscriber.email, `${P}%`)))
+  .then(([row]) => row.value)
 
 async function cleanup() {
   // email_deliveries 由 FK onDelete cascade 跟着 campaign 走，但显式删一遍更稳
@@ -346,7 +355,24 @@ describe('sendCampaignCore — 群发状态机', () => {
     return createCampaignCore(superAdmin, { subject: `${P}${suffix}`, body: '<p>hi</p>' })
   }
 
-  it('没有活跃订阅者时标记 failed 并报错(而不是假装发完)', async () => {
+  // 发送时刻的活跃订阅者总数。
+  //
+  // 这些用例要钉的性质是「recipientCount == 发送时刻的活跃订阅者数」,不是某个字面数字。
+  // 区别很要紧:subscribers 没有 tenant_id,sendCampaignCore 也按设计读**全表**(官网只有一份
+  // 订阅名单),所以库里任何一条真实订阅者都会计入。把夹具数量写死,等于隐式假设"这张表除了
+  // 我的夹具之外是空的"—— 控制台一投用这个假设就不成立,整组用例会在非空库上集体变红,
+  // 而那是环境噪声,不是回归。按性质断言则两种库上都成立,且断言强度没有降低。
+  async function activeCount(): Promise<number> {
+    const [row] = await db
+      .select({ value: count() })
+      .from(subscriber)
+      .where(eq(subscriber.status, 'active'))
+    return row.value
+  }
+
+  it.skipIf(foreignActive > 0)('没有活跃订阅者时标记 failed 并报错(而不是假装发完)', async () => {
+    // 唯一一条无法按性质改写的用例:它的前提就是"全表没有活跃订阅者",而测试夹具只能
+    // 控制自己的前缀。所以在已有真实订阅者的开发库上跳过(CI 跑在全新库上会真正执行)。
     const c = await newCampaign('nosubs')
     await expect(sendCampaignCore(superAdmin, c.id)).rejects.toThrow(/没有活跃订阅者/)
     const [after] = await db.select().from(emailCampaign).where(eq(emailCampaign.id, c.id))
@@ -355,19 +381,20 @@ describe('sendCampaignCore — 群发状态机', () => {
 
   it('全部送达 → sent，recipientCount = 实际送达人数，台账逐人入账', async () => {
     await seedSubscribers(3)
+    const total = await activeCount()
     const c = await newCampaign('ok')
     sendMock.mockImplementation(async (msgs: { to: string }[]) => ({
       delivered: msgs.map((m) => m.to),
       failed: [],
     }))
 
-    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: 3 })
+    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: total })
     const [after] = await db.select().from(emailCampaign).where(eq(emailCampaign.id, c.id))
     expect(after.status).toBe('sent')
-    expect(after.recipientCount).toBe(3)
+    expect(after.recipientCount).toBe(total)
     expect(after.sentAt).not.toBeNull()
     const ledger = await db.select().from(emailDelivery).where(eq(emailDelivery.campaignId, c.id))
-    expect(ledger).toHaveLength(3)
+    expect(ledger).toHaveLength(total)
   })
 
   it('已发送的不能再发(原子抢占)', async () => {
@@ -384,6 +411,7 @@ describe('sendCampaignCore — 群发状态机', () => {
   it('并发两次发送:只有一个赢，另一个被抢占挡住 —— 订阅者不会收到两封', async () => {
     // 这是最重要的一条。没有原子抢占，两个并行请求都会通过状态检查，全体订阅者各收两封信。
     await seedSubscribers(2)
+    const total = await activeCount()
     const c = await newCampaign('race')
     sendMock.mockImplementation(async (msgs: { to: string }[]) => ({
       delivered: msgs.map((m) => m.to),
@@ -398,11 +426,12 @@ describe('sendCampaignCore — 群发状态机', () => {
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1)
     // 每人只入账一次(unique(campaign_id,email) + onConflictDoNothing)。
     const ledger = await db.select().from(emailDelivery).where(eq(emailDelivery.campaignId, c.id))
-    expect(ledger).toHaveLength(2)
+    expect(ledger).toHaveLength(total)
   })
 
   it('部分失败 → failed;重试只补发未入账的那部分', async () => {
     await seedSubscribers(3)
+    const total = await activeCount()
     const c = await newCampaign('partial')
 
     // 第一次:只有 r0 送达，另外两个失败。
@@ -416,36 +445,42 @@ describe('sendCampaignCore — 群发状态机', () => {
     const ledger1 = await db.select().from(emailDelivery).where(eq(emailDelivery.campaignId, c.id))
     expect(ledger1).toHaveLength(1) // 只有真正送达的那个入账
 
-    // 第二次(重试):mail 层只应收到**剩下 2 个**收件人 —— 已送达的那个不得再发。
+    // 第二次(重试):mail 层只应收到**剩下的**收件人 —— 已送达的那个不得再发。
     sendMock.mockImplementationOnce(async (msgs: { to: string }[]) => {
-      expect(msgs).toHaveLength(2)
+      expect(msgs).toHaveLength(total - 1)
       expect(msgs.map((m) => m.to)).not.toContain(ledger1[0].email)
       return { delivered: msgs.map((m) => m.to), failed: [] }
     })
-    // recipientCount = 1(已入账) + 2(本次送达) = 3,即"真的收到这封信的人数"。
-    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: 3 })
+    // recipientCount = 1(已入账) + 本次送达,即"真的收到这封信的人数"。
+    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: total })
     const [done] = await db.select().from(emailCampaign).where(eq(emailCampaign.id, c.id))
     expect(done.status).toBe('sent')
-    expect(done.recipientCount).toBe(3)
+    expect(done.recipientCount).toBe(total)
   })
 
   it('已全部送达后重试:不再发任何信，但仍报告真实总数', async () => {
     await seedSubscribers(2)
     const c = await newCampaign('alldone')
-    // 手工把两人都写进台账，再把状态置回 failed(模拟"发完了但收尾写状态失败")。
-    await db.insert(emailDelivery).values([
-      { campaignId: c.id, email: mail('r0') },
-      { campaignId: c.id, email: mail('r1') },
-    ])
+    // 台账必须覆盖**全部**活跃订阅者(含库里原有的),否则"已全部送达"这个前提不成立 ——
+    // 漏掉谁，重试就会真的给那个人发信，而这条用例要证明的恰恰是"一封都不再发"。
+    const actives = await db
+      .select({ email: subscriber.email })
+      .from(subscriber)
+      .where(eq(subscriber.status, 'active'))
+    await db
+      .insert(emailDelivery)
+      .values(actives.map((s) => ({ campaignId: c.id, email: s.email })))
+    // 再把状态置回 failed(模拟"发完了但收尾写状态失败")。
     await db.update(emailCampaign).set({ status: 'failed' }).where(eq(emailCampaign.id, c.id))
 
-    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: 2 })
+    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: actives.length })
     // 一封信都不该再发出去 —— 这正是 alreadyCount 作为种子的意义。
     expect(sendMock).not.toHaveBeenCalled()
   })
 
   it('卡在 sending 超过陈旧窗口的可被回收', async () => {
     await seedSubscribers(1)
+    const total = await activeCount()
     const c = await newCampaign('stale')
     // 模拟"崩溃留下的 sending":状态 sending,updatedAt 推到陈旧窗口之外。
     await db
@@ -456,7 +491,7 @@ describe('sendCampaignCore — 群发状态机', () => {
       delivered: msgs.map((m) => m.to),
       failed: [],
     }))
-    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: 1 })
+    expect(await sendCampaignCore(superAdmin, c.id)).toEqual({ recipientCount: total })
   })
 
   it('刚进入 sending(窗口内)的不可被回收 —— 慢但活着的发送不会被二次抢占', async () => {

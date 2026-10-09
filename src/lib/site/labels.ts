@@ -17,3 +17,34 @@ export function campaignStatusLabel(status: string): string {
   }
   return map[status] ?? status
 }
+
+// ── 询盘的资格字段 ──────────────────────────────────────────────────────────────────────────
+// 取值由官网 /api/contact 的 zod enum 约束(见 ItahcaFA-web 的 contactSchema),但这里**不**把
+// 未知值吞掉 —— 官网加一个新选项时，控制台应当显示那个原始值让人看见，而不是显示"—"把它
+// 伪装成"没填"。签名也照着各列的真实可空性写:locale/topic 可空，status 有默认值不可空。
+
+export function contactLocaleLabel(locale: string | null | undefined): string {
+  if (!locale) return '—'
+  if (locale === 'zh') return '中文'
+  if (locale === 'en') return '英文'
+  return locale
+}
+
+export function contactTopicLabel(topic: string | null | undefined): string {
+  if (!topic) return '—'
+  const map: Record<string, string> = {
+    program: '项目咨询',
+    join: '加入我们',
+    general: '一般咨询',
+  }
+  return map[topic] ?? topic
+}
+
+export function contactStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    new: '新询盘',
+    contacted: '已联系',
+    closed: '已关闭',
+  }
+  return map[status] ?? status
+}

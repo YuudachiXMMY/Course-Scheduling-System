@@ -61,8 +61,8 @@ export const contactMessage = pgTable(
     createdAt: createdAt(),
 
     // ── 改版 PRD 加的资格字段。全部可空/有默认值 ───────────────────────────────────────────
-    // 官网会写入它们，但官网现有的 /admin 询盘页并不展示——这里按严格对等移植，列先建好，
-    // 展示留作后续(见 PR 描述)。不建列反而会让官网的写入丢字段。
+    // 官网会写入它们，但官网现有的 /admin 询盘页从来没展示过。本项目的询盘页把它们放进可展开
+    // 的行详情(contacts/contacts-table.tsx)。仍未做的是状态/备注的**编辑**(三态分诊)。
     locale: text('locale'), // 'en' | 'zh'，决定确认信语言
     grade: integer('grade'), // 4–12
     // Prisma 的 String[] → Postgres text[]。默认空数组而非 null，调用方不必区分
