@@ -8,9 +8,15 @@ import { test, expect, contextForRole } from '../fixtures/test'
 // 约定 (见 tests/e2e/README.md)：workers=1 串行、共享一库；每个用例用带时间戳的唯一正文断言自己的
 // 行，从不断言全局计数。
 test.describe('Portal 课节笔记', () => {
-  // NOTE: 空态断言依赖「本次 test:e2e 运行的 seed 未种入任何 shared 笔记」，且本文件内它先于下面的
-  // 分享流用例执行（串行、声明顺序）；其它 portal spec 均不创建笔记。请经 `npm run test:e2e`（触发
-  // global-setup 重新 seed）运行，而非单独 playwright 起本文件。
+  // NOTE: 空态断言依赖「这一刻库里没有任何 shared 笔记」，这是一个**跨 project 的全局前提**，
+  // 不只是本文件内的顺序问题：
+  //   · 本文件内它先于下面的分享流用例执行（串行、声明顺序），其它 portal spec 均不创建笔记;
+  //   · 但 playwright.config.ts 的 project 顺序是 auth-flows → public → staff → portal,
+  //     所以 **staff 的任何用例若留下一条 shared 笔记,这里就会红**。PR#85 把新笔记的
+  //     「对外开放」默认翻成勾选后,tests/e2e/dashboard/schedule.spec.ts 里两个只管"保存"
+  //     的用例就无意中发布了笔记,正是这样把本用例打红的 —— 那两处现已显式 uncheck。
+  // 往 staff 新增会保存本节课笔记的用例时,若该用例不是在测"发布",请显式取消勾选。
+  // 请经 `npm run test:e2e`（触发 global-setup 重新 seed）运行,而非单独 playwright 起本文件。
   test('家长空态：导航「课节笔记」→ 标题 + 空态文案', async ({ page }) => {
     await page.goto('/portal')
     await page.getByRole('link', { name: '课节笔记' }).click()
@@ -67,7 +73,11 @@ test.describe('Portal 课节笔记', () => {
     }
   })
 
-  test('越权隔离：未「对外开放」的笔记与逐生点评都不出现在门户', async ({ page, browser, seed }) => {
+  test('越权隔离：未「对外开放」的笔记与逐生点评都不出现在门户', async ({
+    page,
+    browser,
+    seed,
+  }) => {
     const internalToken = `E2E内部笔记-${Date.now()}`
     const commentToken = `E2E逐生点评-${Date.now()}`
 
@@ -81,11 +91,17 @@ test.describe('Portal 课节笔记', () => {
       await expect(toggle).toBeVisible()
       await toggle.click()
 
-      // Summary 有正文，但「对外开放」保持未勾选 → visibility='internal'（门户不可见）。
+      // Summary 有正文，但必须 visibility='internal'（门户不可见）才能验证本用例的不变量。
+      // PR#85 起新笔记的「对外开放」**默认勾选**，所以这里必须显式取消 —— 原先只断言
+      // 「未勾选」的写法在新默认下不只是过期，而是会让这条笔记真的以 shared 落库，
+      // 把本用例的前提整个反掉（断言在此中断，:106-107 的外泄检查从此再没执行过）。
       const summary = staffPage.getByLabel('本节课笔记（全班共享）')
       await expect(summary).toBeVisible()
       await summary.fill(internalToken)
-      await expect(staffPage.getByRole('checkbox', { name: /对外开放/ })).not.toBeChecked()
+      const shareToggle = staffPage.getByRole('checkbox', { name: /对外开放/ })
+      await shareToggle.uncheck()
+      // 取消确实生效才继续 —— 否则后面「没外泄」会因为根本没建 internal 笔记而假绿。
+      await expect(shareToggle).not.toBeChecked()
       await staffPage.getByRole('button', { name: '保存笔记', exact: true }).click()
       await expect(staffPage.getByText('已保存本节课笔记')).toBeVisible()
 

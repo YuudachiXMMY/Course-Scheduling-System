@@ -43,9 +43,11 @@ function NavLink({
 
 export default function NavLinks({
   canManageUsers,
+  canManageSite,
   unreadCount,
 }: {
   canManageUsers: boolean
+  canManageSite: boolean
   unreadCount: number
 }) {
   return (
@@ -89,6 +91,13 @@ export default function NavLinks({
         )}
       </NavLink>
       <NavLink href="/dashboard/calendar">日历订阅</NavLink>
+      {/* 官网运营(询盘/订阅者/邮件群发/弹窗)—— 仅平台超管可见，且它管的是 ithacateens.com
+          的数据而非本机构教务，所以放在导航末尾、与教务项分开。 */}
+      {canManageSite && (
+        <NavLink href="/dashboard/site" activePrefix="/dashboard/site">
+          官网运营
+        </NavLink>
+      )}
       <NavLink href="/dashboard/account" activePrefix="/dashboard/account">
         账户
       </NavLink>

@@ -1,0 +1,420 @@
+diff -ruN a/.env.example b/.env.example
+--- a/.env.example	2026-10-09 09:50:11
++++ b/.env.example	2026-10-09 09:52:24
+@@ -41,6 +41,22 @@
+ #                                    # internal `stalwart` host, whose cert never matches that alias.
+ #                                    # Leave unset when SMTP_HOST is the public mail.<domain>.
+ 
++# --- Course-Scheduling-System (官网运营数据的新归属) ---
++# 询盘 / 订阅者 / 弹窗 三类数据已迁到课程排课系统，由它的 /dashboard/site 控制台管理。
++# 本站的 /api/contact、/api/subscribe、/api/popups/active 改为服务端调用它的 /api/site/*。
++#
++# ⚠️ 这两个变量未配置时:
++#   · /api/contact、/api/subscribe 会 **500**(宁可报错，也不悄悄丢掉一条询盘);
++#   · /api/popups/active 软降级为"无弹窗"(它在每个公开页面的热路径上，不能拖垮首屏)。
++#
++# COURSE_SCHEDULING_API_URL="https://<排课系统域名>"   # 不带尾斜杠;服务器上也可用内网地址
++# SITE_INGEST_SECRET=""                                # 两边必须完全一致。生成:openssl rand -base64 48
++#
++# 旧的本站 /admin 控制台已被取代。设置下面这个变量后，/admin/* 会 302 跳到新控制台;
++# 留空则保留旧页面(但它读的表已无人写入，会显示为空)。PUBLIC_ 前缀是 SvelteKit 的要求
++# ($env/dynamic/public 只暴露 PUBLIC_* 变量)。
++# PUBLIC_SITE_ADMIN_URL="https://<排课系统域名>/dashboard/site"
++
+ # --- Rate limit (optional Upstash Redis) ---
+ # Unset = in-memory sliding-window limiter (fine for a single instance).
+ # UPSTASH_REDIS_REST_URL=""
+diff -ruN a/src/hooks.server.ts b/src/hooks.server.ts
+--- a/src/hooks.server.ts	2026-10-09 09:50:11
++++ b/src/hooks.server.ts	2026-10-09 09:52:10
+@@ -74,6 +74,24 @@
+ 	event.locals.session = session?.session ?? null;
+ 
+ 	const { pathname } = event.url;
++
++	// The admin console MOVED to the Course-Scheduling-System (/dashboard/site, super-admin login).
++	// The contacts/subscribers/campaigns/popups data moved with it, so the pages below this point
++	// would render an EMPTY console against tables nothing writes any more — worse than no console,
++	// because it reads as "we lost the data". Send operators to the real one instead.
++	//
++	// Redirect here (not in a +layout.server.ts) because /admin's routing policy already lives in
++	// this hook, and because it must also catch /admin/login — the one path the auth guard exempts.
++	// 302, not 301: a permanent redirect would be cached by browsers and Cloudflare, which we would
++	// regret the moment this app grows its own admin surface again.
++	//
++	// Unset SITE_ADMIN_URL falls through to the old behaviour, so a deploy that forgets the variable
++	// keeps a working (if empty) console rather than bouncing operators into a dead redirect.
++	if (pathname === '/admin' || pathname.startsWith('/admin/')) {
++		const consoleUrl = env.PUBLIC_SITE_ADMIN_URL;
++		if (consoleUrl) redirect(302, consoleUrl);
++	}
++
+ 	if (pathname.startsWith('/admin') && pathname !== '/admin/login' && !event.locals.user) {
+ 		redirect(303, `/admin/login?callbackUrl=${encodeURIComponent(pathname)}`);
+ 	}
+diff -ruN a/src/lib/server/popup-cache.ts b/src/lib/server/popup-cache.ts
+--- a/src/lib/server/popup-cache.ts	2026-10-09 09:50:11
++++ b/src/lib/server/popup-cache.ts	2026-10-09 09:51:00
+@@ -1,33 +1,53 @@
+-import { prisma } from '$lib/server/prisma';
++import { fetchActivePopup, isSiteApiConfigured } from '$lib/server/site-api';
+ 
+-// In-process TTL cache for the single active popup, shared by the PUBLIC
+-// /api/popups/active endpoint (reads) and the admin popups CRUD (invalidation on mutate).
+-// Lives in $lib/server — NOT in a +server.ts — because SvelteKit endpoints may only export
+-// HTTP handlers + page options, not arbitrary functions. Per-process: at most one DB read
+-// per TTL_MS per server instance regardless of traffic; a stale popup can linger up to
+-// TTL_MS after an admin edit unless invalidatePopupCache() is called (it is, on mutate).
++// In-process TTL cache for the single active popup, read by the PUBLIC /api/popups/active endpoint.
++//
++// The popup data now lives in the Course-Scheduling-System (its /dashboard/site console owns it), so
++// this reads over HTTP instead of hitting Prisma. Two consequences, both deliberate:
++//
++//  1. THE CACHE IS NOW LOAD-BEARING, not just an optimisation. It is what keeps a per-page-view read
++//     from becoming a per-page-view cross-service call: at most one upstream call per TTL_MS per
++//     instance regardless of traffic.
++//
++//  2. STALENESS WINDOW GREW from "immediate" to "up to TTL_MS". invalidatePopupCache() used to be
++//     called by this app's own admin popup CRUD on every mutate; that console has moved to another
++//     process, which cannot reach this cache. An operator editing a popup there therefore waits up to
++//     TTL_MS to see it here. That is stated in that console's UI. The function is kept (exported and
++//     still correct) for any in-process mutation path and for tests — it is not dead by accident.
+ const TTL_MS = 60_000;
+ let cache: { data: unknown; expires: number } | null = null;
+ 
+ export async function getActivePopup(): Promise<unknown> {
+ 	if (cache && cache.expires > Date.now()) return cache.data;
+ 
+-	const now = new Date();
+-	const activePopup = await prisma.popup.findFirst({
+-		where: {
+-			isActive: true,
+-			OR: [
+-				{ startDate: null, endDate: null },
+-				{ startDate: { lte: now }, endDate: null },
+-				{ startDate: null, endDate: { gte: now } },
+-				{ startDate: { lte: now }, endDate: { gte: now } }
+-			]
+-		},
+-		orderBy: { createdAt: 'desc' }
+-	});
++	// Unconfigured (e.g. local dev without the scheduling app running) behaves like "no popup"
++	// rather than throwing — a missing promo banner must never break a public page.
++	if (!isSiteApiConfigured) {
++		cache = { data: null, expires: Date.now() + TTL_MS };
++		return null;
++	}
+ 
+-	cache = { data: activePopup, expires: Date.now() + TTL_MS };
+-	return activePopup;
++	try {
++		const activePopup = await fetchActivePopup();
++		cache = { data: activePopup, expires: Date.now() + TTL_MS };
++		return activePopup;
++	} catch (error) {
++		// FAIL SOFT. This runs on the critical path of every public page view, so an upstream blip
++		// must degrade to "no popup", never to a 500.
++		//
++		// Serve the STALE value when we have one: a slightly out-of-date promo is strictly better than
++		// none, and it also means a brief upstream restart is invisible to visitors. Re-arm the expiry
++		// so we retry on the next TTL boundary instead of hammering a service that is already down.
++		console.error('[popup-cache] active-popup fetch failed', error);
++		if (cache) {
++			cache = { data: cache.data, expires: Date.now() + TTL_MS };
++			return cache.data;
++		}
++		// No stale value to fall back on (cold start while upstream is down). Cache the null for a
++		// SHORT window, not the full TTL — a cold start is exactly when we want to recover quickly.
++		cache = { data: null, expires: Date.now() + 5_000 };
++		return null;
++	}
+ }
+ 
+ export function invalidatePopupCache(): void {
+diff -ruN a/src/lib/server/site-api.ts b/src/lib/server/site-api.ts
+--- a/src/lib/server/site-api.ts	1969-12-31 19:00:00
++++ b/src/lib/server/site-api.ts	2026-10-09 09:50:43
+@@ -0,0 +1,126 @@
++import { env } from '$env/dynamic/private';
++
++// 课程排课系统(Course-Scheduling-System)的官网数据端点客户端。
++//
++// 背景:询盘、订阅者、弹窗这三类数据的所有权已迁到课程排课系统 —— 那边有统一的运营控制台
++// (/dashboard/site,超级管理员登录)。本站不再直接读写这些表,改为服务端调用它的 /api/site/*。
++//
++// 鉴权是共享密钥(X-Site-Secret),不是用户会话:调用方是本站的**服务端**,没有也不该有一个
++// 能登控制台的长期用户账号。
++//
++// 两条失败语义,刻意不同:
++//   · contact / subscribe → 调用方必须**硬失败**。悄悄丢掉一条询盘比报错糟得多。
++//   · popups/active       → 调用方必须**软降级**(见 popup-cache.ts)。它在每个公开页面的
++//                           热路径上,不该因为另一个服务抖动就把整站带下去。
++// 所以本模块只负责"把失败如实抛出",由各调用点决定是硬失败还是软降级。
++
++const BASE = env.COURSE_SCHEDULING_API_URL;
++const SECRET = env.SITE_INGEST_SECRET;
++
++/** 两边都配齐了才算接上。未配置时调用方会拿到 SiteApiError,而不是静默成功。 */
++export const isSiteApiConfigured = Boolean(BASE && SECRET);
++
++// 超时预算。不设的话 fetch 会一直等到对端 TCP 超时(可能数分钟),把本站的请求处理线程占住。
++// 写入路径给得宽一些(它要跑一个数据库事务);弹窗读取必须短 —— 它卡住就等于首屏卡住。
++const WRITE_TIMEOUT_MS = 8_000;
++const READ_TIMEOUT_MS = 3_000;
++
++export class SiteApiError extends Error {
++	constructor(
++		message: string,
++		readonly status?: number
++	) {
++		super(message);
++		this.name = 'SiteApiError';
++	}
++}
++
++async function call<T>(
++	path: string,
++	init: { method: 'GET' | 'POST'; body?: unknown; timeoutMs: number }
++): Promise<T> {
++	if (!BASE || !SECRET) {
++		throw new SiteApiError(
++			'COURSE_SCHEDULING_API_URL / SITE_INGEST_SECRET 未配置 —— 无法读写官网运营数据'
++		);
++	}
++
++	// AbortSignal.timeout 在超时时以 TimeoutError 中止 fetch,所以不需要手工 setTimeout + clear。
++	let res: Response;
++	try {
++		res = await fetch(`${BASE.replace(/\/+$/, '')}${path}`, {
++			method: init.method,
++			headers: {
++				'x-site-secret': SECRET,
++				...(init.body === undefined ? {} : { 'content-type': 'application/json' })
++			},
++			body: init.body === undefined ? undefined : JSON.stringify(init.body),
++			signal: AbortSignal.timeout(init.timeoutMs)
++		});
++	} catch (e) {
++		// 网络层失败(DNS、连接拒绝、超时)。包一层统一类型,调用点就不必分辨 fetch 的各种抛法。
++		throw new SiteApiError(
++			`调用 ${path} 失败: ${e instanceof Error ? e.message : String(e)}`
++		);
++	}
++
++	// 响应体可能不是 JSON(网关的 502 HTML 页)。解析失败不该掩盖掉真正的状态码。
++	const payload = (await res.json().catch(() => null)) as
++		| { success?: boolean; data?: T; error?: string }
++		| null;
++
++	if (!res.ok || !payload?.success) {
++		throw new SiteApiError(payload?.error ?? `HTTP ${res.status}`, res.status);
++	}
++	return payload.data as T;
++}
++
++export interface SiteContactPayload {
++	name: string;
++	email: string;
++	phone?: string | null;
++	message?: string | null;
++	subscribe: boolean;
++	locale?: 'en' | 'zh' | null;
++	grade?: number | null;
++	programs: string[];
++	topic?: 'program' | 'join' | 'general' | null;
++	source?: string | null;
++}
++
++/** 落库一条询盘(subscribe 为真时同事务 upsert 订阅者)。失败必须由调用方硬失败。 */
++export async function postContact(payload: SiteContactPayload): Promise<void> {
++	await call<unknown>('/api/site/contact', {
++		method: 'POST',
++		body: payload,
++		timeoutMs: WRITE_TIMEOUT_MS
++	});
++}
++
++/**
++ * 订阅三态结果 —— 本站据此还原原有行为:
++ *   created        → 发欢迎信(只有真正插入的那一方发 ⇒ 并发不会重复发)
++ *   reactivated    → 不发信
++ *   already_active → 回 409「该邮箱已订阅」
++ */
++export type SubscribeOutcome = 'created' | 'reactivated' | 'already_active';
++
++export async function postSubscribe(payload: {
++	email: string;
++	name?: string | null;
++}): Promise<SubscribeOutcome> {
++	const data = await call<{ outcome: SubscribeOutcome }>('/api/site/subscribe', {
++		method: 'POST',
++		body: payload,
++		timeoutMs: WRITE_TIMEOUT_MS
++	});
++	return data.outcome;
++}
++
++/** 当前生效的弹窗(无则 null)。失败必须由调用方软降级 —— 见 popup-cache.ts。 */
++export async function fetchActivePopup(): Promise<unknown> {
++	return call<unknown>('/api/site/popups/active', {
++		method: 'GET',
++		timeoutMs: READ_TIMEOUT_MS
++	});
++}
+diff -ruN a/src/routes/api/contact/+server.ts b/src/routes/api/contact/+server.ts
+--- a/src/routes/api/contact/+server.ts	2026-10-09 09:50:11
++++ b/src/routes/api/contact/+server.ts	2026-10-09 09:51:35
+@@ -1,7 +1,7 @@
+ import { json, type RequestHandler } from '@sveltejs/kit';
+ import { z } from 'zod';
+ import { env } from '$env/dynamic/private';
+-import { prisma } from '$lib/server/prisma';
++import { postContact, SiteApiError } from '$lib/server/site-api';
+ import { guardPublicPost } from '$lib/server/guard';
+ import { parseJsonBody } from '$lib/server/validation';
+ import { sendMail } from '$lib/server/mail';
+@@ -88,24 +88,32 @@
+ 			);
+ 		}
+ 
+-		await prisma.contactMessage.create({
+-			data: { name, email, phone, message, subscribe, locale, grade, programs, topic, source }
++		// Persistence moved to the Course-Scheduling-System, which owns this data and its admin
++		// console (/dashboard/site). ONE call replaces the enquiry insert AND the conditional
++		// subscriber upsert — that endpoint runs both in a single transaction, so a visitor who
++		// ticked "subscribe" can never end up recorded as an enquiry but not as a subscriber.
++		//
++		// This is the point where the public form now depends on that service being up. It is a
++		// HARD failure on purpose: it falls through to the catch below and returns 500, so the
++		// visitor is told to try again. The alternative — swallowing the error and returning
++		// success — would silently discard a lead, which is far worse than a visible error.
++		await postContact({
++			name,
++			email,
++			phone,
++			message,
++			subscribe,
++			locale,
++			grade,
++			programs,
++			topic,
++			source
+ 		});
+ 
+-		if (subscribe) {
+-			// Atomic upsert closes the TOCTOU between findUnique and create on the unique
+-			// `email`; the update branch is a harmless no-op when already active.
+-			await prisma.subscriber.upsert({
+-				where: { email },
+-				update: { status: 'active' },
+-				create: { email, name, status: 'active' }
+-			});
+-		}
+-
+ 		// Every user field (and the subject) is escaped before HTML interpolation.
+-		// Best-effort: the message is already committed (and readable in the admin panel), so a mail
+-		// failure must NOT 500 — that would drive a client retry and duplicate the row (mirrors
+-		// mail.ts's graceful no-op).
++		// Best-effort: the enquiry is already committed (and readable in the scheduling app's
++		// /dashboard/site console), so a mail failure must NOT 500 — that would drive a client retry
++		// and duplicate the row (mirrors mail.ts's graceful no-op).
+ 		try {
+ 			await sendMail({
+ 				to: INQUIRY_TO,
+@@ -156,7 +164,14 @@
+ 
+ 		return json({ success: true } satisfies ApiResponse);
+ 	} catch (error) {
+-		console.error('[contact] unexpected error', error);
++		// Distinguish "the scheduling app rejected/was unreachable" from "a bug in here" — they have
++		// completely different fixes, and from a bare 500 an operator cannot tell which happened.
++		// The response body stays empty either way (no internal detail to the visitor).
++		if (error instanceof SiteApiError) {
++			console.error('[contact] 落库失败（课程排课系统不可达或拒绝）', error.status ?? '-', error.message);
++		} else {
++			console.error('[contact] unexpected error', error);
++		}
+ 		return json({ success: false } satisfies ApiResponse, { status: 500 });
+ 	}
+ };
+diff -ruN a/src/routes/api/subscribe/+server.ts b/src/routes/api/subscribe/+server.ts
+--- a/src/routes/api/subscribe/+server.ts	2026-10-09 09:50:11
++++ b/src/routes/api/subscribe/+server.ts	2026-10-09 09:51:57
+@@ -1,7 +1,6 @@
+ import { json, type RequestHandler } from '@sveltejs/kit';
+ import { z } from 'zod';
+-import { Prisma } from '@prisma/client';
+-import { prisma } from '$lib/server/prisma';
++import { postSubscribe, SiteApiError } from '$lib/server/site-api';
+ import { guardPublicPost } from '$lib/server/guard';
+ import { parseJsonBody } from '$lib/server/validation';
+ import { sendMail } from '$lib/server/mail';
+@@ -32,31 +31,26 @@
+ 		if (!parsed.success) return parsed.response;
+ 
+ 		const { email, name } = parsed.data;
+-		// Single-winner create: only the request that actually inserts the row sends the
+-		// welcome mail. A concurrent racer hits the unique-email P2002 and is handled
+-		// (409 if already active, else reactivate) — never leaked as a raw 500 (preserves
+-		// the TOCTOU fix from #29).
+-		let created = false;
+-		try {
+-			await prisma.subscriber.create({ data: { email, name, status: 'active' } });
+-			created = true;
+-		} catch (err) {
+-			if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+-				const existing = await prisma.subscriber.findUnique({ where: { email } });
+-				if (existing?.status === 'active') {
+-					return json(
+-						{ success: false, error: 'This email is already subscribed' } satisfies ApiResponse,
+-						{ status: 409 }
+-					);
+-				}
+-				await prisma.subscriber.update({
+-					where: { email },
+-					data: { status: 'active', name: name ?? existing?.name }
+-				});
+-			} else {
+-				throw err;
+-			}
++		// Persistence moved to the Course-Scheduling-System, which owns this data. The single-winner
++		// semantics are PRESERVED EXACTLY — they just moved behind the `outcome` discriminant:
++		//
++		//   created        → this request is the one that inserted the row ⇒ it alone sends the
++		//                    welcome mail. Concurrent racers lose on the unique-email constraint
++		//                    over there and come back 'already_active', so one subscriber still
++		//                    gets exactly one welcome mail (the TOCTOU fix from #29 survives).
++		//   reactivated    → previously unsubscribed, now restored. No welcome mail (they have had
++		//                    one before), and their existing name is kept when this request omits it.
++		//   already_active → 409, byte-identical to the old response below.
++		//
++		// Collapsing this to a boolean would silently lose two of those three behaviours.
++		const outcome = await postSubscribe({ email, name });
++		if (outcome === 'already_active') {
++			return json(
++				{ success: false, error: 'This email is already subscribed' } satisfies ApiResponse,
++				{ status: 409 }
++			);
+ 		}
++		const created = outcome === 'created';
+ 
+ 		// Best-effort welcome: the subscriber is committed, so a mail failure must NOT
+ 		// surface as a misleading 500 (mirrors mail.ts graceful no-op).
+@@ -74,7 +68,16 @@
+ 
+ 		return json({ success: true } satisfies ApiResponse);
+ 	} catch (error) {
+-		console.error('[subscribe] unexpected error', error);
++		// Same split as /api/contact: an upstream outage and a bug here need different fixes.
++		if (error instanceof SiteApiError) {
++			console.error(
++				'[subscribe] 落库失败（课程排课系统不可达或拒绝）',
++				error.status ?? '-',
++				error.message
++			);
++		} else {
++			console.error('[subscribe] unexpected error', error);
++		}
+ 		return json({ success: false } satisfies ApiResponse, { status: 500 });
+ 	}
+ };

@@ -53,6 +53,18 @@ export const ALLOWLIST: readonly string[] = [
   // touch another tenant's row (see the comment at each call site).
   'src/lib/lesson-insert.ts', // bulk lesson insert (shared by materialize + add-sessions), onConflictDoNothing, tenantId: ctx.tenantId per row (asserted by callers)
   'src/lib/push-core.ts', // push_subscription upsert, tenantId: ctx.tenantId in values + conflict target
+
+  // ── 官网(ithacateens.com)运营数据 —— PLATFORM-GLOBAL 表，**没有 tenant_id 列**，所以
+  // forTenant() 的 TenantTable 约束套不上，它也不该套上:市场站只有一个，把询盘按机构分片没有
+  // 意义。这三个文件之所以出现在这里，是因为本守卫按"裸 db CRUD"拦人而不看表 —— 它们不是
+  // 租户隔离的例外,而是压根不在租户模型内。隔离改由两道门把守(见 src/db/schema/site.ts):
+  //   · 控制台读写 → requireSiteAdmin()，即 ctx.isPlatformAdmin(平台超管)，每个导出函数首行;
+  //   · 官网写入   → SITE_INGEST_SECRET 恒定时间比对(src/app/api/site/_auth.ts)，无 AuthContext。
+  // 加这三条是经过审查的安全决定:它们触碰的任何一张表都不含 tenant_id,
+  // 因此任何写法都不可能跨租户 —— 没有租户可跨。
+  'src/lib/site/admin-core.ts', // 询盘/订阅者/弹窗/统计;每个函数首行 requireSiteAdmin()
+  'src/lib/site/campaigns-core.ts', // 邮件群发状态机;每个函数首行 requireSiteAdmin()
+  'src/lib/site/ingest-core.ts', // 官网服务端写入;密钥在路由层校验，本模块只保数据正确性
 ]
 
 // Raw CRUD / raw-SQL on the `db` handle. `\s*` spans newlines so a chained `db\n  .insert(` (push-core's

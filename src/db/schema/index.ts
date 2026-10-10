@@ -15,5 +15,6 @@ export * from './section-share-link'
 export * from './portal-link'
 export * from './notification'
 export * from './push-subscription'
+export * from './site' // 官网运营数据(平台全局，无 tenant_id) — 见 site.ts 顶部说明
 export * from './relations'
 export * from '../auth-schema' // Better Auth generated tables (user/session/organization/member/...) — R8

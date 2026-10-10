@@ -59,6 +59,14 @@ const nextConfig: NextConfig = {
         source: '/portal/:path*',
         headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
       },
+      // 官网(ithacateens.com)服务端调用的写入/读取端点。它们由 SITE_INGEST_SECRET 把门,
+      // 所以响应绝不能被任何共享缓存存下来 —— 一份被缓存的 200 若回给**没带密钥**的请求,
+      // 就等于一条绕过鉴权的旁路。popups/active 的内容本身是公开的(影响为零),但语义上
+      // 它仍是鉴权后的响应，不该出现在边缘缓存里;官网侧自己有 60 秒进程内缓存，不靠 CDN。
+      {
+        source: '/api/site/:path*',
+        headers: [{ key: 'Cache-Control', value: 'private, no-store' }],
+      },
     ]
   },
   experimental: {

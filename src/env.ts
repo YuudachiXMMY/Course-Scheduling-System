@@ -62,6 +62,21 @@ export const env = createEnv({
     VAPID_PUBLIC_KEY: z.string().min(1).optional(),
     VAPID_PRIVATE_KEY: z.string().min(1).optional(),
     VAPID_SUBJECT: z.string().min(1).default('mailto:admin@example.com'),
+    // ── 官网控制台(/dashboard/site)──────────────────────────────────────────────────────────
+    // SMTP(Stalwart)。邮件群发用。全部 OPTIONAL:未配置时应用照常启动，群发路径会以 503
+    // 明确拒绝(src/lib/mail.ts 的 isMailConfigured)，而不是悄悄把每个收件人记成已送达。
+    // 服务器上 SMTP_HOST 填内网别名 `stalwart`(与 course-scheduling 容器同在 proxy 网络),
+    // 并配 SMTP_TLS_INSECURE=1 —— 该别名的证书永远对不上公网主机名。
+    SMTP_HOST: z.string().min(1).optional(),
+    SMTP_PORT: z.string().min(1).optional(), // 字符串:mail.ts 自己 Number() 并校验 NaN
+    SMTP_USER: z.string().min(1).optional(),
+    SMTP_PASSWORD: z.string().min(1).optional(),
+    SMTP_FROM: z.string().min(1).optional(),
+    SMTP_TLS_INSECURE: z.string().optional(), // '1' | 'true' 才生效;仅限内网别名
+    // 官网服务端调用 /api/site/* 写入端点时携带的共享密钥(恒定时间比对，照 CRON_SECRET 的做法)。
+    // OPTIONAL 以便本项目在官网还没接上时也能启动 —— 未设置时这些端点保持 401 惰性，
+    // 绝不 fail-open(见 src/app/api/site/_auth.ts)。生成:openssl rand -base64 48
+    SITE_INGEST_SECRET: z.string().min(32).optional(),
   },
   client: {
     NEXT_PUBLIC_APP_URL: z.url(),
