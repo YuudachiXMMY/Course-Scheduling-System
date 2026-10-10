@@ -11,7 +11,20 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        # mirror.gcr.io 而非 docker.io:GitHub runner 的出口 IP 是共享的,未认证拉取会撞
+        # Docker Hub 的 `toomanyrequests` 限流,表现为 "Initialize containers" 在十几秒内
+        # 失败、与代码完全无关(窗口是小时级,重跑无效;本仓库没有配置 DOCKERHUB_* secrets
+        # 可用来认证)。
+        #
+        # mirror.gcr.io 是 Docker Hub 的**pull-through cache**,不是另一个发布者 ——
+        # 已核对 `docker manifest inspect` 对两边返回 byte-identical 的 manifest,
+        # 即同一内容、同一 digest,换的只是传输路径。所以这不引入新的信任方。
+        #
+        # 注意:Dockerfile 里的 `node:${NODE_VERSION}` 与 `node:24-slim` 仍从 Docker Hub
+        # 拉取(buildx 步骤),理论上同样会撞限流。没有一并改,是因为那个 Dockerfile 也用于
+        # 服务器上的生产构建(DEPLOY_TYPE=git-source),改它等于动生产的供应链 —— 若要做,
+        # 建议加 `ARG NODE_REGISTRY=docker.io/library` 默认保持现状,只让 CI 传镜像源。
+        image: mirror.gcr.io/library/postgres:17-alpine
         env:
           POSTGRES_USER: app
           POSTGRES_PASSWORD: app
